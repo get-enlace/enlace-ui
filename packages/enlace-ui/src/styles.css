@@ -1,0 +1,673 @@
+/*
+ * Matches the actual installed Swagger UI (v5) theme — dark background,
+ * method-tinted rows, solid pill-shaped method badges, blue-outlined
+ * section controls — not the old olive-green-topbar look from v2/v3.
+ * System font stacks only, no external font fetch, per the "zero extra
+ * infra" principle in ARCHITECTURE.md §1.
+ */
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', Consolas, Monaco, 'Courier New', monospace;
+
+  --color-bg: #1b1b1b;
+  --color-panel-bg: #202124;
+  --color-topbar-bg: #17181a;
+  --color-border: #3b3b3f;
+  --color-text: #e8e8e8;
+  --color-text-muted: #9aa0a6;
+
+  --color-get: #61affe;
+  --color-get-bg: rgba(97, 175, 254, 0.12);
+  --color-post: #49cc90;
+  --color-post-bg: rgba(73, 204, 144, 0.12);
+  --color-put: #fca130;
+  --color-put-bg: rgba(252, 161, 48, 0.12);
+  --color-patch: #50e3c2;
+  --color-patch-bg: rgba(80, 227, 194, 0.12);
+  --color-delete: #f93e3e;
+  --color-delete-bg: rgba(249, 62, 62, 0.12);
+
+  --color-error: #f93e3e;
+  --color-focus: #61affe;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* --- Topbar --- */
+
+.app__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  background: var(--color-topbar-bg);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.app__title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+  letter-spacing: 0.2px;
+}
+
+.btn {
+  border: none;
+  border-radius: 4px;
+  padding: 7px 20px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  color: #fff;
+  transition: opacity 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.btn--execute {
+  background: var(--color-post);
+}
+
+.btn--authorize {
+  background: transparent;
+  border: 2px solid var(--color-focus);
+  color: var(--color-focus);
+}
+
+/* --- Body layout --- */
+
+/* Both the inspector and canvas columns use minmax() instead of a hard
+ * length, so CSS Grid's own overflow handling can shrink them down to
+ * their floor (220px / 240px) when the window narrows — previously the
+ * inspector was a fixed 340px, so once the window narrowed past
+ * 240px+340px, the canvas's 1fr resolved to zero and it disappeared while
+ * the fixed-width panes held their size. When the inspector is fully
+ * collapsed (via its own toggle), the third column drops to a thin
+ * clickable strip instead. */
+.app__body {
+  display: grid;
+  grid-template-columns: 240px minmax(240px, 1fr) minmax(220px, 340px);
+  flex: 1;
+  min-height: 0;
+}
+
+.app__body--inspector-collapsed {
+  grid-template-columns: 240px minmax(240px, 1fr) 28px;
+}
+
+.operation-list,
+.node-inspector {
+  background: var(--color-panel-bg);
+  padding: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.node-inspector__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-muted);
+  margin: 0 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pane-collapse-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 7px;
+}
+
+.pane-collapse-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-focus);
+}
+
+/* Thin strip replacing the inspector column entirely when collapsed —
+ * always clickable, so collapsing is never a dead end. */
+.pane-strip {
+  background: var(--color-panel-bg);
+  border: none;
+  border-left: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  padding: 0;
+}
+
+.pane-strip:hover {
+  background: var(--color-topbar-bg);
+  color: var(--color-text);
+}
+
+.operation-list {
+  border-right: 1px solid var(--color-border);
+}
+
+.node-inspector {
+  border-left: 1px solid var(--color-border);
+}
+
+.operation-list h2,
+.node-inspector h2,
+.node-inspector h3 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-muted);
+  margin: 0 0 10px;
+}
+
+.node-inspector h2 {
+  font-size: 14px;
+  color: var(--color-text);
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-mono);
+}
+
+.node-inspector h3 {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* --- Method badges: solid pills, Swagger's palette --- */
+
+.method-badge {
+  display: inline-block;
+  min-width: 52px;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: #1b1b1b;
+}
+
+.method-badge--get {
+  background: var(--color-get);
+}
+.method-badge--post {
+  background: var(--color-post);
+}
+.method-badge--put {
+  background: var(--color-put);
+}
+.method-badge--patch {
+  background: var(--color-patch);
+}
+.method-badge--delete {
+  background: var(--color-delete);
+  color: #fff;
+}
+
+/* --- Operation list: method-tinted rows --- */
+
+.operation-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.operation-list__item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  margin-bottom: 8px;
+  background: var(--color-panel-bg);
+  cursor: grab;
+  font-size: 13px;
+  transition: box-shadow 0.15s ease;
+}
+
+.operation-list__item:hover {
+  box-shadow: 0 0 0 1px var(--color-focus);
+}
+
+.operation-list__item--get {
+  background: var(--color-get-bg);
+  border-color: rgba(97, 175, 254, 0.3);
+}
+.operation-list__item--post {
+  background: var(--color-post-bg);
+  border-color: rgba(73, 204, 144, 0.3);
+}
+.operation-list__item--put {
+  background: var(--color-put-bg);
+  border-color: rgba(252, 161, 48, 0.3);
+}
+.operation-list__item--patch {
+  background: var(--color-patch-bg);
+  border-color: rgba(80, 227, 194, 0.3);
+}
+.operation-list__item--delete {
+  background: var(--color-delete-bg);
+  border-color: rgba(249, 62, 62, 0.3);
+}
+
+.operation-list__path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* --- Canvas + workflow node cards --- */
+
+.canvas {
+  position: relative;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.canvas .react-flow__attribution {
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+/* Two distinct edge kinds — see Canvas.tsx: order (user-drawn connections,
+   solid + arrowhead) vs. data (derived field mappings, dashed + animated). */
+.canvas .edge-connection .react-flow__edge-path {
+  stroke: var(--color-text-muted);
+  stroke-width: 1.5;
+}
+
+.canvas .edge-mapping .react-flow__edge-path {
+  stroke: var(--color-focus);
+  stroke-width: 1.5;
+  stroke-dasharray: 5;
+}
+
+.canvas .react-flow__controls {
+  box-shadow: none;
+}
+
+.canvas .react-flow__controls-button {
+  background: var(--color-panel-bg);
+  border-bottom: 1px solid var(--color-border);
+  fill: var(--color-text);
+}
+
+.canvas .react-flow__controls-button:hover {
+  background: var(--color-topbar-bg);
+}
+
+/* Handles are anchors for auto-drawn mapping edges, not user-draggable
+   (isConnectable=false) — no grab cursor, so they don't invite a
+   drag-connect gesture that has no effect. */
+.canvas .react-flow__handle {
+  cursor: default;
+}
+
+.workflow-node {
+  position: relative;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-panel-bg);
+  min-width: 180px;
+  font-size: 13px;
+}
+
+.workflow-node__remove-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-topbar-bg);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.workflow-node__remove-btn:hover {
+  background: var(--color-delete);
+  border-color: var(--color-delete);
+  color: #fff;
+}
+
+.workflow-node--get {
+  background: linear-gradient(var(--color-get-bg), var(--color-get-bg)), var(--color-panel-bg);
+  border-color: rgba(97, 175, 254, 0.4);
+}
+.workflow-node--post {
+  background: linear-gradient(var(--color-post-bg), var(--color-post-bg)), var(--color-panel-bg);
+  border-color: rgba(73, 204, 144, 0.4);
+}
+.workflow-node--put {
+  background: linear-gradient(var(--color-put-bg), var(--color-put-bg)), var(--color-panel-bg);
+  border-color: rgba(252, 161, 48, 0.4);
+}
+.workflow-node--patch {
+  background: linear-gradient(var(--color-patch-bg), var(--color-patch-bg)), var(--color-panel-bg);
+  border-color: rgba(80, 227, 194, 0.4);
+}
+.workflow-node--delete {
+  background: linear-gradient(var(--color-delete-bg), var(--color-delete-bg)), var(--color-panel-bg);
+  border-color: rgba(249, 62, 62, 0.4);
+}
+
+.workflow-node--selected {
+  box-shadow: 0 0 0 2px var(--color-focus);
+}
+
+.workflow-node__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-node__path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.workflow-node__summary {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* --- Node inspector --- */
+
+.node-inspector--empty {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.node-inspector__hint {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-style: italic;
+  margin: 0 0 14px;
+}
+
+.node-inspector__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.node-inspector__field label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.node-inspector__field-row {
+  display: flex;
+  gap: 6px;
+}
+
+.node-inspector__field-row + .node-inspector__field-row {
+  margin-top: 6px;
+}
+
+.node-inspector__field-row select,
+.node-inspector__field-row input,
+.node-inspector label select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  background: var(--color-topbar-bg);
+  color: var(--color-text);
+}
+
+.node-inspector__field-row select:focus,
+.node-inspector__field-row input:focus {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 1px var(--color-focus);
+}
+
+.node-inspector__field--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.node-inspector__field--disabled label {
+  font-style: italic;
+}
+
+/* --- Credentials panel --- */
+
+.credentials-panel {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.credentials-panel__count {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.credentials-panel input {
+  width: 120px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--color-panel-bg);
+  color: var(--color-text);
+}
+
+/* --- Debug pane ---
+ * A distinctly framed panel, not a loose list floating over the canvas:
+ * its own header (like the sidebars' "OPERATIONS" / "REQUEST FIELDS"),
+ * darker background than the canvas so the seam is unambiguous, and a
+ * fixed header with only the scrollable call list beneath it. Each call is
+ * collapsed by default — the pane shows the call list only; raw
+ * request/response detail appears inline when a row is opened, never
+ * shown loose alongside the list.
+ */
+
+.debug-pane {
+  border-top: 2px solid var(--color-border);
+  background: var(--color-topbar-bg);
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+}
+
+.debug-pane__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.debug-pane__count {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.debug-pane__toggle {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.debug-pane__toggle:hover {
+  color: var(--color-text);
+}
+
+.debug-pane__toggle-chevron {
+  font-size: 9px;
+  color: var(--color-text-muted);
+}
+
+.debug-pane__body {
+  overflow-y: auto;
+  padding: 4px 16px;
+  font-size: 12px;
+}
+
+.debug-pane__status {
+  color: var(--color-text-muted);
+  padding: 10px 0;
+  margin: 0;
+}
+
+.debug-pane__status--error {
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+.debug-step {
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px 0;
+}
+
+.debug-step:last-child {
+  border-bottom: none;
+}
+
+.debug-step__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--color-text);
+}
+
+.debug-step__summary::-webkit-details-marker {
+  display: none;
+}
+
+.debug-step__chevron {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.debug-step[open] .debug-step__chevron {
+  transform: rotate(90deg);
+}
+
+.debug-step__url {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.debug-step__error {
+  color: var(--color-error);
+  font-size: 11px;
+}
+
+.status-badge {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.status-badge--ok {
+  background: var(--color-post);
+  color: #1b1b1b;
+}
+
+.status-badge--error {
+  background: var(--color-delete);
+  color: #fff;
+}
+
+.debug-step pre {
+  background: #101113;
+  color: #d8dde3;
+  padding: 10px 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 8px 0 0;
+  border: 1px solid var(--color-border);
+}

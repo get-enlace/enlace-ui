@@ -1,0 +1,239 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  computeExecutionLevels,
+  CyclicWorkflowError,
+  executeChain,
+  getByPath,
+  topologicalSort,
+} from './chainExecutor.js';
+import type { Credential, Operation, WorkflowConnection, WorkflowNode } from '../types.js';
+
+function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): WorkflowNode {
+  return { id, operationId: id, credentialId: null, fieldValues };
+}
+
+function mockResponse(status: number, body: unknown) {
+  return {
+    status,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => body,
+  } as unknown as Response;
+}
+
+describe('topologicalSort', () => {
+  it('orders a node after the node it maps a field from', () => {
+    const a = node('a');
+    const b = node('b', {
+      'body.orderId': { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' },
+    });
+
+    expect(topologicalSort([b, a]).map((n) => n.id)).toEqual(['a', 'b']);
+  });
+
+  it('leaves independent nodes in their original relative order', () => {
+    const a = node('a');
+    const b = node('b');
+    expect(topologicalSort([a, b]).map((n) => n.id)).toEqual(['a', 'b']);
+  });
+
+  it('throws CyclicWorkflowError on a cyclic mapping', () => {
+    const a = node('a', { x: { source: 'mapped', fromNodeId: 'b', fromResponseFieldPath: 'y' } });
+    const b = node('b', { y: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'x' } });
+
+    expect(() => topologicalSort([a, b])).toThrow(CyclicWorkflowError);
+  });
+
+  it('orders via explicit connections even when a middle node carries no data (A -> B -> C, C maps from A)', () => {
+    const a = node('a');
+    const b = node('b'); // no field mapping at all — pure sequencing
+    const c = node('c', { x: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' } });
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'b', toNodeId: 'c' },
+    ];
+
+    // Passed in a shuffled order to prove the connections (not array order) drive the sort.
+    expect(topologicalSort([c, a, b], connections).map((n) => n.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('throws CyclicWorkflowError on a cyclic explicit connection with no field mapping involved', () => {
+    const a = node('a');
+    const b = node('b');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'b', toNodeId: 'a' },
+    ];
+
+    expect(() => topologicalSort([a, b], connections)).toThrow(CyclicWorkflowError);
+  });
+});
+
+describe('computeExecutionLevels', () => {
+  it('groups "run A, then B+C in parallel, then D (needs A and C, not B)"', () => {
+    const a = node('a');
+    const b = node('b'); // connected after A, but no data dependency
+    const c = node('c'); // also connected after A only — same level as B
+    const d = node('d', {
+      x: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' },
+      y: { source: 'mapped', fromNodeId: 'c', fromResponseFieldPath: 'id' },
+    });
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'a', toNodeId: 'c' },
+    ];
+
+    const levels = computeExecutionLevels([a, b, c, d], connections);
+    expect(levels.map((level) => level.map((n) => n.id))).toEqual([['a'], ['b', 'c'], ['d']]);
+  });
+});
+
+describe('executeChain', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('resolves path/query/header/body field sections, including a value mapped from a prior step', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse(201, { id: 'order-1' }))
+      .mockResolvedValueOnce(mockResponse(200, { id: 'order-1', status: 'ok' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const createOrder: Operation = {
+      id: 'POST /orders',
+      method: 'post',
+      path: '/orders',
+      parameters: [],
+      requestBodySchema: { type: 'object', properties: { item: { type: 'string' } } },
+      responseSchema: null,
+    };
+    const getOrder: Operation = {
+      id: 'GET /orders/{id}',
+      method: 'get',
+      path: '/orders/{id}',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+
+    const n1: WorkflowNode = {
+      id: 'n1',
+      operationId: 'POST /orders',
+      credentialId: null,
+      fieldValues: {
+        'body.item': { source: 'static', value: 'Widget' },
+        'header.x-trace-id': { source: 'static', value: 'abc123' },
+      },
+    };
+    const n2: WorkflowNode = {
+      id: 'n2',
+      operationId: 'GET /orders/{id}',
+      credentialId: null,
+      fieldValues: {
+        'path.id': { source: 'mapped', fromNodeId: 'n1', fromResponseFieldPath: 'id' },
+      },
+    };
+    const workflow = { nodes: [n1, n2], connections: [] };
+
+    const operationsById = new Map([
+      ['POST /orders', createOrder],
+      ['GET /orders/{id}', getOrder],
+    ]);
+
+    const result = await executeChain(workflow, operationsById, new Map<string, Credential>(), {
+      baseUrl: 'http://example.test',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const [firstUrl, firstInit] = fetchMock.mock.calls[0];
+    expect(firstUrl).toBe('http://example.test/orders');
+    expect(firstInit.headers['x-trace-id']).toBe('abc123');
+    expect(JSON.parse(firstInit.body)).toEqual({ item: 'Widget' });
+
+    const [secondUrl] = fetchMock.mock.calls[1];
+    expect(secondUrl).toBe('http://example.test/orders/order-1');
+
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[1].response?.body).toEqual({ id: 'order-1', status: 'ok' });
+  });
+
+  it('runs independent nodes within the same level concurrently, not sequentially', async () => {
+    let active = 0;
+    let maxActive = 0;
+    const fetchMock = vi.fn(async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active--;
+      return mockResponse(200, {});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const b: WorkflowNode = { id: 'b', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const c: WorkflowNode = { id: 'c', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'a', toNodeId: 'c' },
+    ];
+
+    await executeChain(
+      { nodes: [a, b, c], connections },
+      new Map([['GET /noop', noop]]),
+      new Map<string, Credential>(),
+      { baseUrl: 'http://example.test' }
+    );
+
+    // b and c are both in the same level (level 1, after a) — if they ran
+    // sequentially, "active" would never exceed 1 concurrently in flight.
+    expect(maxActive).toBeGreaterThanOrEqual(2);
+  });
+
+  it('sends a bearer Authorization header for a node with a credential set', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const credentialsById = new Map<string, Credential>([
+      ['cred-1', { id: 'cred-1', name: 'Test', type: 'bearer', token: 'secret-token' }],
+    ]);
+
+    await executeChain(
+      { nodes: [a], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers.Authorization).toBe('Bearer secret-token');
+  });
+});
+
+describe('getByPath', () => {
+  it('resolves nested and array paths', () => {
+    const obj = { order: { items: [{ id: 'abc' }] } };
+    expect(getByPath(obj, 'order.items[0].id')).toBe('abc');
+  });
+
+  it('returns undefined for missing paths without throwing', () => {
+    expect(getByPath({ a: 1 }, 'a.b.c')).toBeUndefined();
+    expect(getByPath(null, 'a.b')).toBeUndefined();
+  });
+});

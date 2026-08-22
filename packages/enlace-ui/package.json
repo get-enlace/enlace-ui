@@ -1,0 +1,39 @@
+{
+  "name": "@get-enlace/ui",
+  "private": false,
+  "version": "0.0.1",
+  "description": "Enlace's canvas UI — spec loading, canvas, inspector, debug pane, and the client-side chain-execution engine. Runs entirely in the browser. Early dev preview: no persistence yet, install via the `dev` dist-tag on GitHub Packages.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/get-enlace/enlace-ui.git",
+    "directory": "packages/enlace-ui"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "reactflow": "^11.11.4",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.5",
+    "vitest": "^2.0.5"
+  }
+}

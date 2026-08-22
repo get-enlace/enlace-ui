@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    // Resolves @get-enlace/express to its TS source directly for
+    // typechecking, so `npm run typecheck` doesn't depend on that package
+    // having been built first (CI runs typecheck before build — see
+    // .github/workflows/pr.yml). No `baseUrl` needed — `paths` resolves
+    // relative to this tsconfig's own directory since TS 4.1+.
+    "paths": {
+      "@get-enlace/express": ["./packages/enlace-express/src/index.ts"]
+    }
+  },
+  "include": ["examples", "test"]
+}

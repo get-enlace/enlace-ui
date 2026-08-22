@@ -1,0 +1,44 @@
+{
+  "name": "@get-enlace/express",
+  "private": false,
+  "version": "0.0.1",
+  "description": "Simple Express adapter for @get-enlace/ui. Early dev preview: no persistence yet (serves the spec + UI bundle only), install via the `dev` dist-tag on GitHub Packages. Destined for extraction into a separate enlace-js monorepo alongside enlace-nest, enlace-fastify, etc.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/get-enlace/enlace-ui.git",
+    "directory": "packages/enlace-express"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "express": "^4.17.0 || ^5.0.0"
+  },
+  "dependencies": {
+    "@get-enlace/ui": "0.0.1",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "express": "^4.19.2",
+    "typescript": "^5.5.4"
+  }
+}

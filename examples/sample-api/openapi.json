@@ -1,0 +1,335 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Sample Store API", "version": "1.0.0" },
+  "servers": [{ "url": "http://localhost:4000" }],
+  "paths": {
+    "/customers": {
+      "post": {
+        "summary": "Create a customer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Customer created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "email": { "type": "string" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers/{id}": {
+      "get": {
+        "summary": "Fetch a customer by id",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Customer found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "email": { "type": "string" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Customer not found" }
+        }
+      },
+      "patch": {
+        "summary": "Update a customer",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "status": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Customer updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "email": { "type": "string" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Customer not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete a customer",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "204": { "description": "Customer deleted" },
+          "404": { "description": "Customer not found" }
+        }
+      }
+    },
+    "/products": {
+      "post": {
+        "summary": "Create a product",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "price"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "price": { "type": "number", "minimum": 0 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Product created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "price": { "type": "number" },
+                    "inStock": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/products/{id}": {
+      "get": {
+        "summary": "Fetch a product by id",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Product found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "price": { "type": "number" },
+                    "inStock": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Product not found" }
+        }
+      },
+      "patch": {
+        "summary": "Update a product",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "price": { "type": "number" },
+                  "inStock": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Product updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "price": { "type": "number" },
+                    "inStock": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Product not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete a product",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "204": { "description": "Product deleted" },
+          "404": { "description": "Product not found" }
+        }
+      }
+    },
+    "/orders": {
+      "post": {
+        "summary": "Create an order (references an existing customer + product)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["customerId", "productId", "qty"],
+                "properties": {
+                  "customerId": { "type": "string" },
+                  "productId": { "type": "string" },
+                  "qty": { "type": "integer", "minimum": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "customerId": { "type": "string" },
+                    "productId": { "type": "string" },
+                    "qty": { "type": "integer" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Unknown customerId or productId" }
+        }
+      }
+    },
+    "/orders/{id}": {
+      "get": {
+        "summary": "Fetch an order by id",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Order found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "customerId": { "type": "string" },
+                    "productId": { "type": "string" },
+                    "qty": { "type": "integer" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Order not found" }
+        }
+      },
+      "patch": {
+        "summary": "Update an order",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": { "type": "string" },
+                  "qty": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Order updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "customerId": { "type": "string" },
+                    "productId": { "type": "string" },
+                    "qty": { "type": "integer" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Order not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete an order",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "204": { "description": "Order deleted" },
+          "404": { "description": "Order not found" }
+        }
+      }
+    }
+  }
+}

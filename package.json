@@ -1,0 +1,41 @@
+{
+  "name": "enlace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Enlace — a visual, chained-execution canvas that plugs into an existing OpenAPI-documented API. This repo hosts @get-enlace/ui plus a simple Express adapter and example API for local testing.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/get-enlace/enlace-ui.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "predev": "npm run build:express && node scripts/ensure-ui-built.mjs",
+    "dev": "tsx watch examples/sample-api/server.ts",
+    "start": "npm run dev",
+    "build": "npm run build:express && npm run build:ui",
+    "build:express": "npm run build --workspace @get-enlace/express",
+    "build:ui": "npm run build --workspace @get-enlace/ui",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test --workspace @get-enlace/ui && vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e-ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/swagger-ui-express": "^4.1.6",
+    "express": "^4.19.2",
+    "swagger-ui-express": "^5.0.1",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

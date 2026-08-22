@@ -1,0 +1,72 @@
+name: Build, Publish (dev), Tag
+
+on:
+  # Deliberately not auto-triggered on push to main yet — this whole
+  # workflow (publish + tag) is built and ready, but staying manual-only
+  # (workflow_dispatch) until we're ready to actually start publishing dev
+  # builds. To go live: replace this with
+  #   push:
+  #     branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # push the git tag
+  packages: write # publish to GitHub Packages
+
+jobs:
+  build-publish-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          # Scopes *only* @get-enlace-prefixed packages to GitHub Packages —
+          # ordinary deps (express, react, ...) still resolve from the
+          # public npm registry via this same install.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@get-enlace'
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # NOT YET RE-ENABLED FOR A REAL REASON, beyond just workflow_dispatch:
+      # since the enlace-ui restructuring, this repo produces *two*
+      # packages (@get-enlace/ui, @get-enlace/express), both currently
+      # `"private": true`, and there's no root package to publish anymore
+      # (see package.json — it's a workspace root only). Which package(s)
+      # to dev-publish from here, under what name/scope, is an explicit,
+      # not-yet-made decision — not something to guess at in this step.
+      # Left as-is (still targets the now-private root package.json) so
+      # that if this is ever manually run before that decision is made, it
+      # fails loudly with npm's own "this package has been marked as
+      # private" error, rather than silently publishing something wrong.
+      - name: Compute dev build version
+        id: version
+        run: echo "dev_version=$(node -p "require('./package.json').version")-dev.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - run: npm version ${{ steps.version.outputs.dev_version }} --no-git-tag-version
+
+      # Publish must succeed before the tag is ever created — if this step
+      # fails, the job stops here (GitHub Actions' default: a failed step
+      # halts the job), so the tag-push step below never runs.
+      - name: Publish to GitHub Packages (dev dist-tag)
+        run: npm publish --tag dev
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only reached if publish succeeded. Plain tag push — no GitHub
+      # Release is created, matching "no release, only tag". No
+      # retry/re-run handling: a genuine version collision (e.g. a manual
+      # re-run of a workflow attempt whose publish already succeeded) is
+      # left to fail loudly rather than special-cased.
+      - name: Tag this build
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.version.outputs.dev_version }}"
+          git push origin "v${{ steps.version.outputs.dev_version }}"
