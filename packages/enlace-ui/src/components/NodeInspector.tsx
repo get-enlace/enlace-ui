@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import { coerceStaticValue } from '../utils/coerceValue.js';
-import { flattenRequestFields, flattenResponseFields } from '../utils/flattenSchema.js';
+import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from '../utils/flattenSchema.js';
 import { computeAncestors } from '../utils/graph.js';
 
 export interface NodeInspectorProps {
@@ -200,12 +200,21 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
                   }
                 >
                   <option value="">Select field...</option>
-                  {responseFields.map((rf) => (
-                    <option key={rf.path} value={rf.path} disabled={!rf.supported} title={rf.reason}>
-                      {rf.path}
-                      {rf.supported ? '' : ' (unsupported)'}
-                    </option>
-                  ))}
+                  {responseFields.map((rf) => {
+                    const typeMismatch = rf.supported && !areFieldTypesCompatible(field.type, rf.type);
+                    const optionDisabled = !rf.supported || typeMismatch;
+                    const reason = !rf.supported
+                      ? rf.reason
+                      : typeMismatch
+                        ? `Type mismatch: "${field.path}" expects ${field.type}, this field is ${rf.type}.`
+                        : undefined;
+                    return (
+                      <option key={rf.path} value={rf.path} disabled={optionDisabled} title={reason}>
+                        {rf.path}
+                        {!rf.supported ? ' (unsupported)' : typeMismatch ? ' (type mismatch)' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
