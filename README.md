@@ -16,12 +16,18 @@ hand-written file, anything.
   mapping and credentials, the debug pane, and the execution engine (spec
   parsing and the level-based concurrent chain executor). All of it runs
   client-side, in the browser.
-- **`packages/enlace-express`** (`@get-enlace/express`) — an Express
-  adapter: serves an OpenAPI document and the built UI bundle at whatever
-  path you mount it.
 - **`examples/sample-api`** — a small sample API (three cross-referencing
   CRUD resources) plus a dev harness, so you can try Enlace immediately
-  without wiring up anything of your own.
+  without wiring up anything of your own. Mounts the canvas via
+  `examples/sample-api/enlace.ts`, a small local copy of
+  `@get-enlace/express`'s mount function (see below) — self-contained, no
+  cross-repo dependency needed to run this repo's own dev server or tests.
+
+Adapters (Express, and eventually Nest/Fastify/...) live in a separate
+repo, [`get-enlace/enlace-js`](https://github.com/get-enlace/enlace-js) —
+each is a thin package serving the OpenAPI document and this package's
+built UI bundle in its own ecosystem's idiomatic way. Nothing here depends
+on that repo; it depends on `@get-enlace/ui`, published from here.
 
 ## Quickstart
 
@@ -81,10 +87,10 @@ npm run dev --workspace @get-enlace/ui   # canvas with hot reload, for iterating
                                            # -> http://localhost:5173
 
 npm test              # unit tests (mocked fetch, no real server)
-npm run test:e2e       # real HTTP e2e tests against the adapter
+npm run test:e2e       # real HTTP e2e tests against examples/sample-api's enlace.ts
 npm run test:e2e-ui    # Playwright smoke test (needs `npx playwright install --with-deps chromium` once)
 npm run typecheck
-npm run build          # builds enlace-express (tsc) + enlace-ui (vite)
+npm run build          # builds enlace-ui (vite)
 ```
 
 `npm start`'s `predev` hook builds `@get-enlace/ui`'s bundle automatically

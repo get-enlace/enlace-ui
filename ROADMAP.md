@@ -12,10 +12,13 @@ credentials can be saved and reloaded.
 
 ## More adapters
 
-`@get-enlace/express` is the only adapter today. Planned:
+`@get-enlace/express` is the only adapter today, extracted into its own
+repo, [`get-enlace/enlace-js`](https://github.com/get-enlace/enlace-js) —
+a monorepo for Node/JS adapters specifically, with its own CI and
+dev-publish workflow. Planned:
 
-- `enlace-nest`, `enlace-fastify` — alongside `enlace-express`, extracted
-  together into a separate `enlace-js` monorepo.
+- `enlace-nest`, `enlace-fastify` — alongside `enlace-express`, in that
+  same `enlace-js` monorepo.
 - `enlace-aspnet` (.NET), `enlace-spring` (Java) — each their own repo.
 
 ## More credential types
@@ -36,7 +39,9 @@ support.
 
 ## Publishing
 
-`@get-enlace/ui` and `@get-enlace/express` aren't published anywhere yet.
-GitHub Packages requires the npm scope to match the repository's owner, so
-publishing under `@get-enlace/*` needs this repo to live under the
-`get-enlace` GitHub org first — not yet done.
+Both packages publish dev builds to GitHub Packages under the `dev`
+dist-tag — `@get-enlace/ui` from this repo's own `main.yml` (on every push
+to `main`), `@get-enlace/express` from `enlace-js`'s equivalent workflow
+(currently `workflow_dispatch`-only, pending the same "confirm a manual
+run works, then go live on push" rollout this repo already went through).
+No versioned (non-dev) releases exist yet for either.

@@ -42,12 +42,24 @@ The **target API** being tested can be written in any language — the browser o
 
 ## 3. Repo/Package Layout
 
-| Package | Language | Responsibility |
-|---|---|---|
-| `enlace-ui` (`@get-enlace/ui`) | JS (framework-agnostic bundle) | Canvas, inspector, debug pane, in-browser execution logic. Built once, shipped as static assets consumed by every adapter. |
-| `enlace-express` (`@get-enlace/express`) | Node/TS | Serves the UI bundle, resolves the OpenAPI document. |
+| Package | Language | Repo | Responsibility |
+|---|---|---|---|
+| `enlace-ui` (`@get-enlace/ui`) | JS (framework-agnostic bundle) | `get-enlace/enlace-ui` (this repo) | Canvas, inspector, debug pane, in-browser execution logic. Built once, shipped as static assets consumed by every adapter. |
+| `enlace-express` (`@get-enlace/express`) | Node/TS | [`get-enlace/enlace-js`](https://github.com/get-enlace/enlace-js) | Serves the UI bundle, resolves the OpenAPI document. |
 
-Both packages live in this repo today (`packages/enlace-ui`, `packages/enlace-express`), alongside a sample API and dev harness (`examples/sample-api`) for trying Enlace without wiring up anything of your own.
+`@get-enlace/ui` lives in this repo (`packages/enlace-ui`), alongside a
+sample API and dev harness (`examples/sample-api`) for trying Enlace
+without wiring up anything of your own — that harness mounts the canvas
+via a small local copy of `@get-enlace/express`'s mount function
+(`examples/sample-api/enlace.ts`), not a dependency on the adapter repo,
+so this repo's own dev/test loop stays self-contained.
+
+Node/JS adapters (`@get-enlace/express` today, `@get-enlace/nest` /
+`@get-enlace/fastify` planned) live together in `get-enlace/enlace-js`, a
+separate repo with its own CI and its own dev-publish workflow, each
+installing `@get-enlace/ui` from GitHub Packages rather than as a
+workspace sibling. Non-Node adapters (`.NET`, Java) will each get their
+own repo per the language's own ecosystem conventions.
 
 None of these need to talk to each other, to a shared engine process, or to any particular runtime beyond their own — each adapter is a self-contained, idiomatic package in its own ecosystem, exactly matching how Springdoc and Swashbuckle each independently serve the same Swagger UI bundle without any cross-language coordination.
 
