@@ -118,21 +118,31 @@ jobs:
         with:
           registry-url: 'https://registry.npmjs.org'
 
+      # packages/enlace-ui/package.json's own publishConfig.registry points
+      # at GitHub Packages (needed so the dev job's plain `npm publish`
+      # defaults there). Confirmed on a real run: an explicit --registry
+      # flag on `npm publish` does NOT reliably override publishConfig —
+      # this is a long-standing npm bug (npm/cli#6400); a fix landed
+      # upstream (npm/cli#7321) but the npm version this runner has doesn't
+      # have it, and --registry still lost. So instead of fighting
+      # publishConfig, remove it — transiently, just for this step —
+      # rather than relying on a flag that's proven unreliable here.
+      # Reverted right after publishing, before anything gets committed, so
+      # the repo's committed state keeps publishConfig pointed at GitHub
+      # Packages for the dev job.
+      - name: Remove publishConfig for this publish (see comment above)
+        run: npm pkg delete publishConfig.registry --workspace @get-enlace/ui
+
       - name: Publish @get-enlace/ui to npmjs.org (prod)
-        # --registry explicitly, not just setup-node's registry-url above:
-        # packages/enlace-ui/package.json's own publishConfig.registry
-        # points at GitHub Packages (needed so the dev job's plain `npm
-        # publish` defaults there) — publishConfig takes precedence over
-        # setup-node's registry-url, so without this flag `npm publish`
-        # silently tried GitHub Packages here too and failed with a 401
-        # (NPM_TOKEN isn't valid there). --registry on the command line is
-        # the one thing that overrides publishConfig.
         # --access public: scoped packages (@get-enlace/...) default to
         # restricted access on npmjs.org, which needs a paid org plan unless
         # publish explicitly opts into public access.
         run: npm publish --workspace @get-enlace/ui --registry https://registry.npmjs.org --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Restore publishConfig
+        run: git checkout -- packages/enlace-ui/package.json
 
       - name: Tag the release
         run: git tag "v${{ steps.current.outputs.version }}"
