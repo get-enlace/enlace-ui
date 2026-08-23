@@ -84,11 +84,16 @@ describe('parseOperations', () => {
             properties: {
               name: { type: 'string' },
               category: { $ref: '#/components/schemas/Category' },
+              status: { $ref: '#/components/schemas/PetStatus' },
             },
           },
           Category: {
             type: 'object',
             properties: { id: { type: 'integer' } },
+          },
+          PetStatus: {
+            type: 'string',
+            enum: ['available', 'pending', 'sold'],
           },
         },
       },
@@ -96,15 +101,24 @@ describe('parseOperations', () => {
 
     const [createPet] = parseOperations(spec);
 
-    // category's own $ref resolves too, not just the top-level one — so
-    // this is the fully-resolved Pet, not the raw (still-$ref'd) fixture.
+    // category's and status's own $refs resolve too, not just the top-level
+    // one — so this is the fully-resolved Pet, not the raw (still-$ref'd)
+    // fixture.
     const resolvedPet = {
       ...spec.components.schemas.Pet,
-      properties: { ...spec.components.schemas.Pet.properties, category: spec.components.schemas.Category },
+      properties: {
+        ...spec.components.schemas.Pet.properties,
+        category: spec.components.schemas.Category,
+        status: spec.components.schemas.PetStatus,
+      },
     };
 
     expect(createPet.requestBodySchema).toEqual(resolvedPet);
     expect(createPet.requestBodySchema?.properties.category).toEqual(spec.components.schemas.Category);
+    // enum survives $ref resolution — it's what makes the Node Inspector's
+    // enum dropdown (see flattenSchema.ts) work for a $ref'd enum, not just
+    // an inlined one.
+    expect(createPet.requestBodySchema?.properties.status.enum).toEqual(['available', 'pending', 'sold']);
     expect(createPet.responseSchema).toEqual(resolvedPet);
   });
 

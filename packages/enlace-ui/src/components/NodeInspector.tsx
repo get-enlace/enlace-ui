@@ -125,17 +125,37 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
 
             {!isMapped && (
               <div className="node-inspector__field-row">
-                <input
-                  type="text"
-                  disabled={disabled}
-                  value={fieldValue?.source === 'static' ? String(fieldValue.value ?? '') : ''}
-                  onChange={(e) =>
-                    setFieldValue(node.id, field.path, {
-                      source: 'static',
-                      value: coerceStaticValue(e.target.value, field.type),
-                    })
-                  }
-                />
+                {field.enum ? (
+                  <select
+                    disabled={disabled}
+                    value={fieldValue?.source === 'static' ? String(fieldValue.value ?? '') : ''}
+                    onChange={(e) =>
+                      setFieldValue(node.id, field.path, {
+                        source: 'static',
+                        value: coerceStaticValue(e.target.value, field.type),
+                      })
+                    }
+                  >
+                    <option value="">Select...</option>
+                    {field.enum.map((v) => (
+                      <option key={String(v)} value={String(v)}>
+                        {String(v)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    disabled={disabled}
+                    value={fieldValue?.source === 'static' ? String(fieldValue.value ?? '') : ''}
+                    onChange={(e) =>
+                      setFieldValue(node.id, field.path, {
+                        source: 'static',
+                        value: coerceStaticValue(e.target.value, field.type),
+                      })
+                    }
+                  />
+                )}
               </div>
             )}
 
