@@ -175,12 +175,22 @@ jobs:
         repo: [enlace-js, enlace-dotnet]
     steps:
       - name: Notify ${{ matrix.repo }} (dev)
+        # -w/-o capture the HTTP status separately from the response body so
+        # a failure is explicit — plain curl exits 0 even on a 4xx/5xx
+        # response, which previously let a bad/missing CROSS_REPO_PAT fail
+        # silently while the job still showed green.
         run: |
-          curl -sS -X POST \
+          http_code="$(curl -sS -o /tmp/dispatch_response.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.CROSS_REPO_PAT }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/get-enlace/${{ matrix.repo }}/dispatches" \
-            -d '{"event_type":"enlace-ui-release","client_payload":{"ui-version":"${{ needs.deploy-dev.outputs.version }}","environment":"development"}}'
+            -d '{"event_type":"enlace-ui-release","client_payload":{"ui-version":"${{ needs.deploy-dev.outputs.version }}","environment":"development"}}')"
+          cat /tmp/dispatch_response.json
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::dispatch to ${{ matrix.repo }} failed (HTTP $http_code)"
+            exit 1
+          fi
+          echo "dispatch to ${{ matrix.repo }} accepted (HTTP $http_code)"
 
   notify-downstream-prod:
     needs: deploy-prod
@@ -192,8 +202,14 @@ jobs:
     steps:
       - name: Notify ${{ matrix.repo }} (prod)
         run: |
-          curl -sS -X POST \
+          http_code="$(curl -sS -o /tmp/dispatch_response.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.CROSS_REPO_PAT }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/get-enlace/${{ matrix.repo }}/dispatches" \
-            -d '{"event_type":"enlace-ui-release","client_payload":{"ui-version":"${{ needs.deploy-prod.outputs.version }}","environment":"production"}}'
+            -d '{"event_type":"enlace-ui-release","client_payload":{"ui-version":"${{ needs.deploy-prod.outputs.version }}","environment":"production"}}')"
+          cat /tmp/dispatch_response.json
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::dispatch to ${{ matrix.repo }} failed (HTTP $http_code)"
+            exit 1
+          fi
+          echo "dispatch to ${{ matrix.repo }} accepted (HTTP $http_code)"
