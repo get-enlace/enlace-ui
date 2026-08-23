@@ -252,22 +252,43 @@ body {
   margin: 0;
 }
 
+/* .operation-list__item is a <fieldset> now (see OperationList.tsx), not a
+   plain <div> — reset the UA defaults (fieldset's own border/padding/margin,
+   its min-width: min-content quirk that would otherwise block the path's
+   ellipsis truncation from shrinking) rather than fight them. */
 .operation-list__item {
   display: flex;
   gap: 8px;
   align-items: center;
+  min-width: 0;
   padding: 8px 10px;
+  margin: 0 0 8px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  margin-bottom: 8px;
   background: var(--color-panel-bg);
   cursor: grab;
   font-size: 13px;
   transition: box-shadow 0.15s ease;
 }
 
+/* A <legend> — the browser itself cuts the gap in the fieldset's top border
+   and centers the legend on it; no manual position/background needed (the
+   fieldset's own background already shows through the gap). Only rendered
+   when the spec actually declares an operationId (see OperationList.tsx) —
+   not every operation has one. */
+.operation-list__operation-id {
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+/* border-color, not box-shadow: box-shadow draws a uniform ring around the
+   whole border-box, oblivious to the gap the browser cuts into the actual
+   border for the operationId <legend> — it would draw straight through the
+   text instead of respecting the gap the way a real border does. */
 .operation-list__item:hover {
-  box-shadow: 0 0 0 1px var(--color-focus);
+  border-color: var(--color-focus);
 }
 
 .operation-list__item--get {
@@ -354,14 +375,25 @@ body {
   cursor: default;
 }
 
+/* .workflow-node is a <fieldset> now (see WorkflowNodeCard.tsx) — reset the
+   UA defaults (border/padding/margin, min-width: min-content) same as
+   .operation-list__item. */
 .workflow-node {
   position: relative;
+  margin: 0;
   padding: 10px 14px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
   background: var(--color-panel-bg);
   min-width: 180px;
   font-size: 13px;
+}
+
+.workflow-node__operation-id {
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
 }
 
 .workflow-node__remove-btn {
@@ -410,8 +442,12 @@ body {
   border-color: rgba(249, 62, 62, 0.4);
 }
 
+/* border-width, not box-shadow — same reason as .operation-list__item:hover
+   above: box-shadow ignores the legend gap and draws straight through the
+   operationId text. */
 .workflow-node--selected {
-  box-shadow: 0 0 0 2px var(--color-focus);
+  border-color: var(--color-focus);
+  border-width: 2px;
 }
 
 .workflow-node__header {
