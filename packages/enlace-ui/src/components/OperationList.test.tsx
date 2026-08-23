@@ -55,4 +55,53 @@ describe('OperationList', () => {
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/operation-id', 'POST /pet');
   });
+
+  describe('search', () => {
+    const operations = [
+      makeOperation({ id: 'POST /pet', operationId: 'addPet' }),
+      makeOperation({ id: 'GET /pet/{id}', operationId: 'getPetById' }),
+      // No operationId at all — can never match a search, per the
+      // operationId-only scope of this first pass.
+      makeOperation({ id: 'DELETE /pet/{id}', operationId: undefined }),
+    ];
+
+    it('shows every operation when the search box is empty', () => {
+      render(<OperationList operations={operations} />);
+      expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    });
+
+    it('filters by a case-insensitive operationId substring', () => {
+      render(<OperationList operations={operations} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+        target: { value: 'PET' },
+      });
+
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+      expect(screen.getByText('addPet')).toBeInTheDocument();
+      expect(screen.getByText('getPetById')).toBeInTheDocument();
+    });
+
+    it('narrows further on a more specific query', () => {
+      render(<OperationList operations={operations} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+        target: { value: 'addPet' },
+      });
+
+      expect(screen.getAllByRole('listitem')).toHaveLength(1);
+      expect(screen.getByText('addPet')).toBeInTheDocument();
+    });
+
+    it('shows an empty-state message, not an empty list, when nothing matches', () => {
+      render(<OperationList operations={operations} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+        target: { value: 'nonexistent' },
+      });
+
+      expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+      expect(screen.getByText('No operations match "nonexistent".')).toBeInTheDocument();
+    });
+  });
 });
