@@ -21,6 +21,8 @@ export interface Operation {
   method: HttpMethod;
   path: string;
   summary?: string;
+  /** The spec's own `operationId` (e.g. "addPet"), when the spec declares one — not every operation has one. */
+  operationId?: string;
   parameters: OperationParameter[];
   requestBodySchema: Record<string, any> | null;
   responseSchema: Record<string, any> | null;

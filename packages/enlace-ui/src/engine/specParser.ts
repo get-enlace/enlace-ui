@@ -40,6 +40,7 @@ export function parseOperations(spec: Record<string, any>): Operation[] {
         method,
         path,
         summary: op.summary,
+        operationId: op.operationId,
         parameters,
         requestBodySchema,
         responseSchema,
