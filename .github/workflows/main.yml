@@ -1,22 +1,23 @@
-name: Build, Publish (dev), Tag
+name: Build, Publish, Tag, Notify Downstream
 
 on:
-  # Every merge to main publishes a new dev build + tag. Confirmed working
-  # first via manual workflow_dispatch runs (published 0.0.1-dev.1
-  # end-to-end) before going live here. workflow_dispatch is kept alongside
-  # push so a dev build can still be re-triggered on demand without an
-  # empty commit.
+  # Every merge to main runs the whole pipeline: deploy-dev always publishes
+  # a new dev build immediately; deploy-prod then queues behind it, gated by
+  # the production environment's required-reviewer approval — same pattern
+  # enlace-js/enlace-dotnet already use, no separate tag-push trigger.
   push:
     branches: [main]
-  workflow_dispatch: {}
 
 permissions:
   contents: write # push the git tag
   packages: write # publish to GitHub Packages
 
 jobs:
-  build-publish-tag:
+  deploy-dev:
     runs-on: ubuntu-latest
+    environment: development
+    outputs:
+      version: ${{ steps.version.outputs.dev_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,3 +66,134 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "v${{ steps.version.outputs.dev_version }}"
           git push origin "v${{ steps.version.outputs.dev_version }}"
+
+  # Requires deploy-dev to have succeeded first — prod never ships anything
+  # that hasn't just gone out as a dev build. Gated behind the Prod
+  # environment's required-reviewer approval: this job pauses here until
+  # someone approves it.
+  deploy-prod:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      version: ${{ steps.current.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@get-enlace'
+
+      - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Whatever's already committed in package.json is what gets
+      # published — semver bump type (patch/minor/major) is a human call,
+      # decided by editing packages/enlace-ui/package.json before this
+      # runs, not guessed by CI.
+      - name: Read current version
+        id: current
+        run: echo "version=$(node -p "require('./packages/enlace-ui/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # A dedicated setup-node call, pointed at npmjs.org instead of GitHub
+      # Packages — the documented way to publish to a different registry
+      # mid-job without disturbing whatever registry an earlier step used.
+      - name: Point npm at npmjs.org
+        uses: actions/setup-node@v4
+        with:
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish @get-enlace/ui to npmjs.org (prod)
+        # --access public: scoped packages (@get-enlace/...) default to
+        # restricted access on npmjs.org, which needs a paid org plan unless
+        # publish explicitly opts into public access.
+        run: npm publish --workspace @get-enlace/ui --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag the release
+        run: git tag "v${{ steps.current.outputs.version }}"
+
+      # Stages the next release as a patch bump on top of what was just
+      # published. Edit packages/enlace-ui/package.json by hand before the
+      # next prod release if it actually needs a bigger (minor/major) bump.
+      - name: Compute next patch version
+        id: next
+        run: |
+          next_version="$(node -e "
+            const [major, minor, patch] = '${{ steps.current.outputs.version }}'.split('.').map(Number);
+            console.log([major, minor, patch + 1].join('.'));
+          ")"
+          echo "version=$next_version" >> "$GITHUB_OUTPUT"
+
+      - name: Bump to next version
+        run: |
+          npm pkg set version="${{ steps.next.outputs.version }}" --workspace @get-enlace/ui
+          git add packages/enlace-ui/package.json
+
+      - name: Commit version bump
+        run: |
+          git commit -m "chore(enlace-ui): bump to ${{ steps.next.outputs.version }} after v${{ steps.current.outputs.version }} release"
+
+      - name: Push commit and tag
+        run: git push origin HEAD:main "v${{ steps.current.outputs.version }}"
+
+  # Fans out repository_dispatch: enlace-ui-release to every known
+  # downstream adapter repo (release-strategy.md §5/§6), so each can decide
+  # for itself whether it needs to do anything.
+  #
+  # Split into two independent jobs (dev/prod) rather than one job needing
+  # both deploy-dev and deploy-prod: deploy-prod can sit behind the
+  # required-reviewer approval for an arbitrary amount of time, and the dev
+  # notification shouldn't be stuck waiting on that. Each fires as soon as
+  # its own publish actually succeeds.
+  notify-downstream-dev:
+    needs: deploy-dev
+    if: needs.deploy-dev.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Add new adapter repos here as they come online — this is the
+        # entire subscriber list (release-strategy.md §6: no separate
+        # registry file yet, at this scale). enlace-java isn't listed yet
+        # since that repo doesn't exist.
+        repo: [enlace-js, enlace-dotnet]
+    steps:
+      - name: Notify ${{ matrix.repo }} (dev)
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CROSS_REPO_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/get-enlace/${{ matrix.repo }}/dispatches" \
+            -d '{"event_type":"enlace-ui-release","client_payload":{"ui-version":"${{ needs.deploy-dev.outputs.version }}","environment":"development"}}'
+
+  notify-downstream-prod:
+    needs: deploy-prod
+    if: needs.deploy-prod.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo: [enlace-js, enlace-dotnet]
+    steps:
+      - name: Notify ${{ matrix.repo }} (prod)
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CROSS_REPO_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/get-enlace/${{ matrix.repo }}/dispatches" \
+            -d '{"event_type":"enlace-ui-release","client_payload":{"ui-version":"${{ needs.deploy-prod.outputs.version }}","environment":"production"}}'
