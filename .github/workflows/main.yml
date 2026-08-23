@@ -1,12 +1,13 @@
 name: Build, Publish (dev), Tag
 
 on:
-  # Deliberately not auto-triggered on push to main yet — this whole
-  # workflow (publish + tag) is built and ready, but staying manual-only
-  # (workflow_dispatch) until we're ready to actually start publishing dev
-  # builds. To go live: replace this with
-  #   push:
-  #     branches: [main]
+  # Every merge to main publishes a new dev build + tag. Confirmed working
+  # first via manual workflow_dispatch runs (published 0.0.1-dev.1
+  # end-to-end) before going live here. workflow_dispatch is kept alongside
+  # push so a dev build can still be re-triggered on demand without an
+  # empty commit.
+  push:
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
