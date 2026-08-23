@@ -509,6 +509,7 @@ body {
 
 .node-inspector__field-row select,
 .node-inspector__field-row input,
+.node-inspector__field-row textarea,
 .node-inspector label select {
   flex: 1;
   min-width: 0;
@@ -521,8 +522,15 @@ body {
   color: var(--color-text);
 }
 
+/* JSON is more readable monospaced — array fields are the only textarea. */
+.node-inspector__field-row textarea {
+  font-family: var(--font-mono);
+  resize: vertical;
+}
+
 .node-inspector__field-row select:focus,
-.node-inspector__field-row input:focus {
+.node-inspector__field-row input:focus,
+.node-inspector__field-row textarea:focus {
   outline: none;
   border-color: var(--color-focus);
   box-shadow: 0 0 0 1px var(--color-focus);

@@ -18,5 +18,14 @@ export function coerceStaticValue(raw: string, schemaType: string | undefined): 
     return raw;
   }
 
+  if (schemaType === 'array') {
+    if (raw.trim() === '') return raw;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw; // keep the raw text while it's invalid/mid-typing, same fallback as the numeric branch above
+    }
+  }
+
   return raw;
 }

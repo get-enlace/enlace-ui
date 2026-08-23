@@ -24,4 +24,17 @@ describe('coerceStaticValue', () => {
     expect(coerceStaticValue('Widget', 'string')).toBe('Widget');
     expect(coerceStaticValue('Widget', undefined)).toBe('Widget');
   });
+
+  it('parses array fields as JSON', () => {
+    expect(coerceStaticValue('["a","b"]', 'array')).toEqual(['a', 'b']);
+    expect(coerceStaticValue('[{"id":1,"name":"cat"}]', 'array')).toEqual([{ id: 1, name: 'cat' }]);
+  });
+
+  it('leaves a blank array field as an empty string so required-validation still sees it as unset', () => {
+    expect(coerceStaticValue('', 'array')).toBe('');
+  });
+
+  it('falls back to the raw string for invalid/mid-typing JSON in an array field', () => {
+    expect(coerceStaticValue('[{"id":1', 'array')).toBe('[{"id":1');
+  });
 });
