@@ -296,6 +296,15 @@ body {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text);
+  /* Flex items refuse to shrink below their content's intrinsic width by
+     default (min-width: auto) — without this, a long path (e.g.
+     "/pet/{petId}/uploadImage") just overflows past the sidebar's own
+     overflow-x: hidden with no ellipsis, clipping mid-word instead of
+     truncating cleanly. Same pattern as .debug-step__url below. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* --- Canvas + workflow node cards --- */
