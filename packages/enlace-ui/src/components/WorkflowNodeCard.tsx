@@ -14,7 +14,11 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
   const method = operation?.method ?? 'get';
 
   return (
-    <div className={`workflow-node workflow-node--${method}${selected ? ' workflow-node--selected' : ''}`}>
+    // A real <fieldset>/<legend> — same as OperationList's cards — so the
+    // browser cuts the operationId's gap in the top border itself, rather
+    // than us hand-positioning a label over it.
+    <fieldset className={`workflow-node workflow-node--${method}${selected ? ' workflow-node--selected' : ''}`}>
+      {operation?.operationId && <legend className="workflow-node__operation-id">{operation.operationId}</legend>}
       {/* Drag from one box's right handle to another's left handle to
           establish execution ORDER (a WorkflowConnection) — separate from
           field mapping (data source), which stays in the Node Inspector's
@@ -41,6 +45,6 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
       </div>
       {operation?.summary && <div className="workflow-node__summary">{operation.summary}</div>}
       <Handle type="source" position={Position.Right} title="Drag to connect — sets run order, not data" />
-    </div>
+    </fieldset>
   );
 }
