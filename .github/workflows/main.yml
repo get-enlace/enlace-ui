@@ -119,10 +119,18 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish @get-enlace/ui to npmjs.org (prod)
+        # --registry explicitly, not just setup-node's registry-url above:
+        # packages/enlace-ui/package.json's own publishConfig.registry
+        # points at GitHub Packages (needed so the dev job's plain `npm
+        # publish` defaults there) — publishConfig takes precedence over
+        # setup-node's registry-url, so without this flag `npm publish`
+        # silently tried GitHub Packages here too and failed with a 401
+        # (NPM_TOKEN isn't valid there). --registry on the command line is
+        # the one thing that overrides publishConfig.
         # --access public: scoped packages (@get-enlace/...) default to
         # restricted access on npmjs.org, which needs a paid org plan unless
         # publish explicitly opts into public access.
-        run: npm publish --workspace @get-enlace/ui --access public
+        run: npm publish --workspace @get-enlace/ui --registry https://registry.npmjs.org --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
