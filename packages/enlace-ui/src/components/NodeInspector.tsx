@@ -117,15 +117,35 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
                 }}
               >
                 <option value="static">Static value</option>
-                <option value="mapped" disabled={ancestorNodes.length === 0}>
-                  Map from...
+                <option value="mapped" disabled={ancestorNodes.length === 0 || field.staticOnly}>
+                  Map from...{field.staticOnly ? ' (not yet supported for this field)' : ''}
                 </option>
               </select>
             </div>
 
             {!isMapped && (
               <div className="node-inspector__field-row">
-                {field.enum ? (
+                {field.type === 'array' ? (
+                  <textarea
+                    rows={3}
+                    disabled={disabled}
+                    placeholder={field.reason}
+                    title={field.reason}
+                    value={
+                      fieldValue?.source === 'static'
+                        ? typeof fieldValue.value === 'string'
+                          ? fieldValue.value
+                          : JSON.stringify(fieldValue.value, null, 2)
+                        : ''
+                    }
+                    onChange={(e) =>
+                      setFieldValue(node.id, field.path, {
+                        source: 'static',
+                        value: coerceStaticValue(e.target.value, field.type),
+                      })
+                    }
+                  />
+                ) : field.enum ? (
                   <select
                     disabled={disabled}
                     value={fieldValue?.source === 'static' ? String(fieldValue.value ?? '') : ''}
