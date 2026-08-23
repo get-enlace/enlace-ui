@@ -51,4 +51,92 @@ describe('parseOperations', () => {
     const createProduct = operations.find((o) => o.id === 'POST /products')!;
     expect(createProduct.requestBodySchema?.required).toEqual(['name', 'price']);
   });
+
+  // Regression test: examples/sample-api's spec always inlines schemas, so
+  // the fixture-based test above never exercises $ref — which is how most
+  // real-world OpenAPI docs (e.g. the Swagger Petstore demo) actually
+  // define reusable schemas under components.schemas.
+  it('resolves $ref pointers into components.schemas, including nested refs', () => {
+    const spec = {
+      paths: {
+        '/pet': {
+          post: {
+            requestBody: {
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Pet' } },
+              },
+            },
+            responses: {
+              '200': {
+                content: {
+                  'application/json': { schema: { $ref: '#/components/schemas/Pet' } },
+                },
+              },
+            },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          Pet: {
+            type: 'object',
+            required: ['name'],
+            properties: {
+              name: { type: 'string' },
+              category: { $ref: '#/components/schemas/Category' },
+            },
+          },
+          Category: {
+            type: 'object',
+            properties: { id: { type: 'integer' } },
+          },
+        },
+      },
+    };
+
+    const [createPet] = parseOperations(spec);
+
+    // category's own $ref resolves too, not just the top-level one — so
+    // this is the fully-resolved Pet, not the raw (still-$ref'd) fixture.
+    const resolvedPet = {
+      ...spec.components.schemas.Pet,
+      properties: { ...spec.components.schemas.Pet.properties, category: spec.components.schemas.Category },
+    };
+
+    expect(createPet.requestBodySchema).toEqual(resolvedPet);
+    expect(createPet.requestBodySchema?.properties.category).toEqual(spec.components.schemas.Category);
+    expect(createPet.responseSchema).toEqual(resolvedPet);
+  });
+
+  it('resolves a circular $ref to an empty object instead of recursing forever', () => {
+    const spec = {
+      paths: {
+        '/node': {
+          post: {
+            requestBody: {
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/TreeNode' } },
+              },
+            },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          TreeNode: {
+            type: 'object',
+            properties: {
+              value: { type: 'string' },
+              parent: { $ref: '#/components/schemas/TreeNode' },
+            },
+          },
+        },
+      },
+    };
+
+    const [createNode] = parseOperations(spec);
+
+    expect(createNode.requestBodySchema?.properties.value).toEqual({ type: 'string' });
+    expect(createNode.requestBodySchema?.properties.parent).toEqual({});
+  });
 });
