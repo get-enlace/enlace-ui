@@ -118,3 +118,21 @@ export function flattenRequestFields(operation: Operation): SchemaField[] {
 export function flattenResponseFields(operation: Operation): SchemaField[] {
   return flattenObjectSchema(operation.responseSchema, '');
 }
+
+/**
+ * Whether a "Map from..." source field's type is safe to wire into a
+ * target field's type — e.g. a string field mapped from an array source
+ * (`status <- photoUrls`) would silently produce a broken request, since
+ * resolveFieldValue (chainExecutor.ts) copies the mapped value through
+ * completely untyped, with no coercion or validation at request-build
+ * time. integer/number are treated as interchangeable (OpenAPI docs are
+ * inconsistent about which to use for the same numeric concept); an
+ * unknown type on either side can't be ruled out, so it's allowed through
+ * rather than blocked.
+ */
+export function areFieldTypesCompatible(targetType: string | undefined, sourceType: string | undefined): boolean {
+  if (!targetType || !sourceType) return true;
+  if (targetType === sourceType) return true;
+  const numeric = new Set(['integer', 'number']);
+  return numeric.has(targetType) && numeric.has(sourceType);
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { flattenRequestFields } from './flattenSchema.js';
+import { areFieldTypesCompatible, flattenRequestFields } from './flattenSchema.js';
 import type { Operation } from '../types.js';
 
 function makeOperation(overrides: Partial<Operation>): Operation {
@@ -163,5 +163,25 @@ describe('flattenRequestFields', () => {
 
     expect(value.supported).toBe(false);
     expect(value.reason).toBeTruthy();
+  });
+});
+
+describe('areFieldTypesCompatible', () => {
+  it('rejects a clear mismatch, e.g. a string field mapped from an array source', () => {
+    expect(areFieldTypesCompatible('string', 'array')).toBe(false);
+  });
+
+  it('accepts an exact match', () => {
+    expect(areFieldTypesCompatible('string', 'string')).toBe(true);
+  });
+
+  it('treats integer and number as interchangeable', () => {
+    expect(areFieldTypesCompatible('integer', 'number')).toBe(true);
+    expect(areFieldTypesCompatible('number', 'integer')).toBe(true);
+  });
+
+  it('allows it through when either side has no known type — can\'t rule it out', () => {
+    expect(areFieldTypesCompatible(undefined, 'array')).toBe(true);
+    expect(areFieldTypesCompatible('string', undefined)).toBe(true);
   });
 });
