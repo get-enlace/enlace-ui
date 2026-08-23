@@ -9,6 +9,8 @@ export interface SchemaField {
   reason?: string;
   /** JSON-schema `type` of a scalar field (e.g. "integer", "boolean") — used to coerce static input values. */
   type?: string;
+  /** JSON-schema `enum` values, when the field's schema declares one (inlined or resolved from a $ref by specParser.ts) — renders as a dropdown instead of free text. */
+  enum?: unknown[];
 }
 
 const UNSUPPORTED_REASON = 'Nested/array field mapping not supported in POC.';
@@ -40,6 +42,7 @@ function flattenObjectSchema(schema: Record<string, any> | null | undefined, pre
       supported: !nested,
       reason: nested ? UNSUPPORTED_REASON : undefined,
       type: nested ? undefined : propSchema?.type,
+      enum: nested ? undefined : propSchema?.enum,
     });
 
     if (nested && propSchema.type !== 'array' && propSchema.properties) {
@@ -59,6 +62,7 @@ export function flattenRequestFields(operation: Operation): SchemaField[] {
     required: p.required,
     supported: true,
     type: p.schema?.type,
+    enum: p.schema?.enum,
   }));
 
   return [...paramFields, ...flattenObjectSchema(operation.requestBodySchema, 'body')];
