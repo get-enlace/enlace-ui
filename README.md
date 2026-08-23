@@ -74,37 +74,9 @@ order) needs data from **A and C, not B**.
 6. On D: set `body.customerId` to "Map from..." → A → `id`, and `body.productId` to "Map from..." → C → `id`; give `qty` a static value.
 7. Click **Run**. All 4 calls come back green, in the order A, B, C, D — but B and C actually fire concurrently (see `computeExecutionLevels` in `packages/enlace-ui/src/engine/chainExecutor.ts`).
 
-## Development
-
-```bash
-npm install
-
-npm start        # sample API + adapter + canvas, one process
-                  # -> http://localhost:4000/enlace
-                  # -> http://localhost:4000/api-docs (the sample API's own Swagger UI)
-
-npm run dev --workspace @get-enlace/ui   # canvas with hot reload, for iterating on the UI itself
-                                           # -> http://localhost:5173
-
-npm test              # unit tests (mocked fetch, no real server)
-npm run test:e2e       # real HTTP e2e tests against examples/sample-api's enlace.ts
-npm run test:e2e-ui    # Playwright smoke test (needs `npx playwright install --with-deps chromium` once)
-npm run typecheck
-npm run build          # builds enlace-ui (vite)
-```
-
-`npm start`'s `predev` hook builds `@get-enlace/ui`'s bundle automatically
-on first run if it's missing; run `npm run build:ui` manually after editing
-canvas code outside the hot-reload dev server.
-
-## CI
-
-- **`.github/workflows/pr.yml`** — every PR: typecheck, unit tests, the
-  real e2e suite, and the Playwright smoke test.
-- **`.github/workflows/main.yml`** — builds and publishes dev builds to
-  GitHub Packages, tagging each one it publishes.
-
 ## Learn more
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — how Enlace is designed and why.
 - [`ROADMAP.md`](ROADMAP.md) — what's planned next.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — local development setup, test
+  commands, and how CI/CD works.
