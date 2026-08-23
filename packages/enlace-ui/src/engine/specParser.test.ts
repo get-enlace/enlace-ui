@@ -129,7 +129,7 @@ describe('parseOperations', () => {
           post: { operationId: 'addPet', responses: {} },
         },
         '/pet/{petId}': {
-          get: { responses: {} }, // no operationId — sample-api's own spec never sets one either
+          get: { responses: {} }, // no operationId — a real spec doesn't have to declare one on every operation
         },
       },
     };
