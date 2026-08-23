@@ -117,8 +117,8 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
                 }}
               >
                 <option value="static">Static value</option>
-                <option value="mapped" disabled={ancestorNodes.length === 0 || field.staticOnly}>
-                  Map from...{field.staticOnly ? ' (not yet supported for this field)' : ''}
+                <option value="mapped" disabled={ancestorNodes.length === 0}>
+                  Map from...
                 </option>
               </select>
             </div>
