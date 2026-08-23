@@ -108,6 +108,24 @@ describe('parseOperations', () => {
     expect(createPet.responseSchema).toEqual(resolvedPet);
   });
 
+  it('carries operationId through when the spec declares one, omits it otherwise', () => {
+    const spec = {
+      paths: {
+        '/pet': {
+          post: { operationId: 'addPet', responses: {} },
+        },
+        '/pet/{petId}': {
+          get: { responses: {} }, // no operationId — sample-api's own spec never sets one either
+        },
+      },
+    };
+
+    const [addPet, getPet] = parseOperations(spec);
+
+    expect(addPet.operationId).toBe('addPet');
+    expect(getPet.operationId).toBeUndefined();
+  });
+
   it('resolves a circular $ref to an empty object instead of recursing forever', () => {
     const spec = {
       paths: {
