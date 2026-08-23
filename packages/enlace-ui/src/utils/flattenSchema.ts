@@ -11,8 +11,6 @@ export interface SchemaField {
   type?: string;
   /** JSON-schema `enum` values, when the field's schema declares one (inlined or resolved from a $ref by specParser.ts) — renders as a dropdown instead of free text. */
   enum?: unknown[];
-  /** When true, only "Static value" is offered for this field — "Map from..." stays off for now. Set for array fields (edited as one JSON-literal value, no per-item mapping picker yet). Doesn't affect this field's own eligibility as a map-from *source* elsewhere — flattenResponseFields' picker is governed by `supported`, not this. */
-  staticOnly?: boolean;
 }
 
 const UNKNOWN_SHAPE_REASON = 'Unrecognized schema shape (e.g. oneOf/anyOf/allOf) — not supported yet.';
@@ -61,7 +59,6 @@ function arrayField(path: string, required: boolean, schema: Record<string, any>
     path,
     required,
     supported: true,
-    staticOnly: true,
     type: 'array',
     reason: describeArrayExample(schema.items),
   };
