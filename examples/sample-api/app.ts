@@ -7,7 +7,7 @@ import express, { Router } from 'express';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { enlace } from '@get-enlace/express';
+import { enlace } from './enlace.js';
 import { customersRouter } from './customers.js';
 import { productsRouter } from './products.js';
 import { ordersRouter } from './orders.js';
@@ -35,7 +35,8 @@ export function createApp() {
 
   // The API under test — what the canvas's client-side chain execution
   // will actually call, directly from the browser (no server-side executor
-  // in this adapter at all — see @get-enlace/express).
+  // in this adapter at all — see enlace.ts, a local copy of
+  // @get-enlace/express's mount function; see ROADMAP.md).
   app.use(sampleApiRouter);
 
   // The Enlace canvas. Enlace only needs a valid OpenAPI document — it has

@@ -35,41 +35,22 @@ jobs:
       - run: npm test
       - run: npm run build
 
-      # This repo produces two packages, @get-enlace/ui and
-      # @get-enlace/express, both publishable now (no longer the now-stale
-      # "which package(s) to publish" question this comment used to flag —
-      # both are). They're versioned in lockstep: @get-enlace/express
-      # depends on an *exact* version of @get-enlace/ui, so both must land
-      # on the same dev version together, computed once from @get-enlace/ui
-      # as the source of truth.
+      # This repo now produces a single package, @get-enlace/ui — the
+      # Express adapter (@get-enlace/express) moved to its own repo
+      # (github.com/get-enlace/enlace-js), which has its own dev-publish
+      # workflow, so there's nothing to keep in lockstep here anymore.
       - name: Compute dev build version
         id: version
         run: echo "dev_version=$(node -p "require('./packages/enlace-ui/package.json').version")-dev.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
-      # Pure JSON edits (`npm pkg set`), not `npm version`: `npm version`
-      # doesn't propagate a workspace's new version into other workspaces
-      # that depend on it, and it additionally tries a registry lookup that
-      # fails here, since this scope only resolves against GitHub Packages,
-      # not the public npm registry.
-      - name: Bump both packages to the dev version
-        run: |
-          npm pkg set version=${{ steps.version.outputs.dev_version }} --workspace @get-enlace/ui
-          npm pkg set dependencies.@get-enlace/ui=${{ steps.version.outputs.dev_version }} --workspace @get-enlace/express
-          npm pkg set version=${{ steps.version.outputs.dev_version }} --workspace @get-enlace/express
+      - name: Bump to the dev version
+        run: npm pkg set version=${{ steps.version.outputs.dev_version }} --workspace @get-enlace/ui
 
-      # @get-enlace/ui first — @get-enlace/express's manifest now points at
-      # this exact dev version, so it must exist on the registry before
-      # @get-enlace/express is published.
+      # Publish must succeed before the tag is ever created — if it fails,
+      # the job stops here (GitHub Actions' default: a failed step halts
+      # the job), so the tag-push step below never runs.
       - name: Publish @get-enlace/ui to GitHub Packages (dev dist-tag)
         run: npm publish --workspace @get-enlace/ui --tag dev
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Publish must succeed before the tag is ever created — if either
-      # publish step fails, the job stops here (GitHub Actions' default: a
-      # failed step halts the job), so the tag-push step below never runs.
-      - name: Publish @get-enlace/express to GitHub Packages (dev dist-tag)
-        run: npm publish --workspace @get-enlace/express --tag dev
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
