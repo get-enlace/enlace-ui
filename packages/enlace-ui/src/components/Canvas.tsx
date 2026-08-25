@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -9,6 +9,7 @@ import ReactFlow, {
   type Edge,
   type Node,
   type NodeChange,
+  type Viewport,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useWorkflowStore } from '../store/workflowStore.js';
@@ -40,7 +41,24 @@ function CanvasInner() {
     connectNodes,
     removeNode,
   } = useWorkflowStore();
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView, getViewport } = useReactFlow();
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const prevNodeCountRef = useRef(nodes.length);
+
+  // Handles live inside the zoomed viewport, so their hit target shrinks
+  // right along with the canvas — at the 0.5 minZoom floor the connect
+  // gesture from card-cluttered zoom-out targets a couple of screen
+  // pixels. Mirror the current zoom onto a CSS var so .react-flow__handle
+  // (styles.css) can counter-scale its hit area back to a constant,
+  // grabbable screen size at any zoom level, not just a fixed fraction
+  // bigger.
+  const setZoomVar = useCallback((viewport: Viewport) => {
+    wrapperRef.current?.style.setProperty('--rf-zoom', String(viewport.zoom));
+  }, []);
+
+  useEffect(() => {
+    setZoomVar(getViewport());
+  }, [getViewport, setZoomVar]);
 
   const flowNodes: Node<WorkflowNodeData>[] = useMemo(
     () =>
@@ -130,8 +148,53 @@ function CanvasInner() {
     [updateNodePosition, removeNode]
   );
 
+  // Two things can otherwise leave a card fully or partially clipped with
+  // no visual cue it still exists: dropping a new node past the edge of a
+  // canvas that's grown cluttered, or the canvas's own container shrinking
+  // (e.g. the inspector panel expanding) around nodes that were fine a
+  // moment ago. React Flow's `fitView` prop only runs once, on mount, so
+  // neither case re-frames the viewport on its own — check node DOM rects
+  // against the wrapper's on both triggers and zoom out to refit only when
+  // something's actually out of view, so a deliberate manual zoom/pan
+  // isn't fought while everything still fits.
+  const refitIfNeeded = useCallback(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper || nodes.length === 0) return;
+    const bounds = wrapper.getBoundingClientRect();
+    const nodeEls = wrapper.querySelectorAll<HTMLElement>('.react-flow__node');
+    const outOfView = [...nodeEls].some((el) => {
+      const r = el.getBoundingClientRect();
+      return r.left < bounds.left || r.top < bounds.top || r.right > bounds.right || r.bottom > bounds.bottom;
+    });
+    if (outOfView) fitView({ padding: 0.2, duration: 300 });
+  }, [nodes.length, fitView]);
+
+  useEffect(() => {
+    if (prevNodeCountRef.current === nodes.length) return;
+    prevNodeCountRef.current = nodes.length;
+    // Wait a frame so React Flow has measured the new node's DOM rect
+    // before we check it.
+    const raf = requestAnimationFrame(refitIfNeeded);
+    return () => cancelAnimationFrame(raf);
+  }, [nodes.length, refitIfNeeded]);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    let raf = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(refitIfNeeded);
+    });
+    observer.observe(wrapper);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, [refitIfNeeded]);
+
   return (
-    <div className="canvas" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+    <div className="canvas" ref={wrapperRef} onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
@@ -140,7 +203,9 @@ function CanvasInner() {
         onPaneClick={() => selectNode(null)}
         onConnect={onConnect}
         onNodesChange={onNodesChange}
+        onMove={(_, viewport) => setZoomVar(viewport)}
         fitView
+        fitViewOptions={{ padding: 0.2 }}
       >
         <Background color="#3a3d42" gap={16} />
         <Controls />

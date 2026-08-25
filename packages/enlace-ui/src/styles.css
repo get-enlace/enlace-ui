@@ -387,11 +387,34 @@ body {
   background: var(--color-topbar-bg);
 }
 
-/* Handles are anchors for auto-drawn mapping edges, not user-draggable
-   (isConnectable=false) — no grab cursor, so they don't invite a
-   drag-connect gesture that has no effect. */
+/* Handles are the drag targets for user-drawn order connections (see
+   WorkflowNodeCard.tsx's comment on Handle) — they're genuinely
+   connectable, so React Flow already gives them `cursor: crosshair` by
+   default; make that explicit under .canvas rather than relying on load
+   order against reactflow/dist/style.css.
+   The real problem is the hit target itself: it lives inside React
+   Flow's zoomed viewport, so React Flow's 6px default dot shrinks right
+   along with the canvas — at the 0.5 minZoom floor a cluttered canvas's
+   auto-fit (Canvas.tsx) can reach, that's a couple of screen pixels, and
+   almost every attempt lands on the pane instead and shows a grab
+   cursor. A ::after pseudo-element expands the actual clickable area,
+   using scale(calc(1 / var(--rf-zoom))) (mirrored from the live viewport
+   zoom by Canvas.tsx's onMove) to counteract the ancestor scaling so it
+   stays a constant, grabbable ~20px on screen at any zoom level instead
+   of just a fixed fraction bigger. */
 .canvas .react-flow__handle {
-  cursor: default;
+  cursor: crosshair;
+}
+
+.canvas .react-flow__handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%) scale(calc(1 / var(--rf-zoom, 1)));
+  border-radius: 50%;
 }
 
 /* .workflow-node is a <fieldset> now (see WorkflowNodeCard.tsx) — reset the
@@ -405,6 +428,7 @@ body {
   border-radius: 4px;
   background: var(--color-panel-bg);
   min-width: 180px;
+  max-width: 280px;
   font-size: 13px;
 }
 
@@ -480,12 +504,21 @@ body {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 
+/* Long OpenAPI descriptions would otherwise stretch the node to fit a
+   single line (fieldset had no max-width) — clamp to 2 lines instead and
+   rely on the title attr (see WorkflowNodeCard.tsx) for the full text. */
 .workflow-node__summary {
   color: var(--color-text-muted);
   font-size: 12px;
   margin-top: 4px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
 }
 
 /* --- Node inspector --- */
