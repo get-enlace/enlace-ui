@@ -286,6 +286,63 @@ describe('executeChain', () => {
     expect(url).toBe('http://example.test/noop?apiKey=secret-key');
   });
 
+  it('sets credentials: "include" on the actual fetch() call for a popup_login/cookie credential, with no headers/query injected', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const credentialsById = new Map<string, Credential>([
+      [
+        'cred-1',
+        { id: 'cred-1', name: 'Test', type: 'popup_login', loginUrl: 'https://app.test/auth/github', responseType: 'cookie' },
+      ],
+    ]);
+
+    await executeChain(
+      { nodes: [a], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.credentials).toBe('include');
+    expect(init.headers.Authorization).toBeUndefined();
+  });
+
+  it('leaves fetch()\'s credentials option unset (its own default) for a node with no credential, or a non-cookie one', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+
+    await executeChain(
+      { nodes: [a], connections: [] },
+      new Map([['GET /noop', noop]]),
+      new Map<string, Credential>(),
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.credentials).toBeUndefined();
+  });
+
   it('fetches an oauth2 password-grant token and sends it as a Bearer header', async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === 'http://auth.test/token') {

@@ -23,10 +23,10 @@ export interface DeclaredCredential {
 
 /**
  * Extracts one entry per supported `components.securitySchemes` declaration.
- * A scheme this phase doesn't support yet (apiKey-in-cookie, oauth2
- * authorizationCode/implicit, openIdConnect, mutualTLS) is silently
- * skipped — not an error, since arbitrary manual creation covers it
- * regardless (see auth-strategy.md §4).
+ * A scheme this phase doesn't support yet (oauth2 authorizationCode/
+ * implicit, openIdConnect, mutualTLS) is silently skipped — not an error,
+ * since arbitrary manual creation covers it regardless (see
+ * auth-strategy.md §4).
  */
 export function extractDeclaredCredentials(spec: Record<string, any>): DeclaredCredential[] {
   const schemes = spec?.components?.securitySchemes ?? {};
@@ -58,6 +58,25 @@ function toCredentialTemplate(schemeName: string, scheme: any): NewCredential | 
       paramName: scheme.name ?? '',
       in: scheme.in,
       key: '',
+    });
+  }
+
+  // apiKey-in-cookie — OpenAPI's own way of declaring "there's a cookie
+  // named X" (e.g. NestJS's DocumentBuilder.addCookieAuth()), but the
+  // scheme itself never says how that cookie gets set, so there's no
+  // tokenUrl/loginUrl to pre-fill the way every other scheme's structural
+  // fields get pre-filled — the user still has to supply the login page.
+  // Mapped to popup_login/cookie regardless, since that's the only
+  // credential type this scheme could ever mean: `Cookie` can't be
+  // injected as a header (see engine/credentials.ts), so there is no
+  // apiKey-shaped equivalent for `in: 'cookie'` the way there is for
+  // header/query above.
+  if (scheme.type === 'apiKey' && scheme.in === 'cookie') {
+    return withSource(schemeName, {
+      name: schemeName,
+      type: 'popup_login',
+      loginUrl: '',
+      responseType: 'cookie',
     });
   }
 

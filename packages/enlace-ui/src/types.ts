@@ -63,13 +63,26 @@ export interface Workflow {
   connections: WorkflowConnection[];
 }
 
-// Phase 1 added bearer/basic/apiKey/oauth2_clientCredentials — the types
-// needing no browser redirect/popup. This phase adds oauth2_password
-// (still no redirect, just a second, deprecated-but-pragmatic grant type —
-// see OAuth2PasswordCredential below). OAuth2 authorizationCode (needs an
-// actual redirect/popup + callback route) and the Cookie type remain a
-// later phase — see auth-strategy.md at the workspace root.
-export type CredentialType = 'bearer' | 'basic' | 'apiKey' | 'oauth2_clientCredentials' | 'oauth2_password';
+// Phase 1 added bearer/basic/apiKey/oauth2_clientCredentials/oauth2_password
+// — every type resolvable from a plain fetch(), no browser navigation
+// needed. `popup_login` is the one type that DOES need a real interactive
+// browser window: login driven by a third-party identity provider (GitHub,
+// Google, SSO, MFA — anything requiring a human to click through pages on
+// another origin) can never be completed by a fetch()-driven node — CORS,
+// consent screens, and registered-redirect-URI mismatches make that
+// impossible regardless of what the login produces. See PopupLoginCredential
+// below for what Enlace can and can't do once the popup closes.
+//
+// Full OAuth2 `authorizationCode` support (Enlace owning a registered
+// callback route to capture a code/token itself, then exchanging a code
+// for a token) remains a later phase — see ROADMAP.md.
+export type CredentialType =
+  | 'bearer'
+  | 'basic'
+  | 'apiKey'
+  | 'oauth2_clientCredentials'
+  | 'oauth2_password'
+  | 'popup_login';
 
 interface CredentialBase {
   id: string;
@@ -142,6 +155,53 @@ export interface OAuth2PasswordCredential extends CredentialBase {
   scope?: string;
 }
 
+interface PopupLoginBase extends CredentialBase {
+  type: 'popup_login';
+  /**
+   * Opened in a real browser popup (`window.open`) for the user to
+   * complete login themselves, on the target's own origin — Enlace never
+   * drives or inspects that navigation. Shown both when configuring the
+   * credential and afterward on its saved card, since a session is
+   * something the user may need to re-establish later (cookies expire),
+   * not just once at creation time.
+   */
+  loginUrl: string;
+}
+
+/**
+ * The target sets a session cookie as a side effect of completing login in
+ * the popup — nothing else to configure. `Cookie` is a forbidden fetch()
+ * request header (see engine/credentials.ts), so there is no way for
+ * Enlace to explicitly attach a cookie itself, ever, for any credential
+ * type — the browser's own cookie jar is the only thing that can do that,
+ * automatically, once `chainExecutor.ts` sets `credentials: 'include'` on
+ * the actual request. This is the one credential type carrying no secret
+ * value at all in its own state.
+ */
+export interface PopupLoginCookieCredential extends PopupLoginBase {
+  responseType: 'cookie';
+}
+
+/**
+ * The login flow hands back a token some other way — shown on a page,
+ * visible in devtools, or wherever the target surfaces it — that the user
+ * pastes in manually after completing login in the popup. From there it's
+ * mechanically identical to an `apiKey` credential (header or query,
+ * configurable name); the only difference is how the value was obtained.
+ * There is deliberately no automatic capture of a token embedded in the
+ * popup's own redirect URL — that requires Enlace to own a registered
+ * callback route, which is full `authorizationCode`-grant territory (see
+ * ROADMAP.md), not this type.
+ */
+export interface PopupLoginTokenCredential extends PopupLoginBase {
+  responseType: 'token';
+  token: string;
+  paramName: string;
+  in: 'header' | 'query';
+}
+
+export type PopupLoginCredential = PopupLoginCookieCredential | PopupLoginTokenCredential;
+
 /**
  * Held entirely in browser memory (the store, not persisted) — the secret
  * values never leave the tab except as headers/query params on the actual
@@ -153,7 +213,8 @@ export type Credential =
   | BasicCredential
   | ApiKeyCredential
   | OAuth2ClientCredentialsCredential
-  | OAuth2PasswordCredential;
+  | OAuth2PasswordCredential
+  | PopupLoginCredential;
 
 // Omit doesn't distribute over a union on its own (it'd collapse to the
 // intersection of keys) — this does, so NewCredential stays a proper union
@@ -175,6 +236,14 @@ export interface RunStepRequest {
    * request — only to redact the copy shown in the UI.
    */
   redactQueryParams?: string[];
+  /**
+   * Set to `'include'` when the node's credential is a
+   * `popup_login`/`cookie` type — see engine/chainExecutor.ts. Shown as-is
+   * in the debug pane (not a secret; there's nothing to redact) so it's
+   * visible *why* a cookie-based call succeeded or failed, since nothing
+   * else about the request reveals that a cookie was expected at all.
+   */
+  credentials?: 'include';
 }
 
 export interface RunStepResponse {

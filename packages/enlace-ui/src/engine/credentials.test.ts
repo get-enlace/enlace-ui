@@ -221,4 +221,43 @@ describe('resolveCredentialInjection', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('resolves popup_login/cookie to credentials: "include", with no headers or query params at all', async () => {
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'popup_login',
+      loginUrl: 'https://app.example.com/auth/github',
+      responseType: 'cookie',
+    };
+    expect(await resolveCredentialInjection(credential)).toEqual({ credentials: 'include' });
+  });
+
+  it('resolves popup_login/token to a header when in="header", same shape as apiKey', async () => {
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'popup_login',
+      loginUrl: 'https://app.example.com/auth/github',
+      responseType: 'token',
+      token: 'pasted-token',
+      paramName: 'Authorization',
+      in: 'header',
+    };
+    expect(await resolveCredentialInjection(credential)).toEqual({ headers: { Authorization: 'pasted-token' } });
+  });
+
+  it('resolves popup_login/token to a query param when in="query"', async () => {
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'popup_login',
+      loginUrl: 'https://app.example.com/auth/github',
+      responseType: 'token',
+      token: 'pasted-token',
+      paramName: 'access_token',
+      in: 'query',
+    };
+    expect(await resolveCredentialInjection(credential)).toEqual({ query: { access_token: 'pasted-token' } });
+  });
 });

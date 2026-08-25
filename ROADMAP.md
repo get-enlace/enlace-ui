@@ -23,16 +23,30 @@ dev-publish workflow. Planned:
 
 ## More credential types
 
-`bearer`, `basic`, `apiKey`, and OAuth2 `clientCredentials`/`password`
-today, plus reading what the spec itself declares: a loaded spec's
-`components.securitySchemes` populates the Credentials drawer's "Declared
-in spec" list with ready-to-configure templates, pre-filling everything
-but the secret value(s) (clearly marked as spec-derived, both at
-configuration time and afterward on the saved credential's card).
-Remaining, later phases:
-OAuth2 `authorizationCode` (needs a browser redirect/popup + callback
-route) and the Cookie type — both need actual interactive/browser-session
-handling, unlike everything else here.
+`bearer`, `basic`, `apiKey`, OAuth2 `clientCredentials`/`password`, and
+`popup_login` today, plus reading what the spec itself declares: a loaded
+spec's `components.securitySchemes` populates the Credentials drawer's
+"Declared in spec" list with ready-to-configure templates, pre-filling
+everything but the secret value(s) (clearly marked as spec-derived, both
+at configuration time and afterward on the saved credential's card) —
+including `apiKey`-in-`cookie` schemes, mapped to `popup_login`/`cookie`.
+
+`popup_login` covers third-party-IdP-driven login (GitHub, Google, SSO,
+MFA — anything requiring a human to click through pages on another
+origin), which no fetch()-driven node can complete itself: the user logs
+in for real in a `window.open()`'d popup Enlace never reads from or
+writes to, then either `responseType: 'cookie'` (the browser's cookie jar
+already has it — `credentials: 'include'` picks it up automatically) or
+`responseType: 'token'` (the user pastes in whatever the login flow
+handed back, attached like an `apiKey` credential from there).
+
+Remaining, later phase: full OAuth2 `authorizationCode`-grant support —
+Enlace owning a registered callback route to *automatically* capture a
+code/token from the popup's own redirect, rather than relying on the user
+to paste it in by hand (`popup_login`'s `responseType: 'token'` covers
+that need manually today; a truly automatic version needs Enlace to
+control the redirect target, which is a materially different, harder
+mechanism — see ARCHITECTURE.md §7).
 
 ## Canvas field-to-field mapping
 

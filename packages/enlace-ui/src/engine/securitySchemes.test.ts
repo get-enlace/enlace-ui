@@ -57,9 +57,17 @@ describe('extractDeclaredCredentials', () => {
     expect(entry.template).toMatchObject({ type: 'apiKey', paramName: 'api_key', in: 'query' });
   });
 
-  it('skips an apiKey/cookie scheme — not a supported credential type yet', () => {
+  it('maps an apiKey/cookie scheme to a popup_login/cookie template, with loginUrl left blank for the user to supply', () => {
     const spec = specWithSchemes({ cookieAuth: { type: 'apiKey', in: 'cookie', name: 'session' } });
-    expect(extractDeclaredCredentials(spec)).toEqual([]);
+    const [entry] = extractDeclaredCredentials(spec);
+
+    expect(entry.template).toEqual({
+      name: 'cookieAuth',
+      type: 'popup_login',
+      loginUrl: '',
+      responseType: 'cookie',
+      fromSecurityScheme: 'cookieAuth',
+    });
   });
 
   it('maps an oauth2 clientCredentials flow, joining scopes into a space-separated string', () => {
