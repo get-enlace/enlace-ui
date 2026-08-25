@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { customers } from './customers.js';
 import { products } from './products.js';
+import { requireApiKey, requireOAuth2Token } from './auth.js';
 
 export interface Order {
   id: string;
@@ -20,7 +21,9 @@ export const ordersRouter = Router();
 // steps succeeds while a made-up static id genuinely fails. That's the
 // point of chaining these three resources together (see README's parallel
 // execution walkthrough).
-ordersRouter.post('/orders', (req, res) => {
+// A point-of-sale/kiosk integration places orders via a shared API key —
+// apiKeyAuth in openapi.json.
+ordersRouter.post('/orders', requireApiKey, (req, res) => {
   const { customerId, productId, qty } = req.body ?? {};
   if (typeof customerId !== 'string' || typeof productId !== 'string' || typeof qty !== 'number') {
     res.status(400).json({ error: 'customerId (string), productId (string), and qty (number) are required' });
@@ -61,7 +64,11 @@ ordersRouter.patch('/orders/:id', (req, res) => {
   res.json(order);
 });
 
-ordersRouter.delete('/orders/:id', (req, res) => {
+// An automated cleanup job cancels stale orders — service-to-service, no
+// human login, so oauth2ClientCreds (not oauth2Password) in openapi.json.
+// Same requireOAuth2Token middleware as products.ts — it's grant-agnostic,
+// see auth.ts.
+ordersRouter.delete('/orders/:id', requireOAuth2Token, (req, res) => {
   if (!orders.delete(req.params.id)) {
     res.status(404).json({ error: 'not found' });
     return;

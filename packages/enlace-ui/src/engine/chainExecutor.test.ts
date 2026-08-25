@@ -286,6 +286,49 @@ describe('executeChain', () => {
     expect(url).toBe('http://example.test/noop?apiKey=secret-key');
   });
 
+  it('fetches an oauth2 password-grant token and sends it as a Bearer header', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'http://auth.test/token') {
+        return Promise.resolve(mockResponse(200, { access_token: 'issued-token', expires_in: 3600 }));
+      }
+      return Promise.resolve(mockResponse(200, {}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const credentialsById = new Map<string, Credential>([
+      [
+        'cred-1',
+        {
+          id: 'cred-1',
+          name: 'Test',
+          type: 'oauth2_password',
+          tokenUrl: 'http://auth.test/token',
+          username: 'alice',
+          password: 'hunter2',
+        },
+      ],
+    ]);
+
+    await executeChain(
+      { nodes: [a], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [, init] = fetchMock.mock.calls.find(([url]) => url === 'http://example.test/noop')!;
+    expect(init.headers.Authorization).toBe('Bearer issued-token');
+  });
+
   it('fetches and caches an oauth2 client-credentials token, reusing it across nodes', async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url === 'http://auth.test/token') {

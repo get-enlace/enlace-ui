@@ -105,12 +105,17 @@ Workflow {
 
 // A discriminated union on `type` — each variant carries only the fields
 // that type needs. All held in browser memory only, never persisted.
+// `fromSecurityScheme?` on every variant records the spec's own
+// `components.securitySchemes` key when the credential was configured
+// from what the spec declares (see engine/securitySchemes.ts) — purely
+// informational, shown as a tag on the credential's card.
 Credential =
-  | { id, name, type: "bearer", token }
-  | { id, name, type: "basic", username, password }
-  | { id, name, type: "apiKey", paramName, in: "header" | "query", key }
-  | { id, name, type: "oauth2_clientCredentials", tokenUrl, clientId, clientSecret, scope? }
-  // more variants planned (OAuth2 authorizationCode/password, Cookie) — see ROADMAP.md
+  | { id, name, fromSecurityScheme?, type: "bearer", token }
+  | { id, name, fromSecurityScheme?, type: "basic", username, password }
+  | { id, name, fromSecurityScheme?, type: "apiKey", paramName, in: "header" | "query", key }
+  | { id, name, fromSecurityScheme?, type: "oauth2_clientCredentials", tokenUrl, clientId, clientSecret, scope? }
+  | { id, name, fromSecurityScheme?, type: "oauth2_password", tokenUrl, username, password, clientId?, clientSecret?, scope? }
+  // more variants planned (OAuth2 authorizationCode, Cookie) — see ROADMAP.md
 
 RunResult {
   steps: [
@@ -137,7 +142,7 @@ A field may be mapped from **any ancestor** in the connection graph, not just th
 3. Levels run one at a time, in order; **every node within a level fires concurrently** (concurrent `fetch()` calls), since the level-grouping guarantee makes that safe — this is what makes "run A, then B+C in parallel, then D (needs A and C)" actually run B and C concurrently, not just in a permissive relative order.
 4. For each node's request, in the level it's scheduled to:
    - Resolve `fieldValues` — static values used directly; mapped values pulled from the actual captured response of the referenced upstream node.
-   - Attach credential, if any — resolved per its type (`engine/credentials.ts`) into a header (bearer/basic/apiKey-in-header/oauth2 client-credentials) or a query param (apiKey-in-query). oauth2_clientCredentials fetches (and in-memory-caches) a token from the credential's `tokenUrl` first.
+   - Attach credential, if any — resolved per its type (`engine/credentials.ts`) into a header (bearer/basic/apiKey-in-header/either oauth2 grant) or a query param (apiKey-in-query). The oauth2 types (`clientCredentials`, `password`) fetch (and in-memory-cache) a token from the credential's `tokenUrl` first.
    - Execute the real HTTP request **directly from the browser** to the target API.
    - Capture request + response for the debug pane, redacting credential values in the displayed log.
 5. If any node in a level fails, halt before the next level starts — everything else already in flight in that same level still runs to completion, since those requests can't be un-sent.

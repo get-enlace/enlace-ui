@@ -63,15 +63,26 @@ export interface Workflow {
   connections: WorkflowConnection[];
 }
 
-// Phase 1 of auth-strategy.md: the credential types that need no browser
-// redirect/popup (fully automatable from a plain fetch). OAuth2's
-// authorizationCode and password grants, and the Cookie type, are a later
-// phase — see auth-strategy.md at the workspace root.
-export type CredentialType = 'bearer' | 'basic' | 'apiKey' | 'oauth2_clientCredentials';
+// Phase 1 added bearer/basic/apiKey/oauth2_clientCredentials — the types
+// needing no browser redirect/popup. This phase adds oauth2_password
+// (still no redirect, just a second, deprecated-but-pragmatic grant type —
+// see OAuth2PasswordCredential below). OAuth2 authorizationCode (needs an
+// actual redirect/popup + callback route) and the Cookie type remain a
+// later phase — see auth-strategy.md at the workspace root.
+export type CredentialType = 'bearer' | 'basic' | 'apiKey' | 'oauth2_clientCredentials' | 'oauth2_password';
 
 interface CredentialBase {
   id: string;
   name: string;
+  /**
+   * The `components.securitySchemes` key (e.g. "bearerAuth") this
+   * credential was configured from, if the user picked it from what the
+   * spec itself declares rather than starting a blank form — see
+   * engine/securitySchemes.ts and CredentialsPanel.tsx. Purely
+   * informational (shown as a small tag on the credential's card); never
+   * read by the execution engine.
+   */
+  fromSecurityScheme?: string;
 }
 
 export interface BearerCredential extends CredentialBase {
@@ -113,12 +124,36 @@ export interface OAuth2ClientCredentialsCredential extends CredentialBase {
 }
 
 /**
+ * OAuth2 resource-owner password-credentials grant — deprecated in general
+ * OAuth2 guidance (the client handles the user's actual password) but kept
+ * pragmatically given Enlace's pre-prod-only trust model; the UI labels it
+ * "legacy" and shows the same client-secret-style warning bearer/basic
+ * don't get. `clientId`/`clientSecret` are optional because plenty of
+ * token endpoints accept a public client with neither — when either is
+ * present it's sent alongside `username`/`password`, per RFC 6749 §4.3.
+ */
+export interface OAuth2PasswordCredential extends CredentialBase {
+  type: 'oauth2_password';
+  tokenUrl: string;
+  username: string;
+  password: string;
+  clientId?: string;
+  clientSecret?: string;
+  scope?: string;
+}
+
+/**
  * Held entirely in browser memory (the store, not persisted) — the secret
  * values never leave the tab except as headers/query params on the actual
- * request to the target API itself (or, for oauth2_clientCredentials, the
- * token endpoint). See engine/credentials.ts's `resolveCredentialInjection`.
+ * request to the target API itself (or, for the oauth2_* types, the token
+ * endpoint). See engine/credentials.ts's `resolveCredentialInjection`.
  */
-export type Credential = BearerCredential | BasicCredential | ApiKeyCredential | OAuth2ClientCredentialsCredential;
+export type Credential =
+  | BearerCredential
+  | BasicCredential
+  | ApiKeyCredential
+  | OAuth2ClientCredentialsCredential
+  | OAuth2PasswordCredential;
 
 // Omit doesn't distribute over a union on its own (it'd collapse to the
 // intersection of keys) — this does, so NewCredential stays a proper union

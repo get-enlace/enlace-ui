@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowStore } from './workflowStore.js';
 
 // Reset to a clean slate before each test — zustand stores are module-level
@@ -10,6 +10,7 @@ beforeEach(() => {
     nodePositions: {},
     selectedNodeId: null,
     credentials: [],
+    declaredCredentials: [],
   });
 });
 
@@ -106,5 +107,40 @@ describe('addCredential / removeCredential', () => {
     expect(state.credentials).toEqual([prod]);
     expect(state.nodes.find((n) => n.id === a)?.credentialId).toBeNull();
     expect(state.nodes.find((n) => n.id === b)?.credentialId).toBe(prod.id);
+  });
+});
+
+describe('loadOperations', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('populates declaredCredentials from the spec\'s components.securitySchemes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          paths: {},
+          servers: [{ url: 'http://x' }],
+          components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
+        }),
+      })
+    );
+
+    await useWorkflowStore.getState().loadOperations();
+
+    const declared = useWorkflowStore.getState().declaredCredentials;
+    expect(declared).toHaveLength(1);
+    expect(declared[0]).toMatchObject({ schemeName: 'bearerAuth', template: { type: 'bearer' } });
+  });
+
+  it('leaves declaredCredentials empty when the spec declares no securitySchemes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ paths: {}, servers: [{ url: 'http://x' }] }) })
+    );
+
+    await useWorkflowStore.getState().loadOperations();
+
+    expect(useWorkflowStore.getState().declaredCredentials).toEqual([]);
   });
 });

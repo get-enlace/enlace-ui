@@ -7,6 +7,7 @@
       "post": {
         "summary": "Create a customer",
         "operationId": "createCustomer",
+        "security": [{ "basicAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -70,6 +71,7 @@
       "patch": {
         "summary": "Update a customer",
         "operationId": "updateCustomer",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "requestBody": {
           "content": {
@@ -108,6 +110,7 @@
       "delete": {
         "summary": "Delete a customer",
         "operationId": "deleteCustomer",
+        "security": [{ "bearerAuth": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
           "204": { "description": "Customer deleted" },
@@ -119,6 +122,7 @@
       "post": {
         "summary": "Create a product",
         "operationId": "createProduct",
+        "security": [{ "oauth2Password": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -182,6 +186,7 @@
       "patch": {
         "summary": "Update a product",
         "operationId": "updateProduct",
+        "security": [{ "oauth2Password": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "requestBody": {
           "content": {
@@ -220,6 +225,7 @@
       "delete": {
         "summary": "Delete a product",
         "operationId": "deleteProduct",
+        "security": [{ "oauth2Password": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
           "204": { "description": "Product deleted" },
@@ -231,6 +237,7 @@
       "post": {
         "summary": "Create an order (references an existing customer + product)",
         "operationId": "createOrder",
+        "security": [{ "apiKeyAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -336,10 +343,51 @@
       "delete": {
         "summary": "Delete an order",
         "operationId": "deleteOrder",
+        "security": [{ "oauth2ClientCreds": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
           "204": { "description": "Order deleted" },
           "404": { "description": "Order not found" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "basicAuth": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "Required on POST /customers (a back-office/support tool creates the record). Demo-only: presence-checked, not verified against a real user store — see examples/sample-api/auth.ts."
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Required on PATCH/DELETE /customers/{id} (the customer's own session token). Demo-only: any bearer token is accepted, presence-checked only — see examples/sample-api/auth.ts."
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Required on POST /orders (a point-of-sale/kiosk integration). Demo-only: presence-checked only — see examples/sample-api/auth.ts."
+      },
+      "oauth2ClientCreds": {
+        "type": "oauth2",
+        "description": "Required on DELETE /orders/{id} — an automated cleanup job, service-to-service, no human login. Genuinely enforced: the sample server verifies the token's signature against the local mock issuer's JWKS (examples/sample-api/mockOAuth2.ts). Any client_id/client_secret is accepted at the token endpoint itself.",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "http://localhost:4001/token",
+            "scopes": { "orders:delete": "Cancel/delete orders" }
+          }
+        }
+      },
+      "oauth2Password": {
+        "type": "oauth2",
+        "description": "Required on POST/PATCH/DELETE /products (the catalog is admin-managed — only an admin, authenticated with their own username/password against the auth server, can write to it). Genuinely enforced, same as oauth2ClientCreds above — any username/password is accepted at the token endpoint itself.",
+        "flows": {
+          "password": {
+            "tokenUrl": "http://localhost:4001/token",
+            "scopes": { "products:write": "Create, update, and delete products" }
+          }
         }
       }
     }

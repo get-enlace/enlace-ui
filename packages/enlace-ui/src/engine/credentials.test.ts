@@ -151,4 +151,74 @@ describe('resolveCredentialInjection', () => {
 
     await expect(resolveCredentialInjection(credential)).rejects.toThrow(/had no access_token/);
   });
+
+  it('POSTs the password grant to tokenUrl, including optional client_id/client_secret/scope when present', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 60 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_password',
+      tokenUrl: 'http://auth.test/token',
+      username: 'alice',
+      password: 'hunter2',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      scope: 'read write',
+    };
+
+    expect(await resolveCredentialInjection(credential)).toEqual({ headers: { Authorization: 'Bearer issued-token' } });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://auth.test/token');
+    const body = new URLSearchParams(init.body);
+    expect(body.get('grant_type')).toBe('password');
+    expect(body.get('username')).toBe('alice');
+    expect(body.get('password')).toBe('hunter2');
+    expect(body.get('client_id')).toBe('client-id');
+    expect(body.get('client_secret')).toBe('client-secret');
+    expect(body.get('scope')).toBe('read write');
+  });
+
+  it('omits client_id/client_secret/scope from the password-grant body when not provided (public-client token endpoints)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_password',
+      tokenUrl: 'http://auth.test/token',
+      username: 'alice',
+      password: 'hunter2',
+    };
+
+    await resolveCredentialInjection(credential);
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = new URLSearchParams(init.body);
+    expect(body.has('client_id')).toBe(false);
+    expect(body.has('client_secret')).toBe(false);
+    expect(body.has('scope')).toBe(false);
+  });
+
+  it('shares the token cache keyed by credential id between grant types (no cross-type collision, no re-fetch while valid)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 3600 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_password',
+      tokenUrl: 'http://auth.test/token',
+      username: 'alice',
+      password: 'hunter2',
+    };
+
+    await resolveCredentialInjection(credential);
+    await resolveCredentialInjection(credential);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

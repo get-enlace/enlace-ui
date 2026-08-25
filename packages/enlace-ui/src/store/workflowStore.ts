@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { fetchSpec } from '../api/client.js';
 import { parseOperations } from '../engine/specParser.js';
 import { executeChain } from '../engine/chainExecutor.js';
+import { extractDeclaredCredentials, type DeclaredCredential } from '../engine/securitySchemes.js';
 import { randomId } from '../utils/randomId.js';
 import type {
   Credential,
@@ -53,6 +54,8 @@ interface WorkflowState {
   /** Canvas layout only — not part of the executed Workflow. */
   nodePositions: Record<string, Position>;
   credentials: Credential[];
+  /** Pre-fill templates read from the loaded spec's own `components.securitySchemes` — see engine/securitySchemes.ts. Empty until loadOperations() resolves; never gates manually creating any credential type regardless of what's in here. */
+  declaredCredentials: DeclaredCredential[];
   selectedNodeId: string | null;
   runResult: RunResult | null;
   isRunning: boolean;
@@ -88,6 +91,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   connections: [],
   nodePositions: {},
   credentials: [],
+  declaredCredentials: [],
   selectedNodeId: null,
   runResult: null,
   isRunning: false,
@@ -98,9 +102,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       const spec = await fetchSpec();
       const operations = parseOperations(spec);
       const baseUrl = resolveBaseUrl(spec);
+      const declaredCredentials = extractDeclaredCredentials(spec);
       set({
         operations,
         baseUrl,
+        declaredCredentials,
         error: baseUrl
           ? null
           : 'Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.',

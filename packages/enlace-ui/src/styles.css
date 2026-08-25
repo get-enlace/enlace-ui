@@ -738,6 +738,14 @@ body {
   border-left-color: var(--color-post);
 }
 
+/* Muted gray rather than a fifth hue plucked from the method palette
+ * (which would collide with apiKey's orange, since --color-warning reuses
+ * that same hex) — reads as "deprecated/de-emphasized", distinct from
+ * every other type's more vivid color. */
+.credential-card--oauth2_password {
+  border-left-color: var(--color-text-muted);
+}
+
 .credential-card__header {
   display: flex;
   align-items: center;
@@ -777,6 +785,11 @@ body {
   color: var(--color-post);
 }
 
+.credential-badge--oauth2_password {
+  background: rgba(154, 160, 166, 0.16);
+  color: var(--color-text-muted);
+}
+
 .credential-card__delete {
   background: transparent;
   border: none;
@@ -813,6 +826,118 @@ body {
   margin-top: 6px;
   font-size: 11px;
   color: var(--color-warning);
+}
+
+/* Persistent "this came from the spec" indicator — the point-of-creation
+ * banner (.credentials-panel__spec-banner) only exists while the form is
+ * open, so this is what keeps that provenance visible on the saved card.
+ * An outlined pill in the same blue as that banner (rather than plain
+ * muted text) ties the two together as "the same kind of information",
+ * and reads at a glance rather than needing to be read as a sentence. */
+.credential-card__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-focus);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--color-focus);
+}
+
+.credential-card__source code {
+  color: inherit;
+  font-weight: 700;
+}
+
+/* Credentials the spec itself declares (components.securitySchemes), per
+ * auth-strategy.md §4 — a visually distinct section (its own heading,
+ * boxed rows) so it doesn't blend into either the saved-credentials list
+ * above it or the plain "+ New credential" entry point below it; the
+ * whole point is that these are pre-fillable templates, not yet-real
+ * credentials. Not named "suggestions" — this is Enlace stating a fact
+ * the spec's author already declared, not guessing. */
+.credentials-drawer__declared {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.credentials-drawer__declared h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+}
+
+.credentials-drawer__declared-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.declared-credential {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.declared-credential__info {
+  min-width: 0;
+}
+
+.declared-credential__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.declared-credential__name code {
+  font-weight: 700;
+}
+
+.declared-credential__type {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.declared-credential .btn {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-size: 11px;
+}
+
+/* The form-open equivalent of .credential-card__source — tells the user,
+ * right where they're about to type secrets, that the structural fields
+ * above (tokenUrl, paramName, scope, ...) came from the spec rather than
+ * from them, so an unexpectedly-prefilled field doesn't read as a bug. */
+.credentials-panel__spec-banner {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--color-focus);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-focus);
+}
+
+.credentials-panel__spec-banner code {
+  color: inherit;
 }
 
 .credentials-drawer__add-btn {

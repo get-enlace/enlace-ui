@@ -6,7 +6,7 @@ import { useWorkflowStore } from '../store/workflowStore.js';
 
 describe('CredentialsPanel', () => {
   beforeEach(() => {
-    useWorkflowStore.setState({ credentials: [], nodes: [] });
+    useWorkflowStore.setState({ credentials: [], nodes: [], declaredCredentials: [] });
   });
 
   it('shows a singular/plural credential count on the trigger', () => {
@@ -202,5 +202,139 @@ describe('CredentialsPanel', () => {
     expect(useWorkflowStore.getState().credentials).toHaveLength(0);
     expect(screen.queryByPlaceholderText('name')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ New credential' })).toBeInTheDocument();
+  });
+
+  it('adds an oauth2_password credential, treating client id/secret as optional, and labels the type as legacy', async () => {
+    const user = userEvent.setup();
+    render(<CredentialsPanel />);
+
+    await user.click(screen.getByRole('button', { name: '0 credentials' }));
+    await user.click(screen.getByRole('button', { name: '+ New credential' }));
+    await user.type(screen.getByPlaceholderText('name'), 'legacy-password');
+    await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'oauth2_password');
+
+    expect(screen.getByRole('option', { name: 'OAuth2 (password) · Legacy' })).toBeInTheDocument();
+    expect(screen.getByText(/Legacy grant type/)).toBeInTheDocument();
+
+    const saveButton = screen.getByRole('button', { name: 'Save' });
+    expect(saveButton).toBeDisabled();
+
+    await user.type(screen.getByPlaceholderText('https://auth.example.com/oauth/token'), 'https://auth.example.com/token');
+    await user.type(screen.getByPlaceholderText('resource owner username'), 'alice');
+    await user.type(screen.getByPlaceholderText('resource owner password'), 'hunter2');
+    expect(saveButton).toBeEnabled(); // client id/secret left blank — still valid
+
+    await user.click(saveButton);
+
+    expect(useWorkflowStore.getState().credentials[0]).toMatchObject({
+      type: 'oauth2_password',
+      tokenUrl: 'https://auth.example.com/token',
+      username: 'alice',
+      password: 'hunter2',
+    });
+  });
+
+  it('shows nothing under "Declared in spec" when the spec declared no securitySchemes', async () => {
+    const user = userEvent.setup();
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '0 credentials' }));
+    expect(screen.queryByText('Declared in spec')).not.toBeInTheDocument();
+  });
+
+  it('lists a declared credential, pre-fills the form on "Configure", and shows the pre-fill banner', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      declaredCredentials: [
+        {
+          schemeName: 'bearerAuth',
+          description: 'JWT bearer auth',
+          template: { name: 'bearerAuth', type: 'bearer', token: '', fromSecurityScheme: 'bearerAuth' },
+        },
+      ],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '0 credentials' }));
+
+    expect(screen.getByText('Declared in spec')).toBeInTheDocument();
+    expect(screen.getByText('bearerAuth')).toBeInTheDocument();
+    expect(screen.getByText(/JWT bearer auth/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Configure' }));
+
+    expect(screen.getByText(/declared in the spec's/)).toBeInTheDocument();
+    expect(screen.getByText('securitySchemes.bearerAuth')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('name')).toHaveValue('bearerAuth');
+    expect(screen.getByDisplayValue('Bearer token')).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText('bearer token'), 'secret-token');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(useWorkflowStore.getState().credentials[0]).toMatchObject({
+      name: 'bearerAuth',
+      type: 'bearer',
+      token: 'secret-token',
+      fromSecurityScheme: 'bearerAuth',
+    });
+  });
+
+  it('removes a declared credential from the list once it has been configured, hiding the whole section once none remain', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      declaredCredentials: [
+        {
+          schemeName: 'bearerAuth',
+          template: { name: 'bearerAuth', type: 'bearer', token: '', fromSecurityScheme: 'bearerAuth' },
+        },
+      ],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '0 credentials' }));
+    await user.click(screen.getByRole('button', { name: 'Configure' }));
+    await user.type(screen.getByPlaceholderText('bearer token'), 'secret-token');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.queryByText('Declared in spec')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Configure' })).not.toBeInTheDocument();
+    // A second credential from the same scheme is still possible — just via "+ New credential", not the (now gone) suggestion.
+    expect(screen.getByRole('button', { name: '+ New credential' })).toBeInTheDocument();
+  });
+
+  it('only removes the declared credential that was actually configured, leaving the others visible', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      declaredCredentials: [
+        {
+          schemeName: 'bearerAuth',
+          template: { name: 'bearerAuth', type: 'bearer', token: '', fromSecurityScheme: 'bearerAuth' },
+        },
+        {
+          schemeName: 'apiKeyAuth',
+          template: { name: 'apiKeyAuth', type: 'apiKey', paramName: 'X-API-Key', in: 'header', key: '', fromSecurityScheme: 'apiKeyAuth' },
+        },
+      ],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '0 credentials' }));
+    await user.click(screen.getAllByRole('button', { name: 'Configure' })[0]);
+    await user.type(screen.getByPlaceholderText('bearer token'), 'secret-token');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByText('Declared in spec')).toBeInTheDocument();
+    expect(screen.getByText('apiKeyAuth')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Configure' })).toHaveLength(1);
+  });
+
+  it('shows a "From spec" tag on a card whose credential originated from a declared credential', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      credentials: [
+        { id: 'c1', name: 'bearerAuth', type: 'bearer', token: 'secret', fromSecurityScheme: 'bearerAuth' },
+      ],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '1 credential' }));
+
+    expect(screen.getByText(/From spec:/)).toBeInTheDocument();
+    expect(screen.getByText('bearerAuth', { selector: 'code' })).toBeInTheDocument();
   });
 });
