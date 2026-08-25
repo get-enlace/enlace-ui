@@ -115,7 +115,9 @@ Credential =
   | { id, name, fromSecurityScheme?, type: "apiKey", paramName, in: "header" | "query", key }
   | { id, name, fromSecurityScheme?, type: "oauth2_clientCredentials", tokenUrl, clientId, clientSecret, scope? }
   | { id, name, fromSecurityScheme?, type: "oauth2_password", tokenUrl, username, password, clientId?, clientSecret?, scope? }
-  // more variants planned (OAuth2 authorizationCode, Cookie) — see ROADMAP.md
+  | { id, name, fromSecurityScheme?, type: "popup_login", loginUrl, responseType: "cookie" }
+  | { id, name, fromSecurityScheme?, type: "popup_login", loginUrl, responseType: "token", token, paramName, in: "header" | "query" }
+  // more variants planned (full OAuth2 authorizationCode-grant support) — see ROADMAP.md
 
 RunResult {
   steps: [
@@ -142,7 +144,7 @@ A field may be mapped from **any ancestor** in the connection graph, not just th
 3. Levels run one at a time, in order; **every node within a level fires concurrently** (concurrent `fetch()` calls), since the level-grouping guarantee makes that safe — this is what makes "run A, then B+C in parallel, then D (needs A and C)" actually run B and C concurrently, not just in a permissive relative order.
 4. For each node's request, in the level it's scheduled to:
    - Resolve `fieldValues` — static values used directly; mapped values pulled from the actual captured response of the referenced upstream node.
-   - Attach credential, if any — resolved per its type (`engine/credentials.ts`) into a header (bearer/basic/apiKey-in-header/either oauth2 grant) or a query param (apiKey-in-query). The oauth2 types (`clientCredentials`, `password`) fetch (and in-memory-cache) a token from the credential's `tokenUrl` first.
+   - Attach credential, if any — resolved per its type (`engine/credentials.ts`) into a header (bearer/basic/apiKey-in-header/either oauth2 grant/popup_login-token-in-header), a query param (apiKey-in-query/popup_login-token-in-query), or — uniquely for `popup_login`/`cookie` — a `credentials: 'include'` fetch option instead of any injected value at all, since `Cookie` is a forbidden fetch() request header and can only ever be attached by the browser's own cookie jar. The oauth2 types (`clientCredentials`, `password`) fetch (and in-memory-cache) a token from the credential's `tokenUrl` first; `popup_login` requires the user to complete login in a real browser popup first (see §7) — no fetch()-driven node can do this itself.
    - Execute the real HTTP request **directly from the browser** to the target API.
    - Capture request + response for the debug pane, redacting credential values in the displayed log.
 5. If any node in a level fails, halt before the next level starts — everything else already in flight in that same level still runs to completion, since those requests can't be un-sent.
@@ -167,6 +169,7 @@ Built with React, React Flow, and Zustand.
 - The debug pane redacts the `Authorization` header value, and (for an apiKey credential sent `in: "query"`, where the secret lives in the URL itself rather than a header) the named query param in the displayed URL — shows that a credential was sent without exposing the raw value.
 - CORS is the target API's responsibility, since requests fire directly from the browser — this tool doesn't solve it, and that must be documented clearly wherever it matters.
 - No per-user auth inside the tool; access control is inherited entirely from whatever network perimeter (VPN, internal network, SSO-gated proxy) already protects the host environment.
+- `popup_login`/`cookie` never involves any secret Enlace holds — the actual login (third-party-IdP-driven: GitHub, Google, SSO, MFA — anything requiring a human to click through pages on another origin) happens in a real `window.open()`'d browser window that Enlace's own code never reads from or writes to. That's a deliberate limitation, not an oversight: CORS, consent screens, and registered-redirect-URI mismatches make it impossible for any fetch()-driven node to complete that kind of login itself, regardless of what it produces. Once the popup closes, `chainExecutor.ts` sets `credentials: 'include'` on the actual request so the browser's own cookie jar attaches whatever the login set — this depends entirely on the target's CORS policy allowing credentialed cross-origin requests, same as any other CORS concern above. There is no automatic capture of a token returned via the popup's own redirect URL; `responseType: 'token'` exists for that case, but requires the user to paste the value in manually after login (full OAuth2 `authorizationCode`-grant support — Enlace owning a registered callback route to capture that automatically — remains a later phase, see ROADMAP.md).
 
 ## 8. Deployment / Distribution
 

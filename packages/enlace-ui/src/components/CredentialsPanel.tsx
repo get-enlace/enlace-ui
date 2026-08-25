@@ -9,9 +9,10 @@ const CREDENTIAL_TYPE_LABELS: Record<CredentialType, string> = {
   apiKey: 'API key',
   oauth2_clientCredentials: 'OAuth2 (client credentials)',
   oauth2_password: 'OAuth2 (password) · Legacy',
+  popup_login: 'Popup login',
 };
 
-/** A fresh, empty draft for `type` — swapping type mid-edit resets the type-specific fields (and drops any spec-declared origin, since it no longer matches what was declared) rather than carrying stale ones across. */
+/** A fresh, empty draft for `type` — swapping type mid-edit resets the type-specific fields (and drops any spec-declared origin, since it no longer matches what was declared) rather than carrying stale ones across. `popup_login` defaults to responseType 'cookie' — see the dedicated responseType switch inline in the form for changing that afterward without losing `loginUrl`. */
 function emptyDraft(type: CredentialType, name: string): NewCredential {
   switch (type) {
     case 'bearer':
@@ -24,6 +25,8 @@ function emptyDraft(type: CredentialType, name: string): NewCredential {
       return { name, type, tokenUrl: '', clientId: '', clientSecret: '', scope: '' };
     case 'oauth2_password':
       return { name, type, tokenUrl: '', username: '', password: '', clientId: '', clientSecret: '', scope: '' };
+    case 'popup_login':
+      return { name, type, loginUrl: '', responseType: 'cookie' };
   }
 }
 
@@ -41,6 +44,10 @@ function isDraftComplete(draft: NewCredential): boolean {
     case 'oauth2_password':
       // clientId/clientSecret are optional (public-client token endpoints) — see OAuth2PasswordCredential in types.ts.
       return Boolean(draft.tokenUrl && draft.username && draft.password);
+    case 'popup_login':
+      if (!draft.loginUrl) return false;
+      // 'cookie' carries no secret value at all — the login URL is the whole form. 'token' still needs the pasted-in value and where to send it.
+      return draft.responseType === 'cookie' || Boolean(draft.token && draft.paramName);
   }
 }
 
@@ -48,6 +55,19 @@ function isDraftComplete(draft: NewCredential): boolean {
 function maskTail(value: string): string {
   if (!value) return '';
   return `••••${value.slice(-4)}`;
+}
+
+/**
+ * A real browser popup, not a fetch() call — this is the whole mechanism
+ * for `popup_login`, per auth-strategy.md's discussion: third-party-IdP
+ * login (GitHub, Google, SSO, MFA — anything requiring a human to click
+ * through pages on another origin) can't be driven by a node at all, so
+ * the actual login happens right here, in a window Enlace never reads
+ * from or writes to. Sized rather than left default so it reads as a
+ * deliberate login window, not a stray full-size tab.
+ */
+function openLoginPopup(loginUrl: string): void {
+  window.open(loginUrl, '_blank', 'width=520,height=680');
 }
 
 /** Strips `id` off a saved credential so it can seed the edit form's draft — the inverse of what addCredential/updateCredential do with a NewCredential. */
@@ -68,6 +88,10 @@ function maskedPreview(credential: Credential): string {
       return `${credential.clientId} · ${maskTail(credential.clientSecret)}`;
     case 'oauth2_password':
       return `${credential.username} · ${maskTail(credential.password)}`;
+    case 'popup_login':
+      return credential.responseType === 'cookie'
+        ? 'Session cookie — no stored secret, relies on your browser being logged in'
+        : `${credential.paramName} (${credential.in}) · ${maskTail(credential.token)}`;
   }
 }
 
@@ -173,6 +197,20 @@ export function CredentialsPanel() {
                             {CREDENTIAL_TYPE_LABELS[c.type]}
                           </span>
                           <div className="credential-card__actions">
+                            {c.type === 'popup_login' && (
+                              <button
+                                type="button"
+                                className="credential-card__login"
+                                onClick={() => openLoginPopup(c.loginUrl)}
+                                aria-label={`Log in for ${c.name}`}
+                                // Sessions expire — shown on the saved card, not just at
+                                // creation time, since re-establishing login is a
+                                // recurring action rather than a one-off.
+                                title="Opens the login page in a popup — complete login there, then re-run your nodes."
+                              >
+                                Log in
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="credential-card__edit"
@@ -451,6 +489,119 @@ export function CredentialsPanel() {
                           onChange={(e) => setDraft({ ...draft, scope: e.target.value })}
                         />
                       </label>
+                    </>
+                  )}
+
+                  {draft.type === 'popup_login' && (
+                    <>
+                      {/* Third-party-IdP-driven login (GitHub, Google, SSO, MFA — anything
+                          requiring a human to click through pages on another origin) can never
+                          be completed by a fetch()-driven node: CORS, consent screens, and
+                          registered-redirect-URI mismatches make that impossible regardless of
+                          what the login produces. The popup below is the whole mechanism —
+                          Enlace never drives or inspects that navigation. */}
+                      <label className="credentials-panel__field">
+                        Login URL
+                        <input
+                          placeholder="https://your-app.example.com/auth/login"
+                          value={draft.loginUrl}
+                          onChange={(e) => setDraft({ ...draft, loginUrl: e.target.value })}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="btn btn--secondary credentials-panel__login-btn"
+                        disabled={!draft.loginUrl}
+                        onClick={() => openLoginPopup(draft.loginUrl)}
+                      >
+                        Log in…
+                      </button>
+
+                      <label className="credentials-panel__field">
+                        What happens after login?
+                        <select
+                          value={draft.responseType}
+                          onChange={(e) => {
+                            const responseType = e.target.value;
+                            // Only 'cookie'/'token' ever reach here — the 'code' option
+                            // below is disabled, so the browser never fires onChange for
+                            // it (a disabled <option> can't be selected via mouse or
+                            // keyboard). Rebuilt fully (not just a field patch) since the
+                            // two responseTypes carry entirely different fields.
+                            setDraft(
+                              responseType === 'token'
+                                ? {
+                                    name: draft.name,
+                                    type: 'popup_login',
+                                    loginUrl: draft.loginUrl,
+                                    responseType: 'token',
+                                    token: '',
+                                    paramName: '',
+                                    in: 'header',
+                                  }
+                                : {
+                                    name: draft.name,
+                                    type: 'popup_login',
+                                    loginUrl: draft.loginUrl,
+                                    responseType: 'cookie',
+                                  }
+                            );
+                          }}
+                        >
+                          <option value="cookie">Sets a session cookie</option>
+                          <option value="token">Gives me a token to paste in</option>
+                          <option value="code" disabled title="Requires a server-side token exchange (client secret or PKCE) — not supported yet">
+                            Authorization code (not supported)
+                          </option>
+                        </select>
+                      </label>
+
+                      {draft.responseType === 'cookie' && (
+                        <p className="credentials-panel__hint">
+                          Nothing else to configure. Once you've logged in above, this browser
+                          already has the session cookie — future requests attach it
+                          automatically. This only works if the target's CORS policy allows
+                          credentialed requests from Enlace's origin; that's the target's call,
+                          not something Enlace can fix (ARCHITECTURE.md §7).
+                        </p>
+                      )}
+
+                      {draft.responseType === 'token' && (
+                        <>
+                          {/* No automatic capture of a token embedded in the popup's own
+                              redirect URL — that needs Enlace to own a registered callback
+                              route (full authorizationCode-grant territory, see ROADMAP.md).
+                              This is the manual fallback: get the token however the login
+                              flow surfaces it, paste it in. */}
+                          <label className="credentials-panel__field">
+                            Token
+                            <input
+                              placeholder="paste the token you got after logging in"
+                              type="password"
+                              value={draft.token}
+                              onChange={(e) => setDraft({ ...draft, token: e.target.value })}
+                            />
+                          </label>
+                          <label className="credentials-panel__field">
+                            Header/query param name
+                            <input
+                              placeholder="e.g. Authorization"
+                              value={draft.paramName}
+                              onChange={(e) => setDraft({ ...draft, paramName: e.target.value })}
+                            />
+                          </label>
+                          <label className="credentials-panel__field">
+                            Sent in
+                            <select
+                              value={draft.in}
+                              onChange={(e) => setDraft({ ...draft, in: e.target.value as 'header' | 'query' })}
+                            >
+                              <option value="header">Header</option>
+                              <option value="query">Query param</option>
+                            </select>
+                          </label>
+                        </>
+                      )}
                     </>
                   )}
 

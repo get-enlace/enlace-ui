@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CredentialsPanel } from './CredentialsPanel.js';
@@ -411,5 +411,136 @@ describe('CredentialsPanel', () => {
 
     expect(screen.getByText(/Originally configured from/)).toBeInTheDocument();
     expect(screen.queryByText(/fill in the secret value\(s\) below/)).not.toBeInTheDocument();
+  });
+
+  describe('popup_login', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vi.spyOn's inferred type doesn't widen cleanly to a bare mutable let across beforeEach/afterEach.
+    let openSpy: any;
+
+    beforeEach(() => {
+      openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    });
+
+    afterEach(() => {
+      openSpy.mockRestore();
+    });
+
+    it('defaults to responseType "cookie", where Save needs only a name and login URL — no secret field at all', async () => {
+      const user = userEvent.setup();
+      render(<CredentialsPanel />);
+
+      await user.click(screen.getByRole('button', { name: '0 credentials' }));
+      await user.click(screen.getByRole('button', { name: '+ New credential' }));
+      await user.type(screen.getByPlaceholderText('name'), 'github-login');
+      await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'popup_login');
+
+      expect(screen.getByDisplayValue('Sets a session cookie')).toBeInTheDocument();
+      const saveButton = screen.getByRole('button', { name: 'Save' });
+      expect(saveButton).toBeDisabled();
+
+      await user.type(
+        screen.getByPlaceholderText('https://your-app.example.com/auth/login'),
+        'https://app.test/auth/github'
+      );
+      expect(saveButton).toBeEnabled();
+
+      await user.click(saveButton);
+
+      expect(useWorkflowStore.getState().credentials[0]).toEqual({
+        id: expect.any(String),
+        name: 'github-login',
+        type: 'popup_login',
+        loginUrl: 'https://app.test/auth/github',
+        responseType: 'cookie',
+      });
+    });
+
+    it('"Log in…" opens the login URL in a popup, and is disabled until a URL is entered', async () => {
+      const user = userEvent.setup();
+      render(<CredentialsPanel />);
+
+      await user.click(screen.getByRole('button', { name: '0 credentials' }));
+      await user.click(screen.getByRole('button', { name: '+ New credential' }));
+      await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'popup_login');
+
+      const loginButton = screen.getByRole('button', { name: 'Log in…' });
+      expect(loginButton).toBeDisabled();
+
+      await user.type(
+        screen.getByPlaceholderText('https://your-app.example.com/auth/login'),
+        'https://app.test/auth/github'
+      );
+      expect(loginButton).toBeEnabled();
+
+      await user.click(loginButton);
+      expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank', expect.any(String));
+    });
+
+    it('switching responseType to "token" reveals token/paramName/in fields, and Save requires them too', async () => {
+      const user = userEvent.setup();
+      render(<CredentialsPanel />);
+
+      await user.click(screen.getByRole('button', { name: '0 credentials' }));
+      await user.click(screen.getByRole('button', { name: '+ New credential' }));
+      await user.type(screen.getByPlaceholderText('name'), 'token-login');
+      await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'popup_login');
+      await user.type(
+        screen.getByPlaceholderText('https://your-app.example.com/auth/login'),
+        'https://app.test/auth/login'
+      );
+      await user.selectOptions(screen.getByDisplayValue('Sets a session cookie'), 'token');
+
+      const saveButton = screen.getByRole('button', { name: 'Save' });
+      expect(saveButton).toBeDisabled();
+
+      await user.type(screen.getByPlaceholderText('paste the token you got after logging in'), 'pasted-token');
+      await user.type(screen.getByPlaceholderText('e.g. Authorization'), 'Authorization');
+      expect(saveButton).toBeEnabled();
+
+      await user.click(saveButton);
+
+      expect(useWorkflowStore.getState().credentials[0]).toMatchObject({
+        name: 'token-login',
+        type: 'popup_login',
+        responseType: 'token',
+        loginUrl: 'https://app.test/auth/login',
+        token: 'pasted-token',
+        paramName: 'Authorization',
+        in: 'header',
+      });
+    });
+
+    it('the "Authorization code" responseType option is present but disabled — not selectable', async () => {
+      const user = userEvent.setup();
+      render(<CredentialsPanel />);
+
+      await user.click(screen.getByRole('button', { name: '0 credentials' }));
+      await user.click(screen.getByRole('button', { name: '+ New credential' }));
+      await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'popup_login');
+
+      expect(screen.getByRole('option', { name: 'Authorization code (not supported)' })).toBeDisabled();
+    });
+
+    it('a saved cookie-type credential shows a masked-preview note (no stored secret) and a "Log in" button on its card', async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        credentials: [
+          {
+            id: 'c1',
+            name: 'github-login',
+            type: 'popup_login',
+            loginUrl: 'https://app.test/auth/github',
+            responseType: 'cookie',
+          },
+        ],
+      });
+      render(<CredentialsPanel />);
+      await user.click(screen.getByRole('button', { name: '1 credential' }));
+
+      expect(screen.getByText(/no stored secret/)).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Log in for github-login' }));
+      expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank', expect.any(String));
+    });
   });
 });

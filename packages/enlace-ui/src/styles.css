@@ -31,6 +31,13 @@
   --color-error: #f93e3e;
   --color-focus: #61affe;
   --color-warning: #fca130;
+
+  /* popup_login's own accent — every method color above is already
+   * claimed by another credential type (see .credential-badge--* below),
+   * and reusing --color-delete/--color-error here would read as "this
+   * credential type is an error state", which it isn't. */
+  --color-popup: #a78bfa;
+  --color-popup-bg: rgba(167, 139, 250, 0.14);
 }
 
 * {
@@ -746,6 +753,10 @@ body {
   border-left-color: var(--color-text-muted);
 }
 
+.credential-card--popup_login {
+  border-left-color: var(--color-popup);
+}
+
 .credential-card__header {
   display: flex;
   align-items: center;
@@ -790,11 +801,29 @@ body {
   color: var(--color-text-muted);
 }
 
+.credential-badge--popup_login {
+  background: var(--color-popup-bg);
+  color: var(--color-popup);
+}
+
 .credential-card__actions {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.credential-card__login {
+  background: transparent;
+  border: none;
+  color: var(--color-popup);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.credential-card__login:hover {
+  text-decoration: underline;
 }
 
 .credential-card__edit {
@@ -1017,6 +1046,28 @@ body {
   font-size: 11px;
   line-height: 1.4;
   color: var(--color-warning);
+}
+
+/* Explanatory, not a warning — no border/accent color, just muted body
+ * copy. Used for popup_login's "what does this mean / what happens next"
+ * notes, which are informational rather than risk-flagging. */
+.credentials-panel__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+/* Sits directly under the Login URL field it acts on, distinct from the
+ * bottom Cancel/Save row — this triggers window.open() immediately, not a
+ * form submission, so it reads as its own small action rather than part
+ * of the save flow. */
+.credentials-panel__login-btn {
+  align-self: flex-start;
+  padding: 5px 14px;
+  font-size: 11px;
+  border-color: var(--color-popup);
+  color: var(--color-popup);
 }
 
 .credentials-drawer__form-actions {

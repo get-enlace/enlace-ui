@@ -3,6 +3,19 @@ import type { Credential } from '../types.js';
 export interface CredentialInjection {
   headers?: Record<string, string>;
   query?: Record<string, string>;
+  /**
+   * Set to `'include'` for a `popup_login`/`cookie` credential — tells
+   * chainExecutor.ts's actual `fetch()` call to send the browser's cookies
+   * along. This is the *only* mechanism that ever attaches a cookie:
+   * `Cookie` is a forbidden fetch() request header (per the Fetch spec —
+   * every browser silently drops it if JS tries to set it), so no
+   * credential type can inject one via `headers` the way every other type
+   * injects an Authorization/apiKey value. Whether this actually works
+   * depends entirely on the target's own CORS policy allowing credentialed
+   * requests from Enlace's origin — same "not Enlace's to solve" stance as
+   * CORS generally (ARCHITECTURE.md §7).
+   */
+  credentials?: 'include';
 }
 
 /** btoa() alone mangles non-ASCII input; this is MDN's own recommended round-trip for UTF-8-safe base64. */
@@ -98,11 +111,15 @@ async function fetchCachedOAuth2Token(
 
 /**
  * Resolves a credential into what to inject on the actual request — a
- * header (bearer/basic/apiKey-in-header/oauth2) or a query param
- * (apiKey-in-query). Async because the oauth2 types may need a live
- * token-endpoint round-trip (cached after the first — see above); every
- * other type resolves synchronously in practice but still returns a
- * Promise so chainExecutor.ts has one uniform call site.
+ * header (bearer/basic/apiKey-in-header/oauth2/popup_login-token-in-header),
+ * a query param (apiKey-in-query/popup_login-token-in-query), or (uniquely
+ * for popup_login/cookie) a `credentials: 'include'` fetch option instead
+ * of any injected value at all — see CredentialInjection's own comment on
+ * why a cookie can never be injected as a header. Async because the
+ * oauth2 types may need a live token-endpoint round-trip (cached after the
+ * first — see above); every other type resolves synchronously in practice
+ * but still returns a Promise so chainExecutor.ts has one uniform call
+ * site.
  */
 export async function resolveCredentialInjection(credential: Credential): Promise<CredentialInjection> {
   switch (credential.type) {
@@ -138,6 +155,12 @@ export async function resolveCredentialInjection(credential: Credential): Promis
       const accessToken = await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params);
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
+    case 'popup_login':
+      return credential.responseType === 'cookie'
+        ? { credentials: 'include' }
+        : credential.in === 'query'
+          ? { query: { [credential.paramName]: credential.token } }
+          : { headers: { [credential.paramName]: credential.token } };
   }
 }
 
