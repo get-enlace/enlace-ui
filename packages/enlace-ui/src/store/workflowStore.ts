@@ -3,7 +3,15 @@ import { fetchSpec } from '../api/client.js';
 import { parseOperations } from '../engine/specParser.js';
 import { executeChain } from '../engine/chainExecutor.js';
 import { randomId } from '../utils/randomId.js';
-import type { Credential, FieldValue, Operation, RunResult, WorkflowConnection, WorkflowNode } from '../types.js';
+import type {
+  Credential,
+  FieldValue,
+  NewCredential,
+  Operation,
+  RunResult,
+  WorkflowConnection,
+  WorkflowNode,
+} from '../types.js';
 
 export interface Position {
   x: number;
@@ -66,8 +74,8 @@ interface WorkflowState {
   setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
   /** Establishes execution ORDER only — separate from field mapping (data source). */
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
-  /** Held in browser memory only — never sent anywhere except as an Authorization header on the actual request. */
-  addCredential: (name: string, token: string) => void;
+  /** Held in browser memory only — never sent anywhere except as the resolved header/query param on the actual request (see engine/credentials.ts). */
+  addCredential: (credential: NewCredential) => void;
   run: () => Promise<void>;
 }
 
@@ -163,9 +171,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       return { connections: [...state.connections, { fromNodeId, toNodeId }] };
     }),
 
-  addCredential: (name, token) => {
-    const credential: Credential = { id: randomId(), name, type: 'bearer', token };
-    set((state) => ({ credentials: [...state.credentials, credential] }));
+  addCredential: (credential) => {
+    const withId = { ...credential, id: randomId() } as Credential;
+    set((state) => ({ credentials: [...state.credentials, withId] }));
   },
 
   run: async () => {

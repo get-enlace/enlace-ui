@@ -30,6 +30,7 @@
 
   --color-error: #f93e3e;
   --color-focus: #61affe;
+  --color-warning: #fca130;
 }
 
 * {
@@ -99,6 +100,12 @@ body {
   background: transparent;
   border: 2px solid var(--color-focus);
   color: var(--color-focus);
+}
+
+.btn--secondary {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
 }
 
 /* --- Body layout --- */
@@ -611,14 +618,77 @@ body {
   white-space: nowrap;
 }
 
-.credentials-panel input {
-  width: 120px;
+/* Anchors the popover to the "+ Add credential" button — the button
+ * itself stays in the topbar's normal flow, the form below is the only
+ * thing taken out of it. */
+.credentials-panel__anchor {
+  position: relative;
+}
+
+/* Credential types range from one field (bearer) to four
+ * (oauth2_clientCredentials) — too much to lay out inline in a one-line
+ * topbar without it reflowing the whole header, so it's a floating form
+ * instead, same trigger-and-panel pattern as the inspector's "map from"
+ * pickers use inline. */
+.credentials-panel__popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 260px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-panel-bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.credentials-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.credentials-panel__field input,
+.credentials-panel__field select {
   border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 5px 8px;
   font-size: 12px;
-  background: var(--color-panel-bg);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  background: var(--color-topbar-bg);
   color: var(--color-text);
+}
+
+.credentials-panel__warning {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--color-warning);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-warning);
+}
+
+.credentials-panel__popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.credentials-panel__popover-actions .btn {
+  padding: 5px 14px;
+  font-size: 11px;
 }
 
 /* --- Debug pane ---

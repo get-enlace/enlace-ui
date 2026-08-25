@@ -23,8 +23,14 @@ dev-publish workflow. Planned:
 
 ## More credential types
 
-Bearer tokens only today. Planned: `apiKey`, `basic`, and OAuth2
-client-credentials.
+`bearer`, `basic`, `apiKey`, and OAuth2 `clientCredentials` today (the
+grant types/subtypes needing a browser redirect/popup or relying on the
+target's own cookie — OAuth2 `authorizationCode` and `password`, and the
+Cookie type — are the remaining, later phases). Planned: spec-driven
+credential template suggestion from a loaded spec's
+`components.securitySchemes`, and explicit warning copy on higher-risk
+credential types (client secrets, password-grant) beyond the one already
+shown for OAuth2 client-credentials.
 
 ## Canvas field-to-field mapping
 

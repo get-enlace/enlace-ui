@@ -63,29 +63,83 @@ export interface Workflow {
   connections: WorkflowConnection[];
 }
 
-// POC/MVP supports "bearer" only; a later pass adds apiKey | basic | oauth2_client_credentials.
-export type CredentialType = 'bearer';
+// Phase 1 of auth-strategy.md: the credential types that need no browser
+// redirect/popup (fully automatable from a plain fetch). OAuth2's
+// authorizationCode and password grants, and the Cookie type, are a later
+// phase — see auth-strategy.md at the workspace root.
+export type CredentialType = 'bearer' | 'basic' | 'apiKey' | 'oauth2_clientCredentials';
 
-/**
- * Held entirely in browser memory (this store, not persisted) — the token
- * never leaves the tab except as the Authorization header on the actual
- * request to the target API itself. See engine/chainExecutor.ts's
- * `toAuthHeader`.
- */
-export interface Credential {
+interface CredentialBase {
   id: string;
   name: string;
-  type: CredentialType;
+}
+
+export interface BearerCredential extends CredentialBase {
+  type: 'bearer';
   token: string;
 }
 
-export type NewCredential = Omit<Credential, 'id'>;
+export interface BasicCredential extends CredentialBase {
+  type: 'basic';
+  username: string;
+  password: string;
+}
+
+/**
+ * `in` mirrors an OpenAPI apiKey securityScheme's own `in` field
+ * ('header' | 'query') — no 'cookie' here; that's the PRD's separate
+ * Cookie credential type, not built yet.
+ */
+export interface ApiKeyCredential extends CredentialBase {
+  type: 'apiKey';
+  paramName: string;
+  in: 'header' | 'query';
+  key: string;
+}
+
+/**
+ * OAuth2 client-credentials grant — no human interaction, so it's the one
+ * OAuth2 grant fully automatable from the browser: POST to `tokenUrl` with
+ * clientId/clientSecret, cache the resulting bearer token in memory (see
+ * engine/credentials.ts). The other grants (authorizationCode, password)
+ * need a redirect/popup and are a later phase.
+ */
+export interface OAuth2ClientCredentialsCredential extends CredentialBase {
+  type: 'oauth2_clientCredentials';
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  scope?: string;
+}
+
+/**
+ * Held entirely in browser memory (the store, not persisted) — the secret
+ * values never leave the tab except as headers/query params on the actual
+ * request to the target API itself (or, for oauth2_clientCredentials, the
+ * token endpoint). See engine/credentials.ts's `resolveCredentialInjection`.
+ */
+export type Credential = BearerCredential | BasicCredential | ApiKeyCredential | OAuth2ClientCredentialsCredential;
+
+// Omit doesn't distribute over a union on its own (it'd collapse to the
+// intersection of keys) — this does, so NewCredential stays a proper union
+// of "each variant minus id".
+type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+export type NewCredential = DistributiveOmit<Credential, 'id'>;
 
 export interface RunStepRequest {
   method: string;
   url: string;
   headers: Record<string, string>;
   body?: unknown;
+  /**
+   * Names of `url`'s query params that hold a credential secret (from an
+   * apiKey credential with `in: 'query'`) — unlike a header, there's no
+   * single well-known key ("Authorization") to redact by convention, so
+   * the debug pane (the only place `url` is ever displayed) needs this
+   * list to know which params to mask. Never used to build the actual
+   * request — only to redact the copy shown in the UI.
+   */
+  redactQueryParams?: string[];
 }
 
 export interface RunStepResponse {

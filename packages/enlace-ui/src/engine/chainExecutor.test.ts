@@ -6,6 +6,7 @@ import {
   getByPath,
   topologicalSort,
 } from './chainExecutor.js';
+import { __clearCredentialTokenCacheForTests } from './credentials.js';
 import type { Credential, Operation, WorkflowConnection, WorkflowNode } from '../types.js';
 
 function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): WorkflowNode {
@@ -15,6 +16,7 @@ function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): Workfl
 function mockResponse(status: number, body: unknown) {
   return {
     status,
+    ok: status >= 200 && status < 300,
     headers: new Headers({ 'content-type': 'application/json' }),
     json: async () => body,
   } as unknown as Response;
@@ -88,7 +90,10 @@ describe('computeExecutionLevels', () => {
 });
 
 describe('executeChain', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __clearCredentialTokenCacheForTests();
+  });
 
   it('resolves path/query/header/body field sections, including a value mapped from a prior step', async () => {
     const fetchMock = vi
@@ -223,6 +228,151 @@ describe('executeChain', () => {
 
     const [, init] = fetchMock.mock.calls[0];
     expect(init.headers.Authorization).toBe('Bearer secret-token');
+  });
+
+  it('sends a Basic Authorization header for a basic credential', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const credentialsById = new Map<string, Credential>([
+      ['cred-1', { id: 'cred-1', name: 'Test', type: 'basic', username: 'alice', password: 'hunter2' }],
+    ]);
+
+    await executeChain(
+      { nodes: [a], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers.Authorization).toBe(`Basic ${btoa('alice:hunter2')}`);
+  });
+
+  it('sends an apiKey credential as a query param when `in` is "query"', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const credentialsById = new Map<string, Credential>([
+      ['cred-1', { id: 'cred-1', name: 'Test', type: 'apiKey', paramName: 'apiKey', in: 'query', key: 'secret-key' }],
+    ]);
+
+    await executeChain(
+      { nodes: [a], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://example.test/noop?apiKey=secret-key');
+  });
+
+  it('fetches and caches an oauth2 client-credentials token, reusing it across nodes', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url === 'http://auth.test/token') {
+        return Promise.resolve(mockResponse(200, { access_token: 'issued-token', expires_in: 3600 }));
+      }
+      return Promise.resolve(mockResponse(200, {}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    // Two independent nodes (no connection between them, same level) sharing
+    // one credential — the token endpoint should be hit once, not twice.
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const b: WorkflowNode = { id: 'b', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const credentialsById = new Map<string, Credential>([
+      [
+        'cred-1',
+        {
+          id: 'cred-1',
+          name: 'Test',
+          type: 'oauth2_clientCredentials',
+          tokenUrl: 'http://auth.test/token',
+          clientId: 'client-id',
+          clientSecret: 'client-secret',
+        },
+      ],
+    ]);
+
+    await executeChain(
+      { nodes: [a, b], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const tokenCalls = fetchMock.mock.calls.filter(([url]) => url === 'http://auth.test/token');
+    expect(tokenCalls).toHaveLength(1);
+
+    const requestCalls = fetchMock.mock.calls.filter(([url]) => url !== 'http://auth.test/token');
+    for (const [, init] of requestCalls) {
+      expect(init.headers.Authorization).toBe('Bearer issued-token');
+    }
+  });
+
+  it('records a failed oauth2 token fetch as a normal failed RunStep, not an uncaught rejection', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(401, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const credentialsById = new Map<string, Credential>([
+      [
+        'cred-1',
+        {
+          id: 'cred-1',
+          name: 'Test',
+          type: 'oauth2_clientCredentials',
+          tokenUrl: 'http://auth.test/token',
+          clientId: 'client-id',
+          clientSecret: 'client-secret',
+        },
+      ],
+    ]);
+
+    const result = await executeChain(
+      { nodes: [a], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].error).toMatch(/token request.*failed with status 401/);
   });
 });
 

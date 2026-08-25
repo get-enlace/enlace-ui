@@ -1,9 +1,11 @@
+import { resolveCredentialInjection } from './credentials.js';
 import type {
   Credential,
   FieldValue,
   Operation,
   RunResult,
   RunStep,
+  RunStepRequest,
   Workflow,
   WorkflowConnection,
   WorkflowNode,
@@ -119,31 +121,13 @@ function resolveFieldValue(fieldValue: FieldValue, stepsByNodeId: Map<string, Ru
   return getByPath(priorStep?.response?.body, fieldValue.fromResponseFieldPath);
 }
 
-/**
- * Auth header for a credential — bearer only, per current scope. Runs
- * entirely client-side: the token never leaves the tab except as this
- * header, sent directly to the target API itself (see `runNode`). No
- * server-side store to keep in sync with anymore, so this is just a pure
- * function over whatever's in the caller's `credentialsById` map, rather
- * than the POC's separate stateful `CredentialStore` class.
- */
-function toAuthHeader(credential: Credential | undefined): Record<string, string> {
-  if (!credential) return {};
-  switch (credential.type) {
-    case 'bearer':
-      return { Authorization: `Bearer ${credential.token}` };
-    default:
-      return {};
-  }
-}
-
-function buildRequest(
+async function buildRequest(
   node: WorkflowNode,
   operation: Operation,
   stepsByNodeId: Map<string, RunStep>,
   credentialsById: Map<string, Credential>,
   baseUrl: string
-) {
+): Promise<RunStepRequest> {
   let requestPath = operation.path;
   const query = new URLSearchParams();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -165,8 +149,21 @@ function buildRequest(
     }
   }
 
+  // Runs entirely client-side, same as the request itself: the secret
+  // never leaves the tab except as whatever resolveCredentialInjection
+  // hands back (a header, or for apiKey-in-query a query param) — sent
+  // straight to the target API, not routed through any adapter.
+  const redactQueryParams: string[] = [];
   if (node.credentialId) {
-    Object.assign(headers, toAuthHeader(credentialsById.get(node.credentialId)));
+    const credential = credentialsById.get(node.credentialId);
+    if (credential) {
+      const injection = await resolveCredentialInjection(credential);
+      Object.assign(headers, injection.headers);
+      for (const [key, value] of Object.entries(injection.query ?? {})) {
+        query.set(key, value);
+        redactQueryParams.push(key);
+      }
+    }
   }
 
   const queryString = query.toString();
@@ -178,6 +175,7 @@ function buildRequest(
     url,
     headers,
     body: hasBody ? bodyFields : undefined,
+    redactQueryParams: redactQueryParams.length > 0 ? redactQueryParams : undefined,
   };
 }
 
@@ -188,12 +186,28 @@ async function runNode(
   credentialsById: Map<string, Credential>,
   baseUrl: string
 ): Promise<RunStep> {
-  // Built synchronously, before the request fires — every field this node
-  // could need comes from an earlier level, already in stepsByNodeId, so
-  // there's no ordering hazard reading it here even though other nodes in
-  // this same level are being built/fired concurrently.
-  const request = buildRequest(node, operation, stepsByNodeId, credentialsById, baseUrl);
+  // Built before the request fires — every field this node could need
+  // comes from an earlier level, already in stepsByNodeId, so there's no
+  // ordering hazard reading it here even though other nodes in this same
+  // level are being built/fired concurrently. Now async (credential
+  // resolution can require a live token-endpoint round-trip — see
+  // credentials.ts), so a failure here (e.g. a bad oauth2 tokenUrl) is
+  // caught the same way a failed fetch() is: a normal failed RunStep,
+  // not an uncaught rejection out of executeChain's Promise.all.
   const timestampStart = new Date().toISOString();
+  let request: RunStepRequest;
+  try {
+    request = await buildRequest(node, operation, stepsByNodeId, credentialsById, baseUrl);
+  } catch (err) {
+    return {
+      nodeId: node.id,
+      request: { method: operation.method.toUpperCase(), url: `${baseUrl}${operation.path}`, headers: {} },
+      timestampStart,
+      timestampEnd: new Date().toISOString(),
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
   const step: RunStep = { nodeId: node.id, request, timestampStart, timestampEnd: '' };
 
   try {
