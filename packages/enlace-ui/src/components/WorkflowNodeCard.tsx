@@ -43,7 +43,11 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
         <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
         <span className="workflow-node__path">{operation?.path ?? 'Unknown operation'}</span>
       </div>
-      {operation?.summary && <div className="workflow-node__summary">{operation.summary}</div>}
+      {operation?.summary && (
+        <div className="workflow-node__summary" title={operation.summary}>
+          {operation.summary}
+        </div>
+      )}
       <Handle type="source" position={Position.Right} title="Drag to connect — sets run order, not data" />
     </fieldset>
   );
