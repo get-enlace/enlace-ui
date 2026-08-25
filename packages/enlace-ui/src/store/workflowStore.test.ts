@@ -9,6 +9,7 @@ beforeEach(() => {
     connections: [],
     nodePositions: {},
     selectedNodeId: null,
+    credentials: [],
   });
 });
 
@@ -58,5 +59,52 @@ describe('removeNode', () => {
     removeNode(a);
 
     expect(useWorkflowStore.getState().selectedNodeId).toBe(b);
+  });
+});
+
+describe('addCredential / removeCredential', () => {
+  it('assigns a fresh id to a new credential', () => {
+    const { addCredential } = useWorkflowStore.getState();
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+
+    const credentials = useWorkflowStore.getState().credentials;
+    expect(credentials).toHaveLength(1);
+    expect(credentials[0]).toMatchObject({ name: 'staging', type: 'bearer', token: 'secret' });
+    expect(credentials[0].id).toBeTruthy();
+  });
+
+  it('removes the credential and unsets it from any node still referencing it, instead of a dangling credentialId', () => {
+    const { addNode, addCredential, setCredential, removeCredential } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    const credentialId = useWorkflowStore.getState().credentials[0].id;
+    setCredential(a, credentialId);
+    setCredential(b, credentialId);
+
+    removeCredential(credentialId);
+
+    const state = useWorkflowStore.getState();
+    expect(state.credentials).toEqual([]);
+    expect(state.nodes.find((n) => n.id === a)?.credentialId).toBeNull();
+    expect(state.nodes.find((n) => n.id === b)?.credentialId).toBeNull();
+  });
+
+  it('leaves an unrelated node\'s credential alone', () => {
+    const { addNode, addCredential, setCredential, removeCredential } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    addCredential({ name: 'prod', type: 'bearer', token: 'secret2' });
+    const [staging, prod] = useWorkflowStore.getState().credentials;
+    setCredential(a, staging.id);
+    setCredential(b, prod.id);
+
+    removeCredential(staging.id);
+
+    const state = useWorkflowStore.getState();
+    expect(state.credentials).toEqual([prod]);
+    expect(state.nodes.find((n) => n.id === a)?.credentialId).toBeNull();
+    expect(state.nodes.find((n) => n.id === b)?.credentialId).toBe(prod.id);
   });
 });

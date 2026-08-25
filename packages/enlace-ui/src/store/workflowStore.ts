@@ -76,6 +76,8 @@ interface WorkflowState {
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
   /** Held in browser memory only — never sent anywhere except as the resolved header/query param on the actual request (see engine/credentials.ts). */
   addCredential: (credential: NewCredential) => void;
+  /** Removes a credential and unsets it from any node still referencing it — same dangling-reference reasoning as removeNode's cleanup of mapped fields. */
+  removeCredential: (credentialId: string) => void;
   run: () => Promise<void>;
 }
 
@@ -175,6 +177,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     const withId = { ...credential, id: randomId() } as Credential;
     set((state) => ({ credentials: [...state.credentials, withId] }));
   },
+
+  removeCredential: (credentialId) =>
+    set((state) => ({
+      credentials: state.credentials.filter((c) => c.id !== credentialId),
+      nodes: state.nodes.map((n) => (n.credentialId === credentialId ? { ...n, credentialId: null } : n)),
+    })),
 
   run: async () => {
     set({ isRunning: true, error: null });
