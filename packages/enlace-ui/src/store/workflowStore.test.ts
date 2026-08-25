@@ -63,7 +63,7 @@ describe('removeNode', () => {
   });
 });
 
-describe('addCredential / removeCredential', () => {
+describe('addCredential / updateCredential / removeCredential', () => {
   it('assigns a fresh id to a new credential', () => {
     const { addCredential } = useWorkflowStore.getState();
     addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
@@ -107,6 +107,47 @@ describe('addCredential / removeCredential', () => {
     expect(state.credentials).toEqual([prod]);
     expect(state.nodes.find((n) => n.id === a)?.credentialId).toBeNull();
     expect(state.nodes.find((n) => n.id === b)?.credentialId).toBe(prod.id);
+  });
+
+  it('updateCredential replaces a credential\'s fields in place, keeping its id', () => {
+    const { addNode, addCredential, setCredential, updateCredential } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    const { id } = useWorkflowStore.getState().credentials[0];
+    setCredential(a, id);
+
+    updateCredential(id, { name: 'staging-renamed', type: 'bearer', token: 'new-secret' });
+
+    const state = useWorkflowStore.getState();
+    expect(state.credentials).toEqual([{ id, name: 'staging-renamed', type: 'bearer', token: 'new-secret' }]);
+    // The node's reference is still valid — the id never changed.
+    expect(state.nodes.find((n) => n.id === a)?.credentialId).toBe(id);
+  });
+
+  it('updateCredential can change a credential\'s type entirely, not just its field values', () => {
+    const { addCredential, updateCredential } = useWorkflowStore.getState();
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    const { id } = useWorkflowStore.getState().credentials[0];
+
+    updateCredential(id, { name: 'staging', type: 'basic', username: 'alice', password: 'hunter2' });
+
+    expect(useWorkflowStore.getState().credentials).toEqual([
+      { id, name: 'staging', type: 'basic', username: 'alice', password: 'hunter2' },
+    ]);
+  });
+
+  it('updateCredential leaves other credentials untouched', () => {
+    const { addCredential, updateCredential } = useWorkflowStore.getState();
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    addCredential({ name: 'prod', type: 'bearer', token: 'secret2' });
+    const [staging, prod] = useWorkflowStore.getState().credentials;
+
+    updateCredential(staging.id, { name: 'staging-renamed', type: 'bearer', token: 'new-secret' });
+
+    expect(useWorkflowStore.getState().credentials).toEqual([
+      { id: staging.id, name: 'staging-renamed', type: 'bearer', token: 'new-secret' },
+      prod,
+    ]);
   });
 });
 

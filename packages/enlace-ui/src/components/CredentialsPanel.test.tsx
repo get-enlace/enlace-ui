@@ -337,4 +337,79 @@ describe('CredentialsPanel', () => {
     expect(screen.getByText(/From spec:/)).toBeInTheDocument();
     expect(screen.getByText('bearerAuth', { selector: 'code' })).toBeInTheDocument();
   });
+
+  it('Edit pre-fills the form with the credential\'s existing values, and Save updates it in place (same id, list length unchanged)', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'old-token' }],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '1 credential' }));
+    await user.click(screen.getByRole('button', { name: 'Edit staging' }));
+
+    expect(screen.getByPlaceholderText('name')).toHaveValue('staging');
+    expect(screen.getByPlaceholderText('bearer token')).toHaveValue('old-token');
+
+    await user.clear(screen.getByPlaceholderText('name'));
+    await user.type(screen.getByPlaceholderText('name'), 'staging-renamed');
+    await user.clear(screen.getByPlaceholderText('bearer token'));
+    await user.type(screen.getByPlaceholderText('bearer token'), 'new-token');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    const credentials = useWorkflowStore.getState().credentials;
+    expect(credentials).toHaveLength(1);
+    expect(credentials[0]).toMatchObject({ id: 'c1', name: 'staging-renamed', token: 'new-token' });
+    expect(screen.getByText('staging-renamed')).toBeInTheDocument();
+  });
+
+  it('Cancel during Edit discards changes, leaving the original credential untouched', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'old-token' }],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '1 credential' }));
+    await user.click(screen.getByRole('button', { name: 'Edit staging' }));
+    await user.clear(screen.getByPlaceholderText('name'));
+    await user.type(screen.getByPlaceholderText('name'), 'discarded-name');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(useWorkflowStore.getState().credentials).toEqual([
+      { id: 'c1', name: 'staging', type: 'bearer', token: 'old-token' },
+    ]);
+    expect(screen.getByText('staging')).toBeInTheDocument();
+  });
+
+  it('editing a credential switches type fields the same way adding does, and Save persists the new type', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'old-token' }],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '1 credential' }));
+    await user.click(screen.getByRole('button', { name: 'Edit staging' }));
+    await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'basic');
+    await user.type(screen.getByPlaceholderText('username'), 'alice');
+    await user.type(screen.getByPlaceholderText('password'), 'hunter2');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(useWorkflowStore.getState().credentials).toEqual([
+      { id: 'c1', name: 'staging', type: 'basic', username: 'alice', password: 'hunter2' },
+    ]);
+  });
+
+  it('shows "Originally configured from..." (not the fresh pre-fill banner) when editing a credential that came from a declared scheme', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      credentials: [
+        { id: 'c1', name: 'bearerAuth', type: 'bearer', token: 'secret', fromSecurityScheme: 'bearerAuth' },
+      ],
+    });
+    render(<CredentialsPanel />);
+    await user.click(screen.getByRole('button', { name: '1 credential' }));
+    await user.click(screen.getByRole('button', { name: 'Edit bearerAuth' }));
+
+    expect(screen.getByText(/Originally configured from/)).toBeInTheDocument();
+    expect(screen.queryByText(/fill in the secret value\(s\) below/)).not.toBeInTheDocument();
+  });
 });

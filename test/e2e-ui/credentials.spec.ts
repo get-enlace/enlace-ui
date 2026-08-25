@@ -85,4 +85,26 @@ test.describe('Credentials drawer', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('heading', { name: 'Credentials' })).not.toBeVisible();
   });
+
+  test('Edit pre-fills the form with the existing values, and Save changes updates the card in place', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: '0 credentials' }).click();
+    await page.getByRole('button', { name: '+ New credential' }).click();
+    await page.getByPlaceholder('name').fill('editable-cred');
+    await page.getByPlaceholder('bearer token').fill('original-token');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    await page.getByRole('button', { name: 'Edit editable-cred' }).click();
+    await expect(page.getByPlaceholder('name')).toHaveValue('editable-cred');
+    await expect(page.getByPlaceholder('bearer token')).toHaveValue('original-token');
+
+    await page.getByPlaceholder('name').fill('renamed-cred');
+    await page.getByRole('button', { name: 'Save changes' }).click();
+
+    // Still just one credential — an edit, not a second one — under the new name.
+    await expect(page.getByRole('button', { name: '1 credential' })).toBeVisible();
+    await expect(page.locator('.credential-card', { hasText: 'renamed-cred' })).toBeVisible();
+    await expect(page.locator('.credential-card', { hasText: 'editable-cred' })).toHaveCount(0);
+  });
 });

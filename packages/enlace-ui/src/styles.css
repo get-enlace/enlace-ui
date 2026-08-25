@@ -790,6 +790,26 @@ body {
   color: var(--color-text-muted);
 }
 
+.credential-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.credential-card__edit {
+  background: transparent;
+  border: none;
+  color: var(--color-focus);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.credential-card__edit:hover {
+  text-decoration: underline;
+}
+
 .credential-card__delete {
   background: transparent;
   border: none;

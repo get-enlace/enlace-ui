@@ -357,22 +357,22 @@
       "basicAuth": {
         "type": "http",
         "scheme": "basic",
-        "description": "Required on POST /customers (a back-office/support tool creates the record). Demo-only: presence-checked, not verified against a real user store — see examples/sample-api/auth.ts."
+        "description": "Required on POST /customers. Demo-only: any username/password is accepted"
       },
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Required on PATCH/DELETE /customers/{id} (the customer's own session token). Demo-only: any bearer token is accepted, presence-checked only — see examples/sample-api/auth.ts."
+        "description": "Required on PATCH/DELETE /customers/{id}. Demo-only: any bearer token is accepted"
       },
       "apiKeyAuth": {
         "type": "apiKey",
         "in": "header",
         "name": "X-API-Key",
-        "description": "Required on POST /orders (a point-of-sale/kiosk integration). Demo-only: presence-checked only — see examples/sample-api/auth.ts."
+        "description": "Required on POST /orders. Demo-only: any value is accepted"
       },
       "oauth2ClientCreds": {
         "type": "oauth2",
-        "description": "Required on DELETE /orders/{id} — an automated cleanup job, service-to-service, no human login. Genuinely enforced: the sample server verifies the token's signature against the local mock issuer's JWKS (examples/sample-api/mockOAuth2.ts). Any client_id/client_secret is accepted at the token endpoint itself.",
+        "description": "Required on DELETE /orders/{id}. Genuinely enforced: the sample server verifies the token's signature against the local mock issuer's JWK. Any client_id/client_secret is accepted at the token endpoint itself.",
         "flows": {
           "clientCredentials": {
             "tokenUrl": "http://localhost:4001/token",
@@ -382,7 +382,7 @@
       },
       "oauth2Password": {
         "type": "oauth2",
-        "description": "Required on POST/PATCH/DELETE /products (the catalog is admin-managed — only an admin, authenticated with their own username/password against the auth server, can write to it). Genuinely enforced, same as oauth2ClientCreds above — any username/password is accepted at the token endpoint itself.",
+        "description": "Required on POST/PATCH/DELETE /products. Genuinely enforced, the sample server verifies the token's signature against the local mock issuer's JWK. Any username/password is accepted at the token endpoint itself.",
         "flows": {
           "password": {
             "tokenUrl": "http://localhost:4001/token",

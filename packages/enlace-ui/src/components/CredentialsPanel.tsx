@@ -50,6 +50,12 @@ function maskTail(value: string): string {
   return `••••${value.slice(-4)}`;
 }
 
+/** Strips `id` off a saved credential so it can seed the edit form's draft — the inverse of what addCredential/updateCredential do with a NewCredential. */
+function toDraft(credential: Credential): NewCredential {
+  const { id: _id, ...rest } = credential;
+  return rest;
+}
+
 function maskedPreview(credential: Credential): string {
   switch (credential.type) {
     case 'bearer':
@@ -66,14 +72,21 @@ function maskedPreview(credential: Credential): string {
 }
 
 export function CredentialsPanel() {
-  const { credentials, declaredCredentials, nodes, addCredential, removeCredential } = useWorkflowStore();
+  const { credentials, declaredCredentials, nodes, addCredential, updateCredential, removeCredential } =
+    useWorkflowStore();
   const [isOpen, setIsOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  // Non-null while editing an existing credential rather than adding a new
+  // one — same form, but Save calls updateCredential(editingId, draft)
+  // instead of addCredential(draft), keeping the id (and every node's
+  // credentialId reference to it) stable.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<NewCredential>(() => emptyDraft('bearer', ''));
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const resetDraft = () => {
     setIsAdding(false);
+    setEditingId(null);
     setDraft(emptyDraft('bearer', ''));
   };
 
@@ -84,6 +97,12 @@ export function CredentialsPanel() {
 
   const startConfiguring = (entry: DeclaredCredential) => {
     setDraft(entry.template);
+    setIsAdding(true);
+  };
+
+  const startEditing = (credential: Credential) => {
+    setDraft(toDraft(credential));
+    setEditingId(credential.id);
     setIsAdding(true);
   };
 
@@ -153,14 +172,24 @@ export function CredentialsPanel() {
                           <span className={`credential-badge credential-badge--${c.type}`}>
                             {CREDENTIAL_TYPE_LABELS[c.type]}
                           </span>
-                          <button
-                            type="button"
-                            className="credential-card__delete"
-                            onClick={() => removeCredential(c.id)}
-                            aria-label={`Delete ${c.name}`}
-                          >
-                            Delete
-                          </button>
+                          <div className="credential-card__actions">
+                            <button
+                              type="button"
+                              className="credential-card__edit"
+                              onClick={() => startEditing(c)}
+                              aria-label={`Edit ${c.name}`}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="credential-card__delete"
+                              onClick={() => removeCredential(c.id)}
+                              aria-label={`Delete ${c.name}`}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                         <div className="credential-card__name">{c.name}</div>
                         <div className="credential-card__preview">{maskedPreview(c)}</div>
@@ -216,8 +245,18 @@ export function CredentialsPanel() {
                 <div className="credentials-drawer__form">
                   {draft.fromSecurityScheme && (
                     <p className="credentials-panel__spec-banner">
-                      This credential is declared in the spec's{' '}
-                      <code>securitySchemes.{draft.fromSecurityScheme}</code> — fill in the secret value(s) below.
+                      {editingId ? (
+                        <>
+                          Originally configured from the spec's{' '}
+                          <code>securitySchemes.{draft.fromSecurityScheme}</code>.
+                        </>
+                      ) : (
+                        <>
+                          This credential is declared in the spec's{' '}
+                          <code>securitySchemes.{draft.fromSecurityScheme}</code> — fill in the secret value(s)
+                          below.
+                        </>
+                      )}
                     </p>
                   )}
 
@@ -424,11 +463,15 @@ export function CredentialsPanel() {
                       className="btn btn--authorize"
                       disabled={!isDraftComplete(draft)}
                       onClick={() => {
-                        addCredential(draft);
+                        if (editingId) {
+                          updateCredential(editingId, draft);
+                        } else {
+                          addCredential(draft);
+                        }
                         resetDraft();
                       }}
                     >
-                      Save
+                      {editingId ? 'Save changes' : 'Save'}
                     </button>
                   </div>
                 </div>
