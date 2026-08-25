@@ -74,6 +74,32 @@ order) needs data from **A and C, not B**.
 6. On D: set `body.customerId` to "Map from..." → A → `id`, and `body.productId` to "Map from..." → C → `id`; give `qty` a static value.
 7. Click **Run**. All 4 calls come back green, in the order A, B, C, D — but B and C actually fire concurrently (see `computeExecutionLevels` in `packages/enlace-ui/src/engine/chainExecutor.ts`).
 
+## Try the credentials demo
+
+Each of `examples/sample-api`'s write operations requires a *different*
+credential type, genuinely enforced server-side — not decoration. `npm
+start` also boots a local mock OAuth2 issuer
+([`oauth2-mock-server`](https://github.com/axa-group/oauth2-mock-server),
+on port 4001) so the two OAuth2 types are a real signed-JWT round trip, not
+a stub:
+
+| Operation | Requires | Story |
+|---|---|---|
+| `POST /customers` | Basic auth | back-office tool creates the record |
+| `PATCH`/`DELETE /customers/{id}` | Bearer token | the customer's own session token |
+| `POST /orders` | API key (header) | a POS/kiosk integration |
+| `POST`/`PATCH`/`DELETE /products/{id}` | OAuth2 (password grant) | **only an admin**, logging in with their own username/password, can manage the catalog |
+| `DELETE /orders/{id}` | OAuth2 (client credentials) | an automated cleanup job — service-to-service, no human login |
+
+The mock issuer accepts *any* client id/secret or username/password — it's
+not really authenticating anyone, just proving the actual protocol
+round-trip (POST for a token, verify its signature, attach it) works.
+
+1. Continue from the parallel-execution demo above (or start fresh — either works).
+2. Open the **Credentials** drawer (topbar). Under "Declared in spec" you'll see all five schemes read straight from `openapi.json`, tokenUrl and all — click "Configure" on each and just fill in the missing name/secret field(s) (any value works).
+3. Attach each credential to the matching node via its inspector's "Credential" dropdown, then **Run**.
+4. To see the enforcement actually bite: leave one node's credential unset (or attach the wrong type) and Run again — that step comes back red with a 401, while the debug pane still redacts whatever credential *was* sent on the others.
+
 ## Learn more
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — how Enlace is designed and why.

@@ -57,6 +57,30 @@ describe('DebugPane', () => {
     expect(dump).toContain('application/json'); // non-auth headers pass through untouched
   });
 
+  it('redacts an apiKey-in-query credential value in both the summary URL and the JSON dump', () => {
+    useWorkflowStore.setState({
+      runResult: {
+        steps: [
+          makeStep({
+            request: {
+              method: 'GET',
+              url: 'http://localhost:4000/pet?apiKey=super-secret-key&limit=10',
+              headers: { 'Content-Type': 'application/json' },
+              redactQueryParams: ['apiKey'],
+            },
+          }),
+        ],
+      },
+    });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+
+    expect(screen.getByText('http://localhost:4000/pet?apiKey=%5Bredacted%5D&limit=10')).toBeInTheDocument();
+
+    const dump = document.querySelector('pre')!.textContent!;
+    expect(dump).not.toContain('super-secret-key');
+    expect(dump).toContain('limit=10'); // non-secret query params pass through untouched
+  });
+
   it('shows the step count and a status badge per step', () => {
     useWorkflowStore.setState({ runResult: { steps: [makeStep(), makeStep({ nodeId: 'node-2' })] } });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);

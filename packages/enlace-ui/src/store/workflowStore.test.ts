@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkflowStore } from './workflowStore.js';
 
 // Reset to a clean slate before each test — zustand stores are module-level
@@ -9,6 +9,8 @@ beforeEach(() => {
     connections: [],
     nodePositions: {},
     selectedNodeId: null,
+    credentials: [],
+    declaredCredentials: [],
   });
 });
 
@@ -58,5 +60,128 @@ describe('removeNode', () => {
     removeNode(a);
 
     expect(useWorkflowStore.getState().selectedNodeId).toBe(b);
+  });
+});
+
+describe('addCredential / updateCredential / removeCredential', () => {
+  it('assigns a fresh id to a new credential', () => {
+    const { addCredential } = useWorkflowStore.getState();
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+
+    const credentials = useWorkflowStore.getState().credentials;
+    expect(credentials).toHaveLength(1);
+    expect(credentials[0]).toMatchObject({ name: 'staging', type: 'bearer', token: 'secret' });
+    expect(credentials[0].id).toBeTruthy();
+  });
+
+  it('removes the credential and unsets it from any node still referencing it, instead of a dangling credentialId', () => {
+    const { addNode, addCredential, setCredential, removeCredential } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    const credentialId = useWorkflowStore.getState().credentials[0].id;
+    setCredential(a, credentialId);
+    setCredential(b, credentialId);
+
+    removeCredential(credentialId);
+
+    const state = useWorkflowStore.getState();
+    expect(state.credentials).toEqual([]);
+    expect(state.nodes.find((n) => n.id === a)?.credentialId).toBeNull();
+    expect(state.nodes.find((n) => n.id === b)?.credentialId).toBeNull();
+  });
+
+  it('leaves an unrelated node\'s credential alone', () => {
+    const { addNode, addCredential, setCredential, removeCredential } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    addCredential({ name: 'prod', type: 'bearer', token: 'secret2' });
+    const [staging, prod] = useWorkflowStore.getState().credentials;
+    setCredential(a, staging.id);
+    setCredential(b, prod.id);
+
+    removeCredential(staging.id);
+
+    const state = useWorkflowStore.getState();
+    expect(state.credentials).toEqual([prod]);
+    expect(state.nodes.find((n) => n.id === a)?.credentialId).toBeNull();
+    expect(state.nodes.find((n) => n.id === b)?.credentialId).toBe(prod.id);
+  });
+
+  it('updateCredential replaces a credential\'s fields in place, keeping its id', () => {
+    const { addNode, addCredential, setCredential, updateCredential } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    const { id } = useWorkflowStore.getState().credentials[0];
+    setCredential(a, id);
+
+    updateCredential(id, { name: 'staging-renamed', type: 'bearer', token: 'new-secret' });
+
+    const state = useWorkflowStore.getState();
+    expect(state.credentials).toEqual([{ id, name: 'staging-renamed', type: 'bearer', token: 'new-secret' }]);
+    // The node's reference is still valid — the id never changed.
+    expect(state.nodes.find((n) => n.id === a)?.credentialId).toBe(id);
+  });
+
+  it('updateCredential can change a credential\'s type entirely, not just its field values', () => {
+    const { addCredential, updateCredential } = useWorkflowStore.getState();
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    const { id } = useWorkflowStore.getState().credentials[0];
+
+    updateCredential(id, { name: 'staging', type: 'basic', username: 'alice', password: 'hunter2' });
+
+    expect(useWorkflowStore.getState().credentials).toEqual([
+      { id, name: 'staging', type: 'basic', username: 'alice', password: 'hunter2' },
+    ]);
+  });
+
+  it('updateCredential leaves other credentials untouched', () => {
+    const { addCredential, updateCredential } = useWorkflowStore.getState();
+    addCredential({ name: 'staging', type: 'bearer', token: 'secret' });
+    addCredential({ name: 'prod', type: 'bearer', token: 'secret2' });
+    const [staging, prod] = useWorkflowStore.getState().credentials;
+
+    updateCredential(staging.id, { name: 'staging-renamed', type: 'bearer', token: 'new-secret' });
+
+    expect(useWorkflowStore.getState().credentials).toEqual([
+      { id: staging.id, name: 'staging-renamed', type: 'bearer', token: 'new-secret' },
+      prod,
+    ]);
+  });
+});
+
+describe('loadOperations', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('populates declaredCredentials from the spec\'s components.securitySchemes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          paths: {},
+          servers: [{ url: 'http://x' }],
+          components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
+        }),
+      })
+    );
+
+    await useWorkflowStore.getState().loadOperations();
+
+    const declared = useWorkflowStore.getState().declaredCredentials;
+    expect(declared).toHaveLength(1);
+    expect(declared[0]).toMatchObject({ schemeName: 'bearerAuth', template: { type: 'bearer' } });
+  });
+
+  it('leaves declaredCredentials empty when the spec declares no securitySchemes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ paths: {}, servers: [{ url: 'http://x' }] }) })
+    );
+
+    await useWorkflowStore.getState().loadOperations();
+
+    expect(useWorkflowStore.getState().declaredCredentials).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { requireOAuth2Token } from './auth.js';
 
 export interface Product {
   id: string;
@@ -13,7 +14,11 @@ export const products = new Map<string, Product>();
 
 export const productsRouter = Router();
 
-productsRouter.post('/products', (req, res) => {
+// The catalog is admin-managed — every write here requires a real token
+// from mockOAuth2.ts, per openapi.json's oauth2Password scheme ("only an
+// admin, authenticated with their own username/password against the auth
+// server, can manage products" — see README's "Try the credentials demo").
+productsRouter.post('/products', requireOAuth2Token, (req, res) => {
   const { name, price } = req.body ?? {};
   if (typeof name !== 'string' || typeof price !== 'number') {
     res.status(400).json({ error: 'name (string) and price (number) are required' });
@@ -33,7 +38,7 @@ productsRouter.get('/products/:id', (req, res) => {
   res.json(product);
 });
 
-productsRouter.patch('/products/:id', (req, res) => {
+productsRouter.patch('/products/:id', requireOAuth2Token, (req, res) => {
   const product = products.get(req.params.id);
   if (!product) {
     res.status(404).json({ error: 'not found' });
@@ -46,7 +51,7 @@ productsRouter.patch('/products/:id', (req, res) => {
   res.json(product);
 });
 
-productsRouter.delete('/products/:id', (req, res) => {
+productsRouter.delete('/products/:id', requireOAuth2Token, (req, res) => {
   if (!products.delete(req.params.id)) {
     res.status(404).json({ error: 'not found' });
     return;

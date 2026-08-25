@@ -23,8 +23,16 @@ dev-publish workflow. Planned:
 
 ## More credential types
 
-Bearer tokens only today. Planned: `apiKey`, `basic`, and OAuth2
-client-credentials.
+`bearer`, `basic`, `apiKey`, and OAuth2 `clientCredentials`/`password`
+today, plus reading what the spec itself declares: a loaded spec's
+`components.securitySchemes` populates the Credentials drawer's "Declared
+in spec" list with ready-to-configure templates, pre-filling everything
+but the secret value(s) (clearly marked as spec-derived, both at
+configuration time and afterward on the saved credential's card).
+Remaining, later phases:
+OAuth2 `authorizationCode` (needs a browser redirect/popup + callback
+route) and the Cookie type — both need actual interactive/browser-session
+handling, unlike everything else here.
 
 ## Canvas field-to-field mapping
 

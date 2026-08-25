@@ -1,9 +1,24 @@
 import { useWorkflowStore } from '../store/workflowStore.js';
 import type { RunStepRequest } from '../types.js';
 
-function redactHeaders(request: RunStepRequest): RunStepRequest {
+/** An apiKey-in-query credential has no header to redact — its secret lives in `url` itself, named in `redactQueryParams` (see types.ts). Malformed/relative URLs fall back to the raw string rather than throwing inside the debug pane. */
+function redactUrl(url: string, paramNames: string[] | undefined): string {
+  if (!paramNames || paramNames.length === 0) return url;
+  try {
+    const parsed = new URL(url);
+    for (const name of paramNames) {
+      if (parsed.searchParams.has(name)) parsed.searchParams.set(name, '[redacted]');
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function redactRequest(request: RunStepRequest): RunStepRequest {
   return {
     ...request,
+    url: redactUrl(request.url, request.redactQueryParams),
     headers: Object.fromEntries(
       Object.entries(request.headers).map(([key, value]) =>
         key.toLowerCase() === 'authorization' ? [key, '[redacted]'] : [key, value]
@@ -61,7 +76,9 @@ export function DebugPane({ collapsed, onToggleCollapsed }: DebugPaneProps) {
                     <span className={`method-badge method-badge--${step.request.method.toLowerCase()}`}>
                       {step.request.method}
                     </span>
-                    <span className="debug-step__url">{step.request.url}</span>
+                    <span className="debug-step__url">
+                      {redactUrl(step.request.url, step.request.redactQueryParams)}
+                    </span>
                     <span className={`status-badge ${ok ? 'status-badge--ok' : 'status-badge--error'}`}>
                       {step.response?.status ?? 'ERROR'}
                     </span>
@@ -70,7 +87,7 @@ export function DebugPane({ collapsed, onToggleCollapsed }: DebugPaneProps) {
                   {/* Redacted here, client-side — the only place this can happen now that
                       execution runs entirely in the browser and there's no server round-trip
                       to redact it in transit (ARCHITECTURE.md §7). */}
-                  <pre>{JSON.stringify({ request: redactHeaders(step.request), response: step.response }, null, 2)}</pre>
+                  <pre>{JSON.stringify({ request: redactRequest(step.request), response: step.response }, null, 2)}</pre>
                 </details>
               );
             })}

@@ -103,12 +103,19 @@ Workflow {
   connections: WorkflowConnection[]
 }
 
-Credential {
-  id: string
-  name: string
-  type: "bearer"           // more types planned, see ROADMAP.md
-  token: string            // held in browser memory only
-}
+// A discriminated union on `type` — each variant carries only the fields
+// that type needs. All held in browser memory only, never persisted.
+// `fromSecurityScheme?` on every variant records the spec's own
+// `components.securitySchemes` key when the credential was configured
+// from what the spec declares (see engine/securitySchemes.ts) — purely
+// informational, shown as a tag on the credential's card.
+Credential =
+  | { id, name, fromSecurityScheme?, type: "bearer", token }
+  | { id, name, fromSecurityScheme?, type: "basic", username, password }
+  | { id, name, fromSecurityScheme?, type: "apiKey", paramName, in: "header" | "query", key }
+  | { id, name, fromSecurityScheme?, type: "oauth2_clientCredentials", tokenUrl, clientId, clientSecret, scope? }
+  | { id, name, fromSecurityScheme?, type: "oauth2_password", tokenUrl, username, password, clientId?, clientSecret?, scope? }
+  // more variants planned (OAuth2 authorizationCode, Cookie) — see ROADMAP.md
 
 RunResult {
   steps: [
@@ -135,7 +142,7 @@ A field may be mapped from **any ancestor** in the connection graph, not just th
 3. Levels run one at a time, in order; **every node within a level fires concurrently** (concurrent `fetch()` calls), since the level-grouping guarantee makes that safe — this is what makes "run A, then B+C in parallel, then D (needs A and C)" actually run B and C concurrently, not just in a permissive relative order.
 4. For each node's request, in the level it's scheduled to:
    - Resolve `fieldValues` — static values used directly; mapped values pulled from the actual captured response of the referenced upstream node.
-   - Attach credential, if any (bearer token → `Authorization` header).
+   - Attach credential, if any — resolved per its type (`engine/credentials.ts`) into a header (bearer/basic/apiKey-in-header/either oauth2 grant) or a query param (apiKey-in-query). The oauth2 types (`clientCredentials`, `password`) fetch (and in-memory-cache) a token from the credential's `tokenUrl` first.
    - Execute the real HTTP request **directly from the browser** to the target API.
    - Capture request + response for the debug pane, redacting credential values in the displayed log.
 5. If any node in a level fails, halt before the next level starts — everything else already in flight in that same level still runs to completion, since those requests can't be un-sent.
@@ -157,7 +164,7 @@ Built with React, React Flow, and Zustand.
 ## 7. Security Notes
 
 - Credentials are held in browser memory only for the session — never written to disk or logs by the UI itself.
-- The debug pane redacts the `Authorization` header value before it's ever rendered — shows that a credential was sent without exposing the raw token.
+- The debug pane redacts the `Authorization` header value, and (for an apiKey credential sent `in: "query"`, where the secret lives in the URL itself rather than a header) the named query param in the displayed URL — shows that a credential was sent without exposing the raw value.
 - CORS is the target API's responsibility, since requests fire directly from the browser — this tool doesn't solve it, and that must be documented clearly wherever it matters.
 - No per-user auth inside the tool; access control is inherited entirely from whatever network perimeter (VPN, internal network, SSO-gated proxy) already protects the host environment.
 

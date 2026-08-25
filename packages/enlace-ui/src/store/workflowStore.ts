@@ -2,8 +2,17 @@ import { create } from 'zustand';
 import { fetchSpec } from '../api/client.js';
 import { parseOperations } from '../engine/specParser.js';
 import { executeChain } from '../engine/chainExecutor.js';
+import { extractDeclaredCredentials, type DeclaredCredential } from '../engine/securitySchemes.js';
 import { randomId } from '../utils/randomId.js';
-import type { Credential, FieldValue, Operation, RunResult, WorkflowConnection, WorkflowNode } from '../types.js';
+import type {
+  Credential,
+  FieldValue,
+  NewCredential,
+  Operation,
+  RunResult,
+  WorkflowConnection,
+  WorkflowNode,
+} from '../types.js';
 
 export interface Position {
   x: number;
@@ -45,6 +54,8 @@ interface WorkflowState {
   /** Canvas layout only — not part of the executed Workflow. */
   nodePositions: Record<string, Position>;
   credentials: Credential[];
+  /** Pre-fill templates read from the loaded spec's own `components.securitySchemes` — see engine/securitySchemes.ts. Empty until loadOperations() resolves; never gates manually creating any credential type regardless of what's in here. */
+  declaredCredentials: DeclaredCredential[];
   selectedNodeId: string | null;
   runResult: RunResult | null;
   isRunning: boolean;
@@ -66,8 +77,12 @@ interface WorkflowState {
   setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
   /** Establishes execution ORDER only — separate from field mapping (data source). */
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
-  /** Held in browser memory only — never sent anywhere except as an Authorization header on the actual request. */
-  addCredential: (name: string, token: string) => void;
+  /** Held in browser memory only — never sent anywhere except as the resolved header/query param on the actual request (see engine/credentials.ts). */
+  addCredential: (credential: NewCredential) => void;
+  /** Replaces a credential's fields in place, keeping its id — so every node's `credentialId` reference stays valid, unlike delete+re-add. */
+  updateCredential: (credentialId: string, credential: NewCredential) => void;
+  /** Removes a credential and unsets it from any node still referencing it — same dangling-reference reasoning as removeNode's cleanup of mapped fields. */
+  removeCredential: (credentialId: string) => void;
   run: () => Promise<void>;
 }
 
@@ -78,6 +93,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   connections: [],
   nodePositions: {},
   credentials: [],
+  declaredCredentials: [],
   selectedNodeId: null,
   runResult: null,
   isRunning: false,
@@ -88,9 +104,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       const spec = await fetchSpec();
       const operations = parseOperations(spec);
       const baseUrl = resolveBaseUrl(spec);
+      const declaredCredentials = extractDeclaredCredentials(spec);
       set({
         operations,
         baseUrl,
+        declaredCredentials,
         error: baseUrl
           ? null
           : 'Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.',
@@ -163,10 +181,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       return { connections: [...state.connections, { fromNodeId, toNodeId }] };
     }),
 
-  addCredential: (name, token) => {
-    const credential: Credential = { id: randomId(), name, type: 'bearer', token };
-    set((state) => ({ credentials: [...state.credentials, credential] }));
+  addCredential: (credential) => {
+    const withId = { ...credential, id: randomId() } as Credential;
+    set((state) => ({ credentials: [...state.credentials, withId] }));
   },
+
+  updateCredential: (credentialId, credential) => {
+    const withId = { ...credential, id: credentialId } as Credential;
+    set((state) => ({
+      credentials: state.credentials.map((c) => (c.id === credentialId ? withId : c)),
+    }));
+  },
+
+  removeCredential: (credentialId) =>
+    set((state) => ({
+      credentials: state.credentials.filter((c) => c.id !== credentialId),
+      nodes: state.nodes.map((n) => (n.credentialId === credentialId ? { ...n, credentialId: null } : n)),
+    })),
 
   run: async () => {
     set({ isRunning: true, error: null });

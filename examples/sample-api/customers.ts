@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { requireBasic, requireBearer } from './auth.js';
 
 export interface Customer {
   id: string;
@@ -13,7 +14,9 @@ export const customers = new Map<string, Customer>();
 
 export const customersRouter = Router();
 
-customersRouter.post('/customers', (req, res) => {
+// Back-office/support-tool creation, authenticated via Basic auth — see
+// openapi.json's basicAuth scheme and README's "Try the credentials demo".
+customersRouter.post('/customers', requireBasic, (req, res) => {
   const { name, email } = req.body ?? {};
   if (typeof name !== 'string' || typeof email !== 'string') {
     res.status(400).json({ error: 'name (string) and email (string) are required' });
@@ -33,7 +36,8 @@ customersRouter.get('/customers/:id', (req, res) => {
   res.json(customer);
 });
 
-customersRouter.patch('/customers/:id', (req, res) => {
+// The customer's own session token — bearerAuth in openapi.json.
+customersRouter.patch('/customers/:id', requireBearer, (req, res) => {
   const customer = customers.get(req.params.id);
   if (!customer) {
     res.status(404).json({ error: 'not found' });
@@ -46,7 +50,7 @@ customersRouter.patch('/customers/:id', (req, res) => {
   res.json(customer);
 });
 
-customersRouter.delete('/customers/:id', (req, res) => {
+customersRouter.delete('/customers/:id', requireBearer, (req, res) => {
   if (!customers.delete(req.params.id)) {
     res.status(404).json({ error: 'not found' });
     return;
