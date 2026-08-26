@@ -29,7 +29,7 @@ function defaultPosition(index: number): Position {
  * exactly the convention swagger-ui-express's own "Try it out" already
  * relies on. There's no adapter-side `targetBaseUrl` option anymore: the
  * browser is what makes the request now, so it's the browser that needs
- * this, not the adapter (see ARCHITECTURE.md §5).
+ * this, not the adapter.
  */
 function resolveBaseUrl(spec: Record<string, any>): string | null {
   const servers: Array<{ url?: string }> = spec.servers ?? [];

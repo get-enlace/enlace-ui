@@ -29,24 +29,49 @@ spec's `components.securitySchemes` populates the Credentials drawer's
 "Declared in spec" list with ready-to-configure templates, pre-filling
 everything but the secret value(s) (clearly marked as spec-derived, both
 at configuration time and afterward on the saved credential's card) —
-including `apiKey`-in-`cookie` schemes, mapped to `popup_login`/`cookie`.
+including `apiKey`-in-`cookie` schemes, mapped to `popup_login`.
 
 `popup_login` covers third-party-IdP-driven login (GitHub, Google, SSO,
 MFA — anything requiring a human to click through pages on another
 origin), which no fetch()-driven node can complete itself: the user logs
 in for real in a `window.open()`'d popup Enlace never reads from or
-writes to, then either `responseType: 'cookie'` (the browser's cookie jar
-already has it — `credentials: 'include'` picks it up automatically) or
-`responseType: 'token'` (the user pastes in whatever the login flow
-handed back, attached like an `apiKey` credential from there).
+writes to; the browser's cookie jar already has whatever the login set,
+and `credentials: 'include'` picks it up automatically from there. It
+injects nothing into the request itself — no header, no query param, no
+stored secret — making it more of a login *trigger* than a typical
+value-bearing credential; see the "Actions" note below. Deliberately
+scoped to *only* this case. A "the login flow hands back a token instead,
+paste it in" variant was designed and built, then dropped: the token
+could only be obtained via the very "Log in" button on the same form as
+the now-required Token field, and nothing communicated that ordering — a
+required field the user had no way to fill in on their first attempt.
+Worth revisiting on real demand, with that ordering problem actually
+solved (not just re-added).
 
 Remaining, later phase: full OAuth2 `authorizationCode`-grant support —
 Enlace owning a registered callback route to *automatically* capture a
-code/token from the popup's own redirect, rather than relying on the user
-to paste it in by hand (`popup_login`'s `responseType: 'token'` covers
-that need manually today; a truly automatic version needs Enlace to
-control the redirect target, which is a materially different, harder
-mechanism — see ARCHITECTURE.md §7).
+code/token from a popup's own redirect. Needs Enlace to control the
+redirect target, which is a materially different, harder mechanism than
+`popup_login` (see ARCHITECTURE.md §7).
+
+## Actions, as a concept distinct from Credentials
+
+`popup_login` doesn't fit the Credential model cleanly — attaching it to
+a node injects nothing into the request (no header, no query param); it
+triggers something to happen (a real login, in a popup) whose effect (a
+cookie) is applied by the browser, invisibly, outside Enlace's control.
+It's modeled as a Credential today because that's the closest existing
+mechanism — something attachable to a node, configurable in the same
+drawer — not because it conceptually holds a secret; it's the one
+variant with no stored value in its own state at all.
+
+If more UI-triggered, non-value-bearing steps come up later (explicit
+"re-run login", "refresh this token", "clear this session"), they likely
+deserve a first-class **Action** concept of their own — something a node
+can trigger as part of a run, distinct from a Credential's "here's a
+value to attach" — rather than continuing to stretch Credential to cover
+both meanings. Not scoped or designed yet; noted here so `popup_login`
+isn't mistaken for the intended long-term shape of that idea.
 
 ## Canvas field-to-field mapping
 

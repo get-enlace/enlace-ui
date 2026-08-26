@@ -2,15 +2,14 @@ import type { NewCredential } from '../types.js';
 
 /**
  * One `components.securitySchemes` entry, turned into a ready-to-use
- * credential draft — per auth-strategy.md §4: the spec has *declared* this
- * scheme exists, matching Swagger UI's own "Authorize" dialog behavior of
- * auto-detecting declared schemes, except here it pre-fills a whole
- * credential template (grant type, tokenUrl/paramName/scope) rather than
- * just prompting for a raw value. Deliberately not called a "suggestion" —
- * this isn't Enlace guessing, it's reading a fact the spec's author
- * already stated. Never gates manual creation — see CredentialsPanel.tsx,
- * which always offers every CredentialType regardless of what the spec
- * declares.
+ * credential draft: the spec has *declared* this scheme exists, matching
+ * Swagger UI's own "Authorize" dialog behavior of auto-detecting declared
+ * schemes, except here it pre-fills a whole credential template (grant
+ * type, tokenUrl/paramName/scope) rather than just prompting for a raw
+ * value. Deliberately not called a "suggestion" — this isn't Enlace
+ * guessing, it's reading a fact the spec's author already stated. Never
+ * gates manual creation — see CredentialsPanel.tsx, which always offers
+ * every CredentialType regardless of what the spec declares.
  */
 export interface DeclaredCredential {
   /** The scheme's key in `components.securitySchemes`, e.g. "bearerAuth" — becomes the draft's default name, and is recorded as the resulting credential's `fromSecurityScheme`. */
@@ -25,8 +24,7 @@ export interface DeclaredCredential {
  * Extracts one entry per supported `components.securitySchemes` declaration.
  * A scheme this phase doesn't support yet (oauth2 authorizationCode/
  * implicit, openIdConnect, mutualTLS) is silently skipped — not an error,
- * since arbitrary manual creation covers it regardless (see
- * auth-strategy.md §4).
+ * since arbitrary manual creation covers it regardless.
  */
 export function extractDeclaredCredentials(spec: Record<string, any>): DeclaredCredential[] {
   const schemes = spec?.components?.securitySchemes ?? {};
@@ -64,20 +62,14 @@ function toCredentialTemplate(schemeName: string, scheme: any): NewCredential | 
   // apiKey-in-cookie — OpenAPI's own way of declaring "there's a cookie
   // named X" (e.g. NestJS's DocumentBuilder.addCookieAuth()), but the
   // scheme itself never says how that cookie gets set, so there's no
-  // tokenUrl/loginUrl to pre-fill the way every other scheme's structural
-  // fields get pre-filled — the user still has to supply the login page.
-  // Mapped to popup_login/cookie regardless, since that's the only
-  // credential type this scheme could ever mean: `Cookie` can't be
-  // injected as a header (see engine/credentials.ts), so there is no
-  // apiKey-shaped equivalent for `in: 'cookie'` the way there is for
-  // header/query above.
+  // loginUrl to pre-fill the way every other scheme's structural fields
+  // get pre-filled — the user still has to supply the login page. Mapped
+  // to popup_login regardless, since that's the only credential type this
+  // scheme could ever mean: `Cookie` can't be injected as a header (see
+  // engine/credentials.ts), so there is no apiKey-shaped equivalent for
+  // `in: 'cookie'` the way there is for header/query above.
   if (scheme.type === 'apiKey' && scheme.in === 'cookie') {
-    return withSource(schemeName, {
-      name: schemeName,
-      type: 'popup_login',
-      loginUrl: '',
-      responseType: 'cookie',
-    });
+    return withSource(schemeName, { name: schemeName, type: 'popup_login', loginUrl: '' });
   }
 
   if (scheme.type === 'oauth2') {

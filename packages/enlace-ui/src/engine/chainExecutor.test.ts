@@ -302,7 +302,7 @@ describe('executeChain', () => {
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
-        { id: 'cred-1', name: 'Test', type: 'popup_login', loginUrl: 'https://app.test/auth/github', responseType: 'cookie' },
+        { id: 'cred-1', name: 'Test', type: 'popup_login', loginUrl: 'https://app.test/auth/github' },
       ],
     ]);
 

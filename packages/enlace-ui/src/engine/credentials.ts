@@ -13,7 +13,7 @@ export interface CredentialInjection {
    * injects an Authorization/apiKey value. Whether this actually works
    * depends entirely on the target's own CORS policy allowing credentialed
    * requests from Enlace's origin — same "not Enlace's to solve" stance as
-   * CORS generally (ARCHITECTURE.md §7).
+   * CORS generally.
    */
   credentials?: 'include';
 }
@@ -28,9 +28,8 @@ interface CachedToken {
   expiresAt: number; // epoch ms
 }
 
-// Module-level, browser-memory-only (per auth-strategy.md's "never
-// persisted" principle — this resets on page reload same as everything
-// else). Keyed by credential id so every node sharing one oauth2
+// Module-level, browser-memory-only — never persisted, so this resets on
+// page reload same as everything else. Keyed by credential id so every node sharing one oauth2
 // credential (client-credentials or password grant), across one run or
 // many, reuses the same token instead of re-hitting the token endpoint
 // per node. A credential id is unique across every type, so one shared
@@ -56,9 +55,9 @@ async function requestOAuth2Token(
   params: Record<string, string>
 ): Promise<{ accessToken: string; expiresInSeconds: number }> {
   // Direct browser -> auth server call — same "browser talks straight to
-  // the target" relationship as the actual API request (ARCHITECTURE.md
-  // §2), no adapter round-trip. The secret never touches enlace-ui's own
-  // server side because there isn't one.
+  // the target" relationship as the actual API request, no adapter
+  // round-trip. The secret never touches enlace-ui's own server side
+  // because there isn't one.
   const res = await fetch(tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -111,15 +110,14 @@ async function fetchCachedOAuth2Token(
 
 /**
  * Resolves a credential into what to inject on the actual request — a
- * header (bearer/basic/apiKey-in-header/oauth2/popup_login-token-in-header),
- * a query param (apiKey-in-query/popup_login-token-in-query), or (uniquely
- * for popup_login/cookie) a `credentials: 'include'` fetch option instead
- * of any injected value at all — see CredentialInjection's own comment on
- * why a cookie can never be injected as a header. Async because the
- * oauth2 types may need a live token-endpoint round-trip (cached after the
- * first — see above); every other type resolves synchronously in practice
- * but still returns a Promise so chainExecutor.ts has one uniform call
- * site.
+ * header (bearer/basic/apiKey-in-header/oauth2), a query param
+ * (apiKey-in-query), or (uniquely for popup_login) a `credentials:
+ * 'include'` fetch option instead of any injected value at all — see
+ * CredentialInjection's own comment on why a cookie can never be injected
+ * as a header. Async because the oauth2 types may need a live
+ * token-endpoint round-trip (cached after the first — see above); every
+ * other type resolves synchronously in practice but still returns a
+ * Promise so chainExecutor.ts has one uniform call site.
  */
 export async function resolveCredentialInjection(credential: Credential): Promise<CredentialInjection> {
   switch (credential.type) {
@@ -156,11 +154,14 @@ export async function resolveCredentialInjection(credential: Credential): Promis
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
     case 'popup_login':
-      return credential.responseType === 'cookie'
-        ? { credentials: 'include' }
-        : credential.in === 'query'
-          ? { query: { [credential.paramName]: credential.token } }
-          : { headers: { [credential.paramName]: credential.token } };
+      // No injection at all — the one Credential variant that doesn't
+      // actually hold a value to attach. This just flips a fetch option
+      // so the browser's own cookie jar (already populated by whatever
+      // login the user completed in the popup) tags along on its own.
+      // See PopupLoginCredential's own comment in types.ts for the fuller
+      // "action, not a credential" framing, and for why a "paste in a
+      // token instead" variant was designed, built, and then dropped.
+      return { credentials: 'include' };
   }
 }
 
