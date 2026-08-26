@@ -168,6 +168,15 @@ jobs:
       - name: Push commit and tag
         run: git push origin HEAD:main "v${{ steps.current.outputs.version }}"
 
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.current.outputs.version }}" \
+            --title "v${{ steps.current.outputs.version }}" \
+            --generate-notes \
+            --verify-tag
+
   # Fans out repository_dispatch: enlace-ui-release to every known
   # downstream adapter repo (release-strategy.md §5/§6), so each can decide
   # for itself whether it needs to do anything.
