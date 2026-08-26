@@ -9,6 +9,7 @@ import type {
   FieldValue,
   NewCredential,
   Operation,
+  RawBody,
   RunResult,
   WorkflowConnection,
   WorkflowNode,
@@ -75,6 +76,11 @@ interface WorkflowState {
   selectNode: (nodeId: string | null) => void;
   setCredential: (nodeId: string, credentialId: string | null) => void;
   setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
+  /** Batch version of setFieldValue — sets several field paths in one `set()`, so a Raw->Form conversion (which can touch many leaves at once, see utils/bodyTemplate.ts) doesn't trigger a render per leaf. */
+  mergeFieldValues: (nodeId: string, values: Record<string, FieldValue>) => void;
+  /** Toggles a node's body editor between the flat form and Raw JSON — see NodeInspector.tsx for the Form<->Raw conversion this surrounds. */
+  setBodyMode: (nodeId: string, mode: 'form' | 'raw') => void;
+  setRawBody: (nodeId: string, rawBody: RawBody | null) => void;
   /** Establishes execution ORDER only — separate from field mapping (data source). */
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
   /** Held in browser memory only — never sent anywhere except as the resolved header/query param on the actual request (see engine/credentials.ts). */
@@ -171,6 +177,21 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, [fieldPath]: value } } : n
       ),
+    })),
+
+  mergeFieldValues: (nodeId, values) =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, ...values } } : n)),
+    })),
+
+  setBodyMode: (nodeId, mode) =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, bodyMode: mode } : n)),
+    })),
+
+  setRawBody: (nodeId, rawBody) =>
+    set((state) => ({
+      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, rawBody } : n)),
     })),
 
   connectNodes: (fromNodeId, toNodeId) =>

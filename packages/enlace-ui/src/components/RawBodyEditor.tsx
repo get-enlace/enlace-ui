@@ -1,0 +1,391 @@
+import { useEffect, useRef, useState } from 'react';
+import { Annotation, StateEffect, type Extension } from '@codemirror/state';
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  ViewPlugin,
+  type ViewUpdate,
+  WidgetType,
+  keymap,
+  tooltips,
+} from '@codemirror/view';
+import { json } from '@codemirror/lang-json';
+import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
+import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { makeTagPlaceholder, tagPattern } from '../utils/bodyTags.js';
+import { randomId } from '../utils/randomId.js';
+import type { BodyTag, BodyTagType, Operation, RawBody, WorkflowNode } from '../types.js';
+import { TagConfigModal } from './TagConfigModal.js';
+
+export interface RawBodyEditorProps {
+  rawBody: RawBody;
+  onChange: (rawBody: RawBody) => void;
+  ancestorNodes: WorkflowNode[];
+  operations: Operation[];
+}
+
+// `json()` only supplies the parser/language — it applies no color on its
+// own; without a `syntaxHighlighting` extension the doc renders as flat,
+// unstyled text regardless of language support. Colors reuse the app's
+// existing method-badge palette (styles.css) rather than a generic
+// code-theme, so the editor reads as part of the same system: property
+// names in the same blue as a GET badge, string values in the same green
+// as a POST badge, numbers/booleans in PUT's orange, null in the
+// popup-credential purple, punctuation muted.
+const jsonHighlightStyle = HighlightStyle.define([
+  { tag: t.propertyName, color: 'var(--color-get)' },
+  { tag: t.string, color: 'var(--color-post)' },
+  { tag: [t.number, t.bool], color: 'var(--color-put)' },
+  { tag: t.null, color: 'var(--color-popup)' },
+  { tag: [t.separator, t.squareBracket, t.brace], color: 'var(--color-text-muted)' },
+]);
+
+/** Transactions we dispatch ourselves as part of an already-complete state update (tag inserted/removed) — the update listener skips reporting these, since the caller already has the authoritative combined {template, tags} to report in one go. */
+const scripted = Annotation.define<boolean>();
+/** Dispatched with no document change, purely to make the chip decoration plugin recompute labels after a tag's config (not its placeholder text) changes. */
+const refreshChips = StateEffect.define<void>();
+
+function tagLabel(tag: BodyTag, nodesById: Map<string, WorkflowNode>, operationsById: Map<string, Operation>): string {
+  const node = nodesById.get(tag.sourceNodeId);
+  const opId = node ? (operationsById.get(node.operationId)?.id ?? node.operationId) : tag.sourceNodeId;
+  const nodeLabel = node ? `${opId} (${node.id.slice(0, 6)})` : `${tag.sourceNodeId} (missing)`;
+
+  if (tag.type === 'response_header') return `${nodeLabel} → header ${tag.headerName ?? ''}`;
+  if (tag.type === 'response_raw') return `${nodeLabel} → raw body`;
+  return `${nodeLabel} → ${tag.jsonPath || 'body'}`;
+}
+
+interface ChipConfig {
+  tags: Record<string, BodyTag>;
+  nodesById: Map<string, WorkflowNode>;
+  operationsById: Map<string, Operation>;
+  onClickChip: (tagId: string) => void;
+}
+
+class TagChipWidget extends WidgetType {
+  constructor(
+    readonly tagId: string,
+    readonly label: string,
+    /** True when the tag's source node no longer exists on the canvas (deleted after the mapping was made), or the placeholder references a tag id with no config at all — either way, this mapping is broken and needs attention, not a normal, healthy chip. */
+    readonly broken: boolean,
+    /** Null for an unrecognized tag id — there's no BodyTag to edit, so the chip is a plain (non-clickable) warning rather than an entry point into the config modal. */
+    readonly onClick: ((tagId: string) => void) | null
+  ) {
+    super();
+  }
+  eq(other: TagChipWidget) {
+    return other.tagId === this.tagId && other.label === this.label && other.broken === this.broken;
+  }
+  toDOM() {
+    const span = document.createElement('span');
+    span.className = this.broken ? 'tag-chip tag-chip--broken' : 'tag-chip';
+    span.textContent = this.label;
+    if (this.onClick) {
+      span.title = this.broken
+        ? 'This mapping\'s source node no longer exists — click to fix or remove it'
+        : 'Click to edit this mapping';
+      // Keep CodeMirror from placing the cursor inside the widget on mousedown.
+      span.addEventListener('mousedown', (e) => e.preventDefault());
+      span.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.onClick!(this.tagId);
+      });
+    } else {
+      span.title = 'Unrecognized tag reference — no mapping is configured for this';
+      span.style.cursor = 'default'; // nothing to click into — overrides .tag-chip's default pointer cursor
+    }
+    return span;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+function buildDecorations(text: string, config: ChipConfig): DecorationSet {
+  const ranges = [];
+  for (const match of text.matchAll(tagPattern())) {
+    const tagId = match[1];
+    const tag = config.tags[tagId];
+    const from = match.index ?? 0;
+    const to = from + match[0].length;
+
+    if (!tag) {
+      // Orphaned placeholder — text matches the tag syntax but no config
+      // is registered for it (e.g. hand-typed, or copy-pasted from
+      // elsewhere). Flagged rather than hidden or rendered as a normal
+      // chip, but there's nothing to open a config modal for.
+      ranges.push(Decoration.replace({ widget: new TagChipWidget(tagId, 'Unrecognized tag', true, null) }).range(from, to));
+      continue;
+    }
+
+    const broken = !config.nodesById.has(tag.sourceNodeId);
+    const label = tagLabel(tag, config.nodesById, config.operationsById);
+    ranges.push(Decoration.replace({ widget: new TagChipWidget(tagId, label, broken, config.onClickChip) }).range(from, to));
+  }
+  return Decoration.set(ranges);
+}
+
+function chipPlugin(configRef: { current: ChipConfig }) {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = buildDecorations(view.state.doc.toString(), configRef.current);
+      }
+      update(update: ViewUpdate) {
+        const forced = update.transactions.some((tr) => tr.effects.some((e) => e.is(refreshChips)));
+        if (update.docChanged || forced) {
+          this.decorations = buildDecorations(update.state.doc.toString(), configRef.current);
+        }
+      }
+    },
+    { decorations: (v) => v.decorations }
+  );
+}
+
+/**
+ * Autocomplete source: typing `{{` while the cursor is inside a JSON
+ * string literal offers a single "Response" entry point — since every tag
+ * type maps from an upstream response, splitting that into three
+ * separately-typed options up front just made you commit to one before
+ * you'd even picked a request to map from. Picking it opens the config
+ * modal defaulted to `response_body` (the common case); the modal's own
+ * "Map" dropdown (see TagConfigModal.tsx) is where the type actually gets
+ * chosen/changed, mirroring the reference tool's "Function to Perform" +
+ * "Attribute" split. The placeholder itself is inserted only once that
+ * modal is confirmed (see handleInsertConfirm), replacing only the typed
+ * `{{...` trigger text — not the whole enclosing string.
+ *
+ * That's deliberate, not an oversight: composing a chip with surrounding
+ * literal text in the same field (`"Bearer {{token}}"`, `"order-{{id}}"`)
+ * is a real, common need — prefixing/suffixing a mapped value — and
+ * forcing the whole field to become just the chip would make that
+ * impossible to build through this discoverable flow. The one trap this
+ * reopens (typing `{{` inside Raw mode's schema-example placeholder text,
+ * e.g. `"string"`, without clearing it first, leaves the chip embedded in
+ * leftover text you probably didn't mean to keep) is a copy-editing rough
+ * edge, not a correctness one: utils/bodyTags.ts's `resolveTagsInValue`
+ * resolves an embedded tag correctly at request time regardless of mode,
+ * so the worst case is a field that looks cluttered, never one that
+ * silently sends an unresolved placeholder.
+ */
+function tagCompletionSource(onTrigger: (type: BodyTagType, from: number, to: number) => void) {
+  return (context: CompletionContext): CompletionResult | null => {
+    const match = context.matchBefore(/\{\{\w*/);
+    if (!match) return null;
+
+    const node = syntaxTree(context.state).resolveInner(match.from, -1);
+    if (node.name !== 'String') return null;
+
+    return {
+      from: match.from,
+      to: match.to,
+      // CodeMirror's default fuzzy-match filtering compares the option's
+      // *label* against the literal typed text (here, "{{") and drops
+      // anything that doesn't match — fine for normal word completion, but
+      // "Response → Map from..." has nothing to do with the `{{` trigger
+      // text, so the default filter would silently discard it and close
+      // the popup before it's ever seen.
+      filter: false,
+      options: [
+        {
+          label: 'Response → Map from...',
+          // No document edit here — accepting the option only opens the
+          // config modal; the typed `{{` is left untouched until the
+          // modal is confirmed, so canceling leaves the document exactly
+          // as it was mid-edit rather than having already deleted
+          // something.
+          apply: (_view, _completion, from, to) => onTrigger('response_body', from, to),
+        },
+      ],
+    };
+  };
+}
+
+/**
+ * The doc-shape-independent half of the editor's extensions — split out
+ * from the component so a test can build a real `EditorView` against them
+ * directly (see RawBodyEditor.test.tsx's tooltip-clipping regression
+ * test), without needing React or the chip-decoration plumbing that
+ * depends on per-node config.
+ */
+export function buildJsonAutocompleteExtensions(
+  onTriggerTag: (type: BodyTagType, from: number, to: number) => void
+): Extension[] {
+  return [
+    json(),
+    syntaxHighlighting(jsonHighlightStyle),
+    history(),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    autocompletion({ override: [tagCompletionSource(onTriggerTag)] }),
+    EditorView.lineWrapping,
+    // CodeMirror defaults to its *light* base theme (caret-color: black)
+    // unless told otherwise — our CSS paints this editor with a near-
+    // black background to match the app's dark palette, so without this
+    // the caret is black-on-black and never visible, even though it's
+    // there and blinking. This flips the `dark` facet so the base
+    // theme's `&dark` caret/selection/active-line defaults (white caret,
+    // etc.) apply instead.
+    EditorView.theme({}, { dark: true }),
+    // Autocomplete's popup is (by default) appended as a plain child of
+    // the editor's own root element and positioned `fixed` — but our
+    // wrapper CSS sets `overflow: hidden` (for the rounded-corner look),
+    // which clips any DOM descendant regardless of its `position`, so
+    // the popup would render completely invisible instead of just
+    // missing. Mounting tooltips on `document.body` instead is
+    // CodeMirror's documented fix for an editor that lives inside a
+    // clipping/scrolling container.
+    tooltips({ parent: document.body }),
+  ];
+}
+
+export function RawBodyEditor({ rawBody, onChange, ancestorNodes, operations }: RawBodyEditorProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const configRef = useRef<ChipConfig>(null as unknown as ChipConfig);
+  const liveRef = useRef({ rawBody, onChange });
+  liveRef.current = { rawBody, onChange };
+
+  const [pendingInsert, setPendingInsert] = useState<{ type: BodyTagType; from: number; to: number } | null>(null);
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
+
+  const nodesById = new Map(ancestorNodes.map((n) => [n.id, n]));
+  const operationsById = new Map(operations.map((o) => [o.id, o]));
+
+  configRef.current = {
+    tags: rawBody.tags,
+    nodesById,
+    operationsById,
+    onClickChip: (tagId) => setEditingTagId(tagId),
+  };
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const updateListener = EditorView.updateListener.of((update: ViewUpdate) => {
+      if (!update.docChanged) return;
+      if (update.transactions.some((tr) => tr.annotation(scripted))) return;
+
+      const template = update.state.doc.toString();
+      const presentIds = new Set([...template.matchAll(tagPattern())].map((m) => m[1]));
+      const tags = Object.fromEntries(Object.entries(liveRef.current.rawBody.tags).filter(([id]) => presentIds.has(id)));
+      liveRef.current.onChange({ template, tags });
+    });
+
+    const chipPluginType = chipPlugin(configRef);
+
+    const extensions: Extension[] = [
+      ...buildJsonAutocompleteExtensions((type, from, to) => setPendingInsert({ type, from, to })),
+      chipPluginType,
+      EditorView.atomicRanges.of((view) => view.plugin(chipPluginType)?.decorations ?? Decoration.none),
+      updateListener,
+    ];
+
+    const view = new EditorView({
+      doc: liveRef.current.rawBody.template,
+      extensions,
+      parent: containerRef.current,
+    });
+    viewRef.current = view;
+
+    return () => view.destroy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reflect external template changes (e.g. Form -> Raw regeneration, or a
+  // fresh node selection) into the editor. A no-op when the last change
+  // originated from this editor itself, since the doc already matches.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (view.state.doc.toString() === rawBody.template) return;
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: rawBody.template },
+      annotations: scripted.of(true),
+    });
+  }, [rawBody.template]);
+
+  // Tag metadata (jsonPath/sourceNodeId/headerName) can change without the
+  // placeholder text changing at all — force the chip widgets to re-render
+  // with fresh labels in that case.
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: refreshChips.of() });
+  }, [rawBody.tags]);
+
+  function handleInsertConfirm(tag: BodyTag) {
+    const view = viewRef.current;
+    if (!view || !pendingInsert) return;
+    const docLength = view.state.doc.length;
+    // Clamp defensively — the modal is a blocking overlay so the doc
+    // shouldn't change while it's open, but if it somehow did, replacing
+    // a stale out-of-range span would throw rather than degrade.
+    const from = Math.min(pendingInsert.from, docLength);
+    const to = Math.min(Math.max(pendingInsert.to, from), docLength);
+    view.dispatch({
+      changes: { from, to, insert: makeTagPlaceholder(tag.id) },
+      annotations: scripted.of(true),
+    });
+    onChange({ template: view.state.doc.toString(), tags: { ...rawBody.tags, [tag.id]: tag } });
+    setPendingInsert(null);
+  }
+
+  function findTagSpan(text: string, tagId: string): { from: number; to: number } | null {
+    const match = new RegExp(`\\{\\{enlace:${tagId}\\}\\}`).exec(text);
+    if (!match) return null;
+    return { from: match.index, to: match.index + match[0].length };
+  }
+
+  function handleEditConfirm(tag: BodyTag) {
+    onChange({ template: rawBody.template, tags: { ...rawBody.tags, [tag.id]: tag } });
+    setEditingTagId(null);
+  }
+
+  function handleDelete() {
+    const view = viewRef.current;
+    if (!view || !editingTagId) return;
+    const span = findTagSpan(view.state.doc.toString(), editingTagId);
+    if (span) {
+      view.dispatch({ changes: { from: span.from, to: span.to, insert: '' }, annotations: scripted.of(true) });
+    }
+    const tags = { ...rawBody.tags };
+    delete tags[editingTagId];
+    onChange({ template: view.state.doc.toString(), tags });
+    setEditingTagId(null);
+  }
+
+  const editingTag = editingTagId ? rawBody.tags[editingTagId] : undefined;
+
+  return (
+    <div className="raw-body-editor">
+      <div className="raw-body-editor__hint">
+        Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
+      </div>
+      <div className="raw-body-editor__codemirror" ref={containerRef} />
+
+      {pendingInsert && (
+        <TagConfigModal
+          ancestorNodes={ancestorNodes}
+          operations={operations}
+          initialType={pendingInsert.type}
+          onConfirm={handleInsertConfirm}
+          onCancel={() => setPendingInsert(null)}
+        />
+      )}
+
+      {editingTag && (
+        <TagConfigModal
+          ancestorNodes={ancestorNodes}
+          operations={operations}
+          initialType={editingTag.type}
+          initialTag={editingTag}
+          onConfirm={handleEditConfirm}
+          onDelete={handleDelete}
+          onCancel={() => setEditingTagId(null)}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NodeInspector } from './NodeInspector.js';
 import { useWorkflowStore } from '../store/workflowStore.js';
@@ -209,5 +209,89 @@ describe('NodeInspector', () => {
 
     const nameOption = within(fieldSelect).getByText('name');
     expect(nameOption).not.toBeDisabled();
+  });
+
+  describe('Raw JSON body mode', () => {
+    it('suggests Raw JSON via a banner when the body has a shape the form can\'t fully represent', () => {
+      // petOperation's `weird` field is a oneOf — see the fixture above.
+      useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
+      render(<NodeInspector onCollapse={() => {}} />);
+      expect(screen.getByText(/shape the form can't fully represent/)).toBeInTheDocument();
+    });
+
+    it('does not show the banner for a body the form can fully represent', () => {
+      const plainOperation: Operation = {
+        id: 'POST /plain',
+        method: 'post',
+        path: '/plain',
+        parameters: [],
+        requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+        responseSchema: null,
+      };
+      useWorkflowStore.setState({
+        nodes: [makeNode({ operationId: 'POST /plain' })],
+        operations: [petOperation, getPetOperation, plainOperation],
+        selectedNodeId: 'node-1',
+      });
+      render(<NodeInspector onCollapse={() => {}} />);
+      expect(screen.queryByText(/shape the form can't fully represent/)).not.toBeInTheDocument();
+    });
+
+    it('switching to Raw JSON carries over existing static field values, then switches back losslessly', async () => {
+      // A schema the form can fully represent — petOperation's `weird` oneOf
+      // field would make any raw round trip inherently lossy, which isn't
+      // what this test is checking.
+      const plainOperation: Operation = {
+        id: 'POST /plain',
+        method: 'post',
+        path: '/plain',
+        parameters: [],
+        requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+        responseSchema: null,
+      };
+      useWorkflowStore.setState({
+        nodes: [
+          makeNode({ operationId: 'POST /plain', fieldValues: { 'body.name': { source: 'static', value: 'fido' } } }),
+        ],
+        operations: [petOperation, getPetOperation, plainOperation],
+        selectedNodeId: 'node-1',
+      });
+      render(<NodeInspector onCollapse={() => {}} />);
+
+      const modeSwitch = screen.getByRole('checkbox');
+      fireEvent.click(modeSwitch);
+
+      const rawBody = () => useWorkflowStore.getState().nodes[0].rawBody;
+      await waitFor(() => expect(rawBody()).toBeTruthy());
+      expect(JSON.parse(rawBody()!.template).name).toBe('fido');
+      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('raw');
+
+      fireEvent.click(modeSwitch);
+      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('form');
+      expect(useWorkflowStore.getState().nodes[0].fieldValues['body.name']).toEqual({ source: 'static', value: 'fido' });
+    });
+
+    it('warns before converting back to Form when the Raw JSON has structure the form would lose, and only converts on confirm', async () => {
+      useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
+      render(<NodeInspector onCollapse={() => {}} />);
+
+      const modeSwitch = screen.getByRole('checkbox');
+      fireEvent.click(modeSwitch);
+      await waitFor(() => expect(useWorkflowStore.getState().nodes[0].rawBody).toBeTruthy());
+
+      // Inject an extra top-level key the flat form has no field for.
+      useWorkflowStore.setState((state) => ({
+        nodes: state.nodes.map((n) =>
+          n.id === 'node-1' ? { ...n, rawBody: { ...n.rawBody!, template: n.rawBody!.template.replace('{', '{"surprise":1,') } } : n
+        ),
+      }));
+
+      fireEvent.click(modeSwitch);
+      expect(screen.getByText(/Switching to Form view may lose custom JSON structure/)).toBeInTheDocument();
+      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('raw'); // not switched yet
+
+      fireEvent.click(screen.getByText('Switch anyway'));
+      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('form');
+    });
   });
 });

@@ -32,11 +32,54 @@ export type FieldValue =
   | { source: 'static'; value: unknown }
   | { source: 'mapped'; fromNodeId: string; fromResponseFieldPath: string };
 
+/**
+ * What a single inline "tag chip" in a Raw JSON body resolves against —
+ * see engine/rawBodyResolver.ts. `response_body` reads a JSONPath-ish
+ * filter (utils/bodyTags.ts's `resolveJsonPath`, a thin wrapper over
+ * chainExecutor.ts's `getByPath`) out of the source node's parsed response
+ * body; `response_raw` takes that response body whole, no filter applied;
+ * `response_header` reads one named response header (case-insensitively).
+ */
+export type BodyTagType = 'response_body' | 'response_raw' | 'response_header';
+
+export interface BodyTag {
+  id: string;
+  type: BodyTagType;
+  sourceNodeId: string;
+  /** `response_body` only — dot/bracket path, e.g. "items[0].id"; an optional leading "$."/"$" is stripped. Omitted/empty means "the whole body". */
+  jsonPath?: string;
+  /** `response_header` only. */
+  headerName?: string;
+}
+
+/**
+ * The Raw JSON alternative to per-leaf `fieldValues['body.*']` entries —
+ * see utils/bodyTemplate.ts for the Form<->Raw conversion and
+ * components/RawBodyEditor.tsx for the editor itself. `template` is
+ * always valid JSON text; a mapped value is represented as literal text
+ * `{{enlace:<tagId>}}` sitting inside an existing string's quotes (see
+ * utils/bodyTags.ts's `tagPattern`/`makeTagPlaceholder`), never as a
+ * standalone token that would make the JSON invalid.
+ */
+export interface RawBody {
+  template: string;
+  tags: Record<string, BodyTag>;
+}
+
 export interface WorkflowNode {
   id: string; // unique per canvas instance
   operationId: string; // references an Operation.id
   credentialId: string | null;
   fieldValues: Record<string, FieldValue>;
+  /**
+   * Optional (not required) so every pre-existing `WorkflowNode` literal
+   * (fixtures, older in-memory state) keeps compiling/behaving unchanged —
+   * treat an absent value as `'form'`. Orthogonal to `fieldValues`: raw
+   * mode simply stops reading/writing the `body.*` keys within it; path/
+   * query/header keys are unaffected either way.
+   */
+  bodyMode?: 'form' | 'raw';
+  rawBody?: RawBody | null;
 }
 
 /**
