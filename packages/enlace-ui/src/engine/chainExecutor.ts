@@ -1,4 +1,6 @@
 import { resolveCredentialInjection } from './credentials.js';
+import { resolveRawBody } from './rawBodyResolver.js';
+import { resolveTagsInValue } from '../utils/bodyTags.js';
 import type {
   Credential,
   FieldValue,
@@ -102,7 +104,8 @@ export function getByPath(obj: unknown, path: string): unknown {
   return current;
 }
 
-function setByPath(target: Record<string, unknown>, path: string, value: unknown) {
+/** Exported for reuse by utils/bodyTemplate.ts, which needs the same dotted-path write when reconstructing a body from form fieldValues to detect a lossy Raw->Form conversion. */
+export function setByPath(target: Record<string, unknown>, path: string, value: unknown) {
   const parts = path.split('.').filter(Boolean);
   let current = target;
   parts.forEach((part, i) => {
@@ -133,8 +136,22 @@ async function buildRequest(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const bodyFields: Record<string, unknown> = {};
 
+  // A field's static value can itself contain a `{{enlace:<id>}}`
+  // reference even in Form mode — not something the form UI lets you type
+  // deliberately, but a Raw JSON tag chip that ended up embedded in a
+  // larger string (e.g. "Bearer {{enlace:...}}") survives a lossy Raw ->
+  // Form conversion as literal text in a static field (see
+  // utils/bodyTemplate.ts): the "Map from..." UI for it is gone, but the
+  // mapping itself shouldn't silently stop working, so it's resolved here
+  // too — against the same `tags` the node's `rawBody` still carries even
+  // once `bodyMode` is back to `'form'` (switching modes never clears it).
+  const nodeTags = node.rawBody?.tags;
+
   for (const [fieldPath, fieldValue] of Object.entries(node.fieldValues)) {
-    const value = resolveFieldValue(fieldValue, stepsByNodeId);
+    let value = resolveFieldValue(fieldValue, stepsByNodeId);
+    if (nodeTags && Object.keys(nodeTags).length > 0) {
+      value = resolveTagsInValue(value, nodeTags, stepsByNodeId);
+    }
     const [section, ...rest] = fieldPath.split('.');
     const key = rest.join('.');
 
@@ -172,13 +189,27 @@ async function buildRequest(
 
   const queryString = query.toString();
   const url = `${baseUrl}${requestPath}${queryString ? `?${queryString}` : ''}`;
-  const hasBody = Boolean(operation.requestBodySchema) && Object.keys(bodyFields).length > 0;
+
+  // Raw JSON mode bypasses the per-leaf `fieldValues['body.*']` fields
+  // entirely — the whole body comes from resolving the node's own
+  // `rawBody` template (tag chips substituted against `stepsByNodeId`;
+  // see engine/rawBodyResolver.ts). A throw here (unknown tag, missing
+  // source response, missing header) is caught by runNode's existing
+  // try/catch around buildRequest, same as any other request-building
+  // failure — no separate error path needed.
+  const body =
+    node.bodyMode === 'raw' && node.rawBody
+      ? resolveRawBody(node.rawBody, stepsByNodeId)
+      : Object.keys(bodyFields).length > 0
+        ? bodyFields
+        : undefined;
+  const hasBody = Boolean(operation.requestBodySchema) && body !== undefined;
 
   return {
     method: operation.method.toUpperCase(),
     url,
     headers,
-    body: hasBody ? bodyFields : undefined,
+    body: hasBody ? body : undefined,
     redactQueryParams: redactQueryParams.length > 0 ? redactQueryParams : undefined,
     credentials,
   };

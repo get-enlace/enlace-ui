@@ -16,16 +16,19 @@ export interface SchemaField {
 const UNKNOWN_SHAPE_REASON = 'Unrecognized schema shape (e.g. oneOf/anyOf/allOf) — not supported yet.';
 const SCALAR_TYPES = new Set(['string', 'integer', 'number', 'boolean']);
 
-function isArraySchema(schema: Record<string, any> | undefined): boolean {
+// Exported for reuse by utils/schemaExample.ts, which needs the same
+// shape checks to build a full nested JSON example (not just a flattened
+// field list) for the Raw JSON body editor.
+export function isArraySchema(schema: Record<string, any> | undefined): boolean {
   return schema?.type === 'array';
 }
 
-function isObjectSchema(schema: Record<string, any> | undefined): boolean {
+export function isObjectSchema(schema: Record<string, any> | undefined): boolean {
   return !isArraySchema(schema) && Boolean(schema) && (schema!.type === 'object' || Boolean(schema!.properties));
 }
 
 /** A representative value for a scalar's `type`, used to build an example array literal. */
-function exampleScalarValue(schema: Record<string, any> | undefined): unknown {
+export function exampleScalarValue(schema: Record<string, any> | undefined): unknown {
   if (schema?.enum?.length) return schema.enum[0];
   if (schema?.type === 'integer' || schema?.type === 'number') return 0;
   if (schema?.type === 'boolean') return true;

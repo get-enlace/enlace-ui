@@ -474,6 +474,70 @@ describe('executeChain', () => {
     expect(result.steps).toHaveLength(1);
     expect(result.steps[0].error).toMatch(/token request.*failed with status 401/);
   });
+
+  it('resolves a tag chip embedded in an ordinary Form-mode static field, even with bodyMode back to "form"', async () => {
+    // Reproduces a real reported scenario: insert a tag chip in Raw JSON
+    // mode (whole-match), then type extra text right before it ("str"),
+    // making it embedded — then switch to Form anyway despite the "may
+    // lose custom JSON structure" warning. The resulting static field
+    // holds the literal "str{{enlace:tag1}}" text; it must still resolve
+    // at request time using the tag config `rawBody` still carries, not
+    // get sent to the target API unresolved.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse(201, { id: 'cust-1' }))
+      .mockResolvedValueOnce(mockResponse(201, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const createCustomer: Operation = {
+      id: 'POST /customers',
+      method: 'post',
+      path: '/customers',
+      parameters: [],
+      requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+      responseSchema: { type: 'object', properties: { id: { type: 'string' } } },
+    };
+    const createOrder: Operation = {
+      id: 'POST /orders',
+      method: 'post',
+      path: '/orders',
+      parameters: [],
+      requestBodySchema: { type: 'object', properties: { note: { type: 'string' } } },
+      responseSchema: null,
+    };
+
+    const a: WorkflowNode = {
+      id: 'a',
+      operationId: 'POST /customers',
+      credentialId: null,
+      fieldValues: { 'body.name': { source: 'static', value: 'Ada' } },
+    };
+    const b: WorkflowNode = {
+      id: 'b',
+      operationId: 'POST /orders',
+      credentialId: null,
+      bodyMode: 'form',
+      fieldValues: { 'body.note': { source: 'static', value: 'str{{enlace:tag1}}' } },
+      rawBody: {
+        template: '{"note":"str{{enlace:tag1}}"}',
+        tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'a', jsonPath: 'id' } },
+      },
+    };
+
+    const result = await executeChain(
+      { nodes: [a, b], connections: [{ fromNodeId: 'a', toNodeId: 'b' }] },
+      new Map([
+        ['POST /customers', createCustomer],
+        ['POST /orders', createOrder],
+      ]),
+      new Map(),
+      { baseUrl: 'http://example.test' }
+    );
+
+    expect(result.steps.every((s) => !s.error)).toBe(true);
+    const [, orderInit] = fetchMock.mock.calls[1];
+    expect(JSON.parse(orderInit.body)).toEqual({ note: 'strcust-1' });
+  });
 });
 
 describe('getByPath', () => {
