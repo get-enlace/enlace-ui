@@ -2,8 +2,8 @@
  * Matches the actual installed Swagger UI (v5) theme — dark background,
  * method-tinted rows, solid pill-shaped method badges, blue-outlined
  * section controls — not the old olive-green-topbar look from v2/v3.
- * System font stacks only, no external font fetch, per the "zero extra
- * infra" principle in ARCHITECTURE.md §1.
+ * System font stacks only, no external font fetch — zero extra
+ * infrastructure to run this UI.
  */
 
 :root {
@@ -900,9 +900,9 @@ body {
   font-weight: 700;
 }
 
-/* Credentials the spec itself declares (components.securitySchemes), per
- * auth-strategy.md §4 — a visually distinct section (its own heading,
- * boxed rows) so it doesn't blend into either the saved-credentials list
+/* Credentials the spec itself declares (components.securitySchemes) get
+ * a visually distinct section (its own heading, boxed rows) so it doesn't
+ * blend into either the saved-credentials list
  * above it or the plain "+ New credential" entry point below it; the
  * whole point is that these are pre-fillable templates, not yet-real
  * credentials. Not named "suggestions" — this is Enlace stating a fact

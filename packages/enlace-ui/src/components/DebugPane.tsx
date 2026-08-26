@@ -86,7 +86,7 @@ export function DebugPane({ collapsed, onToggleCollapsed }: DebugPaneProps) {
                   </summary>
                   {/* Redacted here, client-side — the only place this can happen now that
                       execution runs entirely in the browser and there's no server round-trip
-                      to redact it in transit (ARCHITECTURE.md §7). */}
+                      to redact it in transit. */}
                   <pre>{JSON.stringify({ request: redactRequest(step.request), response: step.response }, null, 2)}</pre>
                 </details>
               );

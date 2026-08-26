@@ -51,7 +51,7 @@ function buildDependencyGraph(nodes: WorkflowNode[], connections: WorkflowConnec
  * of them can depend on another node in the same level. This is what lets
  * `executeChain` actually run independent branches in parallel (e.g.
  * "run A, then B+C at once, then D" once D depends on A and C) instead of
- * a single flat sequential order (see ARCHITECTURE.md §5, "Request Flow").
+ * a single flat sequential order.
  *
  * Throws CyclicWorkflowError if the dependency graph (explicit connections
  * ∪ mapping-implied edges — see buildDependencyGraph) has a cycle: some
@@ -256,8 +256,8 @@ export interface ChainExecutorOptions {
 }
 
 /**
- * Executes a workflow's nodes in dependency order, per ARCHITECTURE.md §5 —
- * one level (wave) at a time, but every node within a level fires
+ * Executes a workflow's nodes in dependency order, one level (wave) at a
+ * time, but every node within a level fires
  * concurrently via Promise.all, since none of them can depend on each
  * other (see computeExecutionLevels). A failure anywhere in a level halts
  * before the next level starts — no partial recovery — but everything

@@ -1,4 +1,4 @@
-// Shared data model, per ARCHITECTURE.md §4. Field paths in `fieldValues`
+// Shared data model. Field paths in `fieldValues`
 // use a "<section>.<key>" convention: "path.id", "query.limit",
 // "header.x-foo", or "body.<jsonPath>" (e.g. "body.item"). This is the
 // canonical copy — everything in this package (canvas, inspector, debug
@@ -57,7 +57,7 @@ export interface WorkflowConnection {
   toNodeId: string;
 }
 
-/** In-memory only for now — see ROADMAP.md for the planned persistence layer. */
+/** In-memory only for now — persistence is planned but not built yet. */
 export interface Workflow {
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
@@ -75,7 +75,7 @@ export interface Workflow {
 //
 // Full OAuth2 `authorizationCode` support (Enlace owning a registered
 // callback route to capture a code/token itself, then exchanging a code
-// for a token) remains a later phase — see ROADMAP.md.
+// for a token) remains a later phase, not built yet.
 export type CredentialType =
   | 'bearer'
   | 'basic'
@@ -155,52 +155,49 @@ export interface OAuth2PasswordCredential extends CredentialBase {
   scope?: string;
 }
 
-interface PopupLoginBase extends CredentialBase {
+/**
+ * Login driven by a real browser popup (`window.open`) — the target sets a
+ * session cookie as a side effect of the user completing login themselves,
+ * on the target's own origin; Enlace never drives or inspects that
+ * navigation, and never sees a token.
+ *
+ * Unlike every other Credential variant, resolving this one injects
+ * nothing into the request at all — no header, no query param.
+ * `resolveCredentialInjection` just flips `credentials: 'include'` on the
+ * fetch call; the actual value transfer (the cookie itself) happens
+ * invisibly, via the browser's own cookie jar, entirely outside Enlace's
+ * control (`Cookie` is a forbidden fetch() request header — see
+ * engine/credentials.ts — so there is no way for Enlace to attach one
+ * explicitly, for any credential type, ever). Conceptually this is closer
+ * to "perform an action (log in), then rely on a side effect" than "hold
+ * a secret value", which is what every other Credential variant actually
+ * does. It's modeled as a Credential today because that's the closest
+ * existing mechanism — something attachable to a node — not because it
+ * holds anything secret; it's the one variant with no stored value in its
+ * own state at all. If more UI-triggered, non-value-bearing actions come
+ * up later (re-run login, refresh a token, clear a session), they likely
+ * deserve a first-class "Action" concept of their own rather than
+ * continuing to stretch Credential to cover both meanings.
+ *
+ * Deliberately scoped to *only* this cookie case. A "the login flow hands
+ * back a token instead, paste it in" variant was designed and built, then
+ * dropped: the token can only be obtained by clicking the very "Log in"
+ * button sitting on the same form as the now-required Token field, which
+ * nothing communicated — the field just sat there empty and required,
+ * indistinguishable from "type in a secret you already have" the way
+ * every other credential type's fields work. Revisit only on real demand,
+ * with that ordering problem actually solved (not just re-added).
+ */
+export interface PopupLoginCredential extends CredentialBase {
   type: 'popup_login';
   /**
-   * Opened in a real browser popup (`window.open`) for the user to
-   * complete login themselves, on the target's own origin — Enlace never
-   * drives or inspects that navigation. Shown both when configuring the
-   * credential and afterward on its saved card, since a session is
-   * something the user may need to re-establish later (cookies expire),
-   * not just once at creation time.
+   * Opened in a real browser popup for the user to complete login
+   * themselves. Shown both when configuring the credential and afterward
+   * on its saved card, since a session is something the user may need to
+   * re-establish later (cookies expire), not just once at creation time.
    */
   loginUrl: string;
 }
-
-/**
- * The target sets a session cookie as a side effect of completing login in
- * the popup — nothing else to configure. `Cookie` is a forbidden fetch()
- * request header (see engine/credentials.ts), so there is no way for
- * Enlace to explicitly attach a cookie itself, ever, for any credential
- * type — the browser's own cookie jar is the only thing that can do that,
- * automatically, once `chainExecutor.ts` sets `credentials: 'include'` on
- * the actual request. This is the one credential type carrying no secret
- * value at all in its own state.
- */
-export interface PopupLoginCookieCredential extends PopupLoginBase {
-  responseType: 'cookie';
-}
-
-/**
- * The login flow hands back a token some other way — shown on a page,
- * visible in devtools, or wherever the target surfaces it — that the user
- * pastes in manually after completing login in the popup. From there it's
- * mechanically identical to an `apiKey` credential (header or query,
- * configurable name); the only difference is how the value was obtained.
- * There is deliberately no automatic capture of a token embedded in the
- * popup's own redirect URL — that requires Enlace to own a registered
- * callback route, which is full `authorizationCode`-grant territory (see
- * ROADMAP.md), not this type.
- */
-export interface PopupLoginTokenCredential extends PopupLoginBase {
-  responseType: 'token';
-  token: string;
-  paramName: string;
-  in: 'header' | 'query';
-}
-
-export type PopupLoginCredential = PopupLoginCookieCredential | PopupLoginTokenCredential;
 
 /**
  * Held entirely in browser memory (the store, not persisted) — the secret

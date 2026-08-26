@@ -1,9 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CredentialsPanel } from './CredentialsPanel.js';
 import { useWorkflowStore } from '../store/workflowStore.js';
 
+// CredentialsPanel is now the drawer shell + wiring for CredentialCard,
+// DeclaredCredentialsList, and CredentialForm (each covered by their own
+// test file) — these tests cover only what's actually CredentialsPanel's
+// own responsibility: open/close, the store wiring (add/update/remove),
+// and the "Declared in spec" filtering logic derived from
+// credentials + declaredCredentials.
 describe('CredentialsPanel', () => {
   beforeEach(() => {
     useWorkflowStore.setState({ credentials: [], nodes: [], declaredCredentials: [] });
@@ -51,61 +57,23 @@ describe('CredentialsPanel', () => {
     expect(screen.getByText(/No credentials yet/)).toBeInTheDocument();
   });
 
-  it('lists existing credentials as cards with a masked preview', async () => {
-    const user = userEvent.setup();
-    useWorkflowStore.setState({
-      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'super-secret-token' }],
-    });
-    render(<CredentialsPanel />);
-    await user.click(screen.getByRole('button', { name: '1 credential' }));
-
-    expect(screen.getByText('staging')).toBeInTheDocument();
-    expect(screen.getByText('Bearer token')).toBeInTheDocument();
-    expect(screen.getByText(/••••/)).toHaveTextContent('••••oken');
-    expect(screen.queryByText('super-secret-token')).not.toBeInTheDocument();
-  });
-
-  it('shows how many nodes use a credential, and clears it from them on delete', async () => {
-    const user = userEvent.setup();
-    useWorkflowStore.setState({
-      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'secret' }],
-      nodes: [
-        { id: 'n1', operationId: 'GET /a', credentialId: 'c1', fieldValues: {} },
-        { id: 'n2', operationId: 'GET /b', credentialId: 'c1', fieldValues: {} },
-        { id: 'n3', operationId: 'GET /c', credentialId: null, fieldValues: {} },
-      ],
-    });
-    render(<CredentialsPanel />);
-    await user.click(screen.getByRole('button', { name: '1 credential' }));
-
-    expect(screen.getByText(/Used by 2 nodes/)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Delete staging' }));
-
-    const state = useWorkflowStore.getState();
-    expect(state.credentials).toHaveLength(0);
-    expect(state.nodes.find((n) => n.id === 'n1')?.credentialId).toBeNull();
-    expect(state.nodes.find((n) => n.id === 'n2')?.credentialId).toBeNull();
-    expect(state.nodes.find((n) => n.id === 'n3')?.credentialId).toBeNull();
-  });
-
-  it('opens the add-credential form defaulted to bearer, and keeps Save disabled until name and token are filled', async () => {
+  it('"+ New credential" opens the form, and Cancel returns to the button — no credential added', async () => {
     const user = userEvent.setup();
     render(<CredentialsPanel />);
 
     await user.click(screen.getByRole('button', { name: '0 credentials' }));
     await user.click(screen.getByRole('button', { name: '+ New credential' }));
-    const saveButton = screen.getByRole('button', { name: 'Save' });
-    expect(saveButton).toBeDisabled();
+    expect(screen.getByPlaceholderText('name')).toBeInTheDocument();
 
-    await user.type(screen.getByPlaceholderText('name'), 'staging');
-    expect(saveButton).toBeDisabled();
+    await user.type(screen.getByPlaceholderText('name'), 'discard-me');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    await user.type(screen.getByPlaceholderText('bearer token'), 'secret-token');
-    expect(saveButton).toBeEnabled();
+    expect(useWorkflowStore.getState().credentials).toHaveLength(0);
+    expect(screen.queryByPlaceholderText('name')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ New credential' })).toBeInTheDocument();
   });
 
-  it('adds a bearer credential to the store and returns to the list on save', async () => {
+  it('Save on the form adds the credential to the store and returns to the list', async () => {
     const user = userEvent.setup();
     render(<CredentialsPanel />);
 
@@ -118,130 +86,11 @@ describe('CredentialsPanel', () => {
     const credentials = useWorkflowStore.getState().credentials;
     expect(credentials).toHaveLength(1);
     expect(credentials[0]).toMatchObject({ name: 'staging', token: 'secret-token', type: 'bearer' });
-
     expect(screen.queryByPlaceholderText('name')).not.toBeInTheDocument();
     expect(screen.getByText('staging')).toBeInTheDocument();
   });
 
-  it('masks the token input as a password field', async () => {
-    const user = userEvent.setup();
-    render(<CredentialsPanel />);
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    await user.click(screen.getByRole('button', { name: '+ New credential' }));
-    expect(screen.getByPlaceholderText('bearer token')).toHaveAttribute('type', 'password');
-  });
-
-  it('switches field sets when the credential type changes, and resets type-specific fields', async () => {
-    const user = userEvent.setup();
-    render(<CredentialsPanel />);
-
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    await user.click(screen.getByRole('button', { name: '+ New credential' }));
-    await user.type(screen.getByPlaceholderText('name'), 'prod-basic');
-    await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'basic');
-
-    expect(screen.queryByPlaceholderText('bearer token')).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText('username')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('password')).toBeInTheDocument();
-
-    await user.type(screen.getByPlaceholderText('username'), 'alice');
-    await user.type(screen.getByPlaceholderText('password'), 'hunter2');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(useWorkflowStore.getState().credentials[0]).toMatchObject({
-      name: 'prod-basic',
-      type: 'basic',
-      username: 'alice',
-      password: 'hunter2',
-    });
-  });
-
-  it('shows the client-secret warning only for oauth2 client-credentials', async () => {
-    const user = userEvent.setup();
-    render(<CredentialsPanel />);
-
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    await user.click(screen.getByRole('button', { name: '+ New credential' }));
-    expect(screen.queryByText(/Only use test\/sandbox credentials/)).not.toBeInTheDocument();
-
-    await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'oauth2_clientCredentials');
-    expect(screen.getByText(/Only use test\/sandbox credentials/)).toBeInTheDocument();
-  });
-
-  it('adds an apiKey credential sent as a query param', async () => {
-    const user = userEvent.setup();
-    render(<CredentialsPanel />);
-
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    await user.click(screen.getByRole('button', { name: '+ New credential' }));
-    await user.type(screen.getByPlaceholderText('name'), 'api-key-cred');
-    await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'apiKey');
-    await user.type(screen.getByPlaceholderText('e.g. X-API-Key'), 'apiKey');
-    await user.selectOptions(screen.getByDisplayValue('Header'), 'query');
-    await user.type(screen.getByPlaceholderText('key value'), 'secret-key');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(useWorkflowStore.getState().credentials[0]).toMatchObject({
-      name: 'api-key-cred',
-      type: 'apiKey',
-      paramName: 'apiKey',
-      in: 'query',
-      key: 'secret-key',
-    });
-  });
-
-  it('cancels and discards the draft, returning to the list without adding a credential', async () => {
-    const user = userEvent.setup();
-    render(<CredentialsPanel />);
-
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    await user.click(screen.getByRole('button', { name: '+ New credential' }));
-    await user.type(screen.getByPlaceholderText('name'), 'discard-me');
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    expect(useWorkflowStore.getState().credentials).toHaveLength(0);
-    expect(screen.queryByPlaceholderText('name')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '+ New credential' })).toBeInTheDocument();
-  });
-
-  it('adds an oauth2_password credential, treating client id/secret as optional, and labels the type as legacy', async () => {
-    const user = userEvent.setup();
-    render(<CredentialsPanel />);
-
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    await user.click(screen.getByRole('button', { name: '+ New credential' }));
-    await user.type(screen.getByPlaceholderText('name'), 'legacy-password');
-    await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'oauth2_password');
-
-    expect(screen.getByRole('option', { name: 'OAuth2 (password) · Legacy' })).toBeInTheDocument();
-    expect(screen.getByText(/Legacy grant type/)).toBeInTheDocument();
-
-    const saveButton = screen.getByRole('button', { name: 'Save' });
-    expect(saveButton).toBeDisabled();
-
-    await user.type(screen.getByPlaceholderText('https://auth.example.com/oauth/token'), 'https://auth.example.com/token');
-    await user.type(screen.getByPlaceholderText('resource owner username'), 'alice');
-    await user.type(screen.getByPlaceholderText('resource owner password'), 'hunter2');
-    expect(saveButton).toBeEnabled(); // client id/secret left blank — still valid
-
-    await user.click(saveButton);
-
-    expect(useWorkflowStore.getState().credentials[0]).toMatchObject({
-      type: 'oauth2_password',
-      tokenUrl: 'https://auth.example.com/token',
-      username: 'alice',
-      password: 'hunter2',
-    });
-  });
-
-  it('shows nothing under "Declared in spec" when the spec declared no securitySchemes', async () => {
-    const user = userEvent.setup();
-    render(<CredentialsPanel />);
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    expect(screen.queryByText('Declared in spec')).not.toBeInTheDocument();
-  });
-
-  it('lists a declared credential, pre-fills the form on "Configure", and shows the pre-fill banner', async () => {
+  it('clicking "Configure" on a declared credential opens the form pre-filled from its template', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
       declaredCredentials: [
@@ -254,15 +103,10 @@ describe('CredentialsPanel', () => {
     });
     render(<CredentialsPanel />);
     await user.click(screen.getByRole('button', { name: '0 credentials' }));
-
     expect(screen.getByText('Declared in spec')).toBeInTheDocument();
-    expect(screen.getByText('bearerAuth')).toBeInTheDocument();
-    expect(screen.getByText(/JWT bearer auth/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Configure' }));
 
-    expect(screen.getByText(/declared in the spec's/)).toBeInTheDocument();
-    expect(screen.getByText('securitySchemes.bearerAuth')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('name')).toHaveValue('bearerAuth');
     expect(screen.getByDisplayValue('Bearer token')).toBeInTheDocument();
 
@@ -271,35 +115,11 @@ describe('CredentialsPanel', () => {
 
     expect(useWorkflowStore.getState().credentials[0]).toMatchObject({
       name: 'bearerAuth',
-      type: 'bearer',
-      token: 'secret-token',
       fromSecurityScheme: 'bearerAuth',
     });
   });
 
-  it('removes a declared credential from the list once it has been configured, hiding the whole section once none remain', async () => {
-    const user = userEvent.setup();
-    useWorkflowStore.setState({
-      declaredCredentials: [
-        {
-          schemeName: 'bearerAuth',
-          template: { name: 'bearerAuth', type: 'bearer', token: '', fromSecurityScheme: 'bearerAuth' },
-        },
-      ],
-    });
-    render(<CredentialsPanel />);
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    await user.click(screen.getByRole('button', { name: 'Configure' }));
-    await user.type(screen.getByPlaceholderText('bearer token'), 'secret-token');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(screen.queryByText('Declared in spec')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Configure' })).not.toBeInTheDocument();
-    // A second credential from the same scheme is still possible — just via "+ New credential", not the (now gone) suggestion.
-    expect(screen.getByRole('button', { name: '+ New credential' })).toBeInTheDocument();
-  });
-
-  it('only removes the declared credential that was actually configured, leaving the others visible', async () => {
+  it('a declared credential drops out of "Declared in spec" once a credential from it exists, and only that one', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
       declaredCredentials: [
@@ -309,36 +129,27 @@ describe('CredentialsPanel', () => {
         },
         {
           schemeName: 'apiKeyAuth',
-          template: { name: 'apiKeyAuth', type: 'apiKey', paramName: 'X-API-Key', in: 'header', key: '', fromSecurityScheme: 'apiKeyAuth' },
+          template: {
+            name: 'apiKeyAuth',
+            type: 'apiKey',
+            paramName: 'X-API-Key',
+            in: 'header',
+            key: '',
+            fromSecurityScheme: 'apiKeyAuth',
+          },
         },
       ],
-    });
-    render(<CredentialsPanel />);
-    await user.click(screen.getByRole('button', { name: '0 credentials' }));
-    await user.click(screen.getAllByRole('button', { name: 'Configure' })[0]);
-    await user.type(screen.getByPlaceholderText('bearer token'), 'secret-token');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(screen.getByText('Declared in spec')).toBeInTheDocument();
-    expect(screen.getByText('apiKeyAuth')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Configure' })).toHaveLength(1);
-  });
-
-  it('shows a "From spec" tag on a card whose credential originated from a declared credential', async () => {
-    const user = userEvent.setup();
-    useWorkflowStore.setState({
-      credentials: [
-        { id: 'c1', name: 'bearerAuth', type: 'bearer', token: 'secret', fromSecurityScheme: 'bearerAuth' },
-      ],
+      credentials: [{ id: 'c1', name: 'bearerAuth', type: 'bearer', token: 'secret', fromSecurityScheme: 'bearerAuth' }],
     });
     render(<CredentialsPanel />);
     await user.click(screen.getByRole('button', { name: '1 credential' }));
 
-    expect(screen.getByText(/From spec:/)).toBeInTheDocument();
-    expect(screen.getByText('bearerAuth', { selector: 'code' })).toBeInTheDocument();
+    expect(screen.getByText('Declared in spec')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Configure' })).toHaveLength(1);
+    expect(screen.getByText('apiKeyAuth')).toBeInTheDocument();
   });
 
-  it('Edit pre-fills the form with the credential\'s existing values, and Save updates it in place (same id, list length unchanged)', async () => {
+  it('clicking Edit on a card opens the form pre-filled, and Save changes updates it in place (same id)', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
       credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'old-token' }],
@@ -352,195 +163,22 @@ describe('CredentialsPanel', () => {
 
     await user.clear(screen.getByPlaceholderText('name'));
     await user.type(screen.getByPlaceholderText('name'), 'staging-renamed');
-    await user.clear(screen.getByPlaceholderText('bearer token'));
-    await user.type(screen.getByPlaceholderText('bearer token'), 'new-token');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
 
     const credentials = useWorkflowStore.getState().credentials;
     expect(credentials).toHaveLength(1);
-    expect(credentials[0]).toMatchObject({ id: 'c1', name: 'staging-renamed', token: 'new-token' });
-    expect(screen.getByText('staging-renamed')).toBeInTheDocument();
+    expect(credentials[0]).toMatchObject({ id: 'c1', name: 'staging-renamed' });
   });
 
-  it('Cancel during Edit discards changes, leaving the original credential untouched', async () => {
+  it('clicking Delete on a card removes the credential from the store', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'old-token' }],
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'secret' }],
     });
     render(<CredentialsPanel />);
     await user.click(screen.getByRole('button', { name: '1 credential' }));
-    await user.click(screen.getByRole('button', { name: 'Edit staging' }));
-    await user.clear(screen.getByPlaceholderText('name'));
-    await user.type(screen.getByPlaceholderText('name'), 'discarded-name');
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: 'Delete staging' }));
 
-    expect(useWorkflowStore.getState().credentials).toEqual([
-      { id: 'c1', name: 'staging', type: 'bearer', token: 'old-token' },
-    ]);
-    expect(screen.getByText('staging')).toBeInTheDocument();
-  });
-
-  it('editing a credential switches type fields the same way adding does, and Save persists the new type', async () => {
-    const user = userEvent.setup();
-    useWorkflowStore.setState({
-      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'old-token' }],
-    });
-    render(<CredentialsPanel />);
-    await user.click(screen.getByRole('button', { name: '1 credential' }));
-    await user.click(screen.getByRole('button', { name: 'Edit staging' }));
-    await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'basic');
-    await user.type(screen.getByPlaceholderText('username'), 'alice');
-    await user.type(screen.getByPlaceholderText('password'), 'hunter2');
-    await user.click(screen.getByRole('button', { name: 'Save changes' }));
-
-    expect(useWorkflowStore.getState().credentials).toEqual([
-      { id: 'c1', name: 'staging', type: 'basic', username: 'alice', password: 'hunter2' },
-    ]);
-  });
-
-  it('shows "Originally configured from..." (not the fresh pre-fill banner) when editing a credential that came from a declared scheme', async () => {
-    const user = userEvent.setup();
-    useWorkflowStore.setState({
-      credentials: [
-        { id: 'c1', name: 'bearerAuth', type: 'bearer', token: 'secret', fromSecurityScheme: 'bearerAuth' },
-      ],
-    });
-    render(<CredentialsPanel />);
-    await user.click(screen.getByRole('button', { name: '1 credential' }));
-    await user.click(screen.getByRole('button', { name: 'Edit bearerAuth' }));
-
-    expect(screen.getByText(/Originally configured from/)).toBeInTheDocument();
-    expect(screen.queryByText(/fill in the secret value\(s\) below/)).not.toBeInTheDocument();
-  });
-
-  describe('popup_login', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vi.spyOn's inferred type doesn't widen cleanly to a bare mutable let across beforeEach/afterEach.
-    let openSpy: any;
-
-    beforeEach(() => {
-      openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
-    });
-
-    afterEach(() => {
-      openSpy.mockRestore();
-    });
-
-    it('defaults to responseType "cookie", where Save needs only a name and login URL — no secret field at all', async () => {
-      const user = userEvent.setup();
-      render(<CredentialsPanel />);
-
-      await user.click(screen.getByRole('button', { name: '0 credentials' }));
-      await user.click(screen.getByRole('button', { name: '+ New credential' }));
-      await user.type(screen.getByPlaceholderText('name'), 'github-login');
-      await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'popup_login');
-
-      expect(screen.getByDisplayValue('Sets a session cookie')).toBeInTheDocument();
-      const saveButton = screen.getByRole('button', { name: 'Save' });
-      expect(saveButton).toBeDisabled();
-
-      await user.type(
-        screen.getByPlaceholderText('https://your-app.example.com/auth/login'),
-        'https://app.test/auth/github'
-      );
-      expect(saveButton).toBeEnabled();
-
-      await user.click(saveButton);
-
-      expect(useWorkflowStore.getState().credentials[0]).toEqual({
-        id: expect.any(String),
-        name: 'github-login',
-        type: 'popup_login',
-        loginUrl: 'https://app.test/auth/github',
-        responseType: 'cookie',
-      });
-    });
-
-    it('"Log in…" opens the login URL in a popup, and is disabled until a URL is entered', async () => {
-      const user = userEvent.setup();
-      render(<CredentialsPanel />);
-
-      await user.click(screen.getByRole('button', { name: '0 credentials' }));
-      await user.click(screen.getByRole('button', { name: '+ New credential' }));
-      await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'popup_login');
-
-      const loginButton = screen.getByRole('button', { name: 'Log in…' });
-      expect(loginButton).toBeDisabled();
-
-      await user.type(
-        screen.getByPlaceholderText('https://your-app.example.com/auth/login'),
-        'https://app.test/auth/github'
-      );
-      expect(loginButton).toBeEnabled();
-
-      await user.click(loginButton);
-      expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank', expect.any(String));
-    });
-
-    it('switching responseType to "token" reveals token/paramName/in fields, and Save requires them too', async () => {
-      const user = userEvent.setup();
-      render(<CredentialsPanel />);
-
-      await user.click(screen.getByRole('button', { name: '0 credentials' }));
-      await user.click(screen.getByRole('button', { name: '+ New credential' }));
-      await user.type(screen.getByPlaceholderText('name'), 'token-login');
-      await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'popup_login');
-      await user.type(
-        screen.getByPlaceholderText('https://your-app.example.com/auth/login'),
-        'https://app.test/auth/login'
-      );
-      await user.selectOptions(screen.getByDisplayValue('Sets a session cookie'), 'token');
-
-      const saveButton = screen.getByRole('button', { name: 'Save' });
-      expect(saveButton).toBeDisabled();
-
-      await user.type(screen.getByPlaceholderText('paste the token you got after logging in'), 'pasted-token');
-      await user.type(screen.getByPlaceholderText('e.g. Authorization'), 'Authorization');
-      expect(saveButton).toBeEnabled();
-
-      await user.click(saveButton);
-
-      expect(useWorkflowStore.getState().credentials[0]).toMatchObject({
-        name: 'token-login',
-        type: 'popup_login',
-        responseType: 'token',
-        loginUrl: 'https://app.test/auth/login',
-        token: 'pasted-token',
-        paramName: 'Authorization',
-        in: 'header',
-      });
-    });
-
-    it('the "Authorization code" responseType option is present but disabled — not selectable', async () => {
-      const user = userEvent.setup();
-      render(<CredentialsPanel />);
-
-      await user.click(screen.getByRole('button', { name: '0 credentials' }));
-      await user.click(screen.getByRole('button', { name: '+ New credential' }));
-      await user.selectOptions(screen.getByDisplayValue('Bearer token'), 'popup_login');
-
-      expect(screen.getByRole('option', { name: 'Authorization code (not supported)' })).toBeDisabled();
-    });
-
-    it('a saved cookie-type credential shows a masked-preview note (no stored secret) and a "Log in" button on its card', async () => {
-      const user = userEvent.setup();
-      useWorkflowStore.setState({
-        credentials: [
-          {
-            id: 'c1',
-            name: 'github-login',
-            type: 'popup_login',
-            loginUrl: 'https://app.test/auth/github',
-            responseType: 'cookie',
-          },
-        ],
-      });
-      render(<CredentialsPanel />);
-      await user.click(screen.getByRole('button', { name: '1 credential' }));
-
-      expect(screen.getByText(/no stored secret/)).toBeInTheDocument();
-
-      await user.click(screen.getByRole('button', { name: 'Log in for github-login' }));
-      expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank', expect.any(String));
-    });
+    expect(useWorkflowStore.getState().credentials).toHaveLength(0);
   });
 });
