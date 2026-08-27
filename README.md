@@ -1,4 +1,6 @@
-# Enlace
+<h1>
+  <img src="https://raw.githubusercontent.com/get-enlace/.github/refs/heads/main/brand/svgs/icon-full-100.svg" alt="" style="width: 32px; height: 32px; vertical-align: middle;"> Enlace
+</h1>
 
 A visual, chained-execution canvas for any OpenAPI-documented API. Drag
 operations onto a canvas, wire the output of one call into the input of the
