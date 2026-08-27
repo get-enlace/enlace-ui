@@ -43,7 +43,7 @@ describe('DebugPane', () => {
     expect(screen.getByText(/Could not determine a target base URL/)).toBeInTheDocument();
   });
 
-  it('redacts the Authorization header in the shown request/response JSON, case-insensitively, without touching other headers', () => {
+  it('redacts the Authorization header in the request headers table, case-insensitively, without touching other headers', () => {
     useWorkflowStore.setState({
       runResult: {
         steps: [makeStep({ request: { ...makeStep().request, headers: { 'content-type': 'application/json', authorization: 'Bearer super-secret-token' } } })],
@@ -51,13 +51,13 @@ describe('DebugPane', () => {
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
-    const dump = document.querySelector('pre')!.textContent!;
+    const dump = document.querySelector('.debug-step')!.textContent!;
     expect(dump).not.toContain('super-secret-token');
     expect(dump).toContain('[redacted]');
     expect(dump).toContain('application/json'); // non-auth headers pass through untouched
   });
 
-  it('redacts an apiKey-in-query credential value in both the summary URL and the JSON dump', () => {
+  it('redacts an apiKey-in-query credential value in both the summary URL and the request panel', () => {
     useWorkflowStore.setState({
       runResult: {
         steps: [
@@ -76,9 +76,27 @@ describe('DebugPane', () => {
 
     expect(screen.getByText('http://localhost:4000/pet?apiKey=%5Bredacted%5D&limit=10')).toBeInTheDocument();
 
-    const dump = document.querySelector('pre')!.textContent!;
+    const dump = document.querySelector('.debug-step')!.textContent!;
     expect(dump).not.toContain('super-secret-key');
     expect(dump).toContain('limit=10'); // non-secret query params pass through untouched
+  });
+
+  it('shows the request and response bodies immediately, without needing to open a headers toggle', () => {
+    useWorkflowStore.setState({ runResult: { steps: [makeStep()] } });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+
+    const [requestBody, responseBody] = document.querySelectorAll('.debug-body__pre');
+    expect(requestBody.textContent).toContain('"name": "Rex"');
+    expect(responseBody.textContent).toContain('"id": 1');
+  });
+
+  it('shows a credentials: include chip on the request panel for cookie-based steps', () => {
+    useWorkflowStore.setState({
+      runResult: { steps: [makeStep({ request: { ...makeStep().request, credentials: 'include' } })] },
+    });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+
+    expect(screen.getByText('credentials: include')).toBeInTheDocument();
   });
 
   it('shows the step count and a status badge per step', () => {
@@ -86,7 +104,8 @@ describe('DebugPane', () => {
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
     expect(screen.getByText('2 call(s)')).toBeInTheDocument();
-    expect(screen.getAllByText('200')).toHaveLength(2);
+    // One "200" badge per step in the summary row, plus one in each step's opened Response panel.
+    expect(document.querySelectorAll('.debug-step__summary .status-badge--ok')).toHaveLength(2);
   });
 
   it('shows ERROR status and the error message for a failed step', () => {
@@ -96,7 +115,9 @@ describe('DebugPane', () => {
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
     expect(screen.getByText('ERROR')).toBeInTheDocument();
-    expect(screen.getByText('Network request failed')).toBeInTheDocument();
+    // Shown twice on purpose: once in the collapsed summary, once in the Response panel in place
+    // of a body, so the reason for "no response" is visible without opening anything further.
+    expect(screen.getAllByText('Network request failed')).toHaveLength(2);
   });
 
   it('hides the body (but not the header/count) when collapsed', () => {

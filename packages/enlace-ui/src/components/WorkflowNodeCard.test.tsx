@@ -67,7 +67,12 @@ describe('WorkflowNodeCard', () => {
   });
 
   it('shows the operationId as a legend when present, omits it otherwise', () => {
-    const { rerender } = renderCard({ node: makeNode(), operation: makeOperation({ operationId: 'addPet' }), selected: false });
+    const { rerender } = renderCard({
+      node: makeNode(),
+      operation: makeOperation({ operationId: 'addPet' }),
+      selected: false,
+      label: 'addPet',
+    });
     expect(screen.getByText('addPet')).toBeInTheDocument();
 
     rerender(
@@ -87,6 +92,19 @@ describe('WorkflowNodeCard', () => {
       </ReactFlowProvider>
     );
     expect(document.querySelector('legend')).not.toBeInTheDocument();
+  });
+
+  it('shows a "#N" legend even without a declared operationId, when this operation is used more than once', () => {
+    // The one case a legend earns its place despite repeating the method+path already shown below
+    // it: disambiguating this card from another node using the same operation — see Canvas.tsx's
+    // buildNodeLabels call, which is what actually produces the "#N" suffix in practice.
+    renderCard({
+      node: makeNode(),
+      operation: makeOperation({ operationId: undefined }),
+      selected: false,
+      label: 'POST /pet #2',
+    });
+    expect(screen.getByText('POST /pet #2')).toBeInTheDocument();
   });
 
   it('falls back to "Unknown operation" when the operation can\'t be found (e.g. spec changed since the node was added)', () => {

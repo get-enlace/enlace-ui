@@ -5,6 +5,7 @@ import { EditorState, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { acceptCompletion, completionStatus } from '@codemirror/autocomplete';
 import { RawBodyEditor, buildJsonAutocompleteExtensions } from './RawBodyEditor.js';
+import { buildNodeLabels } from '../utils/nodeLabel.js';
 import type { Operation, RawBody, WorkflowNode } from '../types.js';
 
 function node(id: string, operationId: string): WorkflowNode {
@@ -14,12 +15,16 @@ function node(id: string, operationId: string): WorkflowNode {
 const ops: Operation[] = [
   { id: 'GET /orders/{id}', method: 'get', path: '/orders/{id}', parameters: [], requestBodySchema: null, responseSchema: null },
 ];
+const opsById = new Map(ops.map((o) => [o.id, o]));
+// The real caller (NodeInspector) computes this across the *whole* workflow, but for these
+// tests the ancestor set given to each node's render is the whole workflow anyway.
+const labelsFor = (nodes: WorkflowNode[]) => buildNodeLabels(nodes, opsById);
 
 describe('RawBodyEditor', () => {
   it('renders the initial template text inside the CodeMirror doc', async () => {
     const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} operations={ops} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
     );
     await waitFor(() => {
       expect(container.querySelector('.cm-content')?.textContent).toContain('widget');
@@ -33,7 +38,7 @@ describe('RawBodyEditor', () => {
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'item.title' } },
     };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} operations={ops} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} />
     );
     await waitFor(() => {
       expect(container.querySelector('.tag-chip')).toBeTruthy();
@@ -52,7 +57,7 @@ describe('RawBodyEditor', () => {
         template: '{"name":"{{enlace:tag1}}"}',
         tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-deleted', jsonPath: 'item.title' } },
       });
-      return <RawBodyEditor rawBody={rawBody} onChange={setRawBody} ancestorNodes={[validNode]} operations={ops} />;
+      return <RawBodyEditor rawBody={rawBody} onChange={setRawBody} ancestorNodes={[validNode]} nodeLabels={labelsFor([validNode])} />;
     }
 
     const { container } = render(<Harness />);
@@ -81,7 +86,7 @@ describe('RawBodyEditor', () => {
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-deleted', jsonPath: 'item.title' } },
     };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} operations={ops} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -98,7 +103,7 @@ describe('RawBodyEditor', () => {
     // syntax but has no BodyTag behind it at all.
     const rawBody: RawBody = { template: '{"name":"{{enlace:ghost}}"}', tags: {} };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} operations={ops} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -121,7 +126,7 @@ describe('RawBodyEditor', () => {
       tags: { tag1: { id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'item.title' } },
     };
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} operations={ops} />
+      <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[a]} nodeLabels={labelsFor([a])} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -141,7 +146,7 @@ describe('RawBodyEditor', () => {
     };
     const onChange = vi.fn();
     const { container } = render(
-      <RawBodyEditor rawBody={rawBody} onChange={onChange} ancestorNodes={[a]} operations={ops} />
+      <RawBodyEditor rawBody={rawBody} onChange={onChange} ancestorNodes={[a]} nodeLabels={labelsFor([a])} />
     );
     const chip = await waitFor(() => {
       const el = container.querySelector('.tag-chip');
@@ -161,7 +166,7 @@ describe('RawBodyEditor', () => {
     // dark palette, so an un-flipped editor has a black-on-black,
     // effectively invisible caret — it blinks, it's just never seen.
     const rawBody: RawBody = { template: '{"a":1}', tags: {} };
-    const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} operations={ops} />);
+    const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />);
     const content = await waitFor(() => {
       const el = container.querySelector('.cm-content');
       expect(el).toBeTruthy();

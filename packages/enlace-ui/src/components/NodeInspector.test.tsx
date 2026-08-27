@@ -271,6 +271,54 @@ describe('NodeInspector', () => {
       expect(useWorkflowStore.getState().nodes[0].fieldValues['body.name']).toEqual({ source: 'static', value: 'fido' });
     });
 
+    it('picks up field edits made in Form mode when switching back to Raw a second time', async () => {
+      // Regression test for a reported bug: Form -> Raw -> Form -> Raw lost
+      // the field edits made during the second stint in Form mode, because
+      // switchToRaw only ever seeded `rawBody` from `fieldValues` the very
+      // first time (`if (!node.rawBody)`) — every later switch back to Raw
+      // just re-showed that stale cached template.
+      const plainOperation: Operation = {
+        id: 'POST /plain',
+        method: 'post',
+        path: '/plain',
+        parameters: [],
+        requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+        responseSchema: null,
+      };
+      useWorkflowStore.setState({
+        nodes: [
+          makeNode({ operationId: 'POST /plain', fieldValues: { 'body.name': { source: 'static', value: 'fido' } } }),
+        ],
+        operations: [petOperation, getPetOperation, plainOperation],
+        selectedNodeId: 'node-1',
+      });
+      render(<NodeInspector onCollapse={() => {}} />);
+      const modeSwitch = screen.getByRole('checkbox');
+
+      // Form -> Raw: seeded with "fido".
+      fireEvent.click(modeSwitch);
+      const rawBody = () => useWorkflowStore.getState().nodes[0].rawBody;
+      await waitFor(() => expect(rawBody()).toBeTruthy());
+      expect(JSON.parse(rawBody()!.template).name).toBe('fido');
+
+      // Emptied out directly in Raw mode (as if the user cleared the JSON by hand).
+      useWorkflowStore.setState((state) => ({
+        nodes: state.nodes.map((n) => (n.id === 'node-1' ? { ...n, rawBody: { template: '{}', tags: {} } } : n)),
+      }));
+
+      // Raw -> Form: not lossy (an empty object round-trips through one static-undefined field), so no confirm needed.
+      fireEvent.click(modeSwitch);
+      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('form');
+
+      // Edit the now-empty field in Form mode.
+      fireEvent.change(fieldRow('body.name').getByRole('textbox'), { target: { value: 'rex' } });
+      expect(useWorkflowStore.getState().nodes[0].fieldValues['body.name']).toEqual({ source: 'static', value: 'rex' });
+
+      // Form -> Raw again: must reflect "rex", not the stale cached "{}".
+      fireEvent.click(modeSwitch);
+      await waitFor(() => expect(JSON.parse(rawBody()!.template).name).toBe('rex'));
+    });
+
     it('warns before converting back to Form when the Raw JSON has structure the form would lose, and only converts on confirm', async () => {
       useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
       render(<NodeInspector onCollapse={() => {}} />);

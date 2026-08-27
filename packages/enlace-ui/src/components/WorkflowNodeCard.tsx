@@ -6,19 +6,31 @@ export interface WorkflowNodeData {
   node: WorkflowNode;
   operation?: Operation;
   selected: boolean;
+  /**
+   * Precomputed by Canvas via utils/nodeLabel.ts's `buildNodeLabels`, across every node in the
+   * workflow at once — global, not scoped to this node's neighborhood, so a node used twice
+   * always shows the same "createCustomer #1"/"createCustomer #2" here as it does in every
+   * "Map from..." picker and tag chip elsewhere. That "#N" is the only reason this exists
+   * separately from `operation.operationId` — otherwise the two agree.
+   */
+  label?: string;
 }
 
 export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
-  const { node, operation, selected } = data;
+  const { node, operation, selected, label } = data;
   const removeNode = useWorkflowStore((s) => s.removeNode);
   const method = operation?.method ?? 'get';
+  // Skip the legend when it would just repeat the method+path already shown in the header below —
+  // only worth a second line when the spec names the operation, or this operation appears more
+  // than once in the workflow (the "#N" suffix a duplicate gets, the whole reason `label` exists).
+  const showLegend = Boolean(operation?.operationId) || (label !== undefined && /#\d+$/.test(label));
 
   return (
     // A real <fieldset>/<legend> — same as OperationList's cards — so the
     // browser cuts the operationId's gap in the top border itself, rather
     // than us hand-positioning a label over it.
     <fieldset className={`workflow-node workflow-node--${method}${selected ? ' workflow-node--selected' : ''}`}>
-      {operation?.operationId && <legend className="workflow-node__operation-id">{operation.operationId}</legend>}
+      {showLegend && <legend className="workflow-node__operation-id">{label}</legend>}
       {/* Drag from one box's right handle to another's left handle to
           establish execution ORDER (a WorkflowConnection) — separate from
           field mapping (data source), which stays in the Node Inspector's
