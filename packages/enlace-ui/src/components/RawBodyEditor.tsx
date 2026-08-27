@@ -17,14 +17,17 @@ import { autocompletion, type CompletionContext, type CompletionResult } from '@
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { makeTagPlaceholder, tagPattern } from '../utils/bodyTags.js';
 import { randomId } from '../utils/randomId.js';
-import type { BodyTag, BodyTagType, Operation, RawBody, WorkflowNode } from '../types.js';
+import type { BodyTag, BodyTagType, RawBody, WorkflowNode } from '../types.js';
 import { TagConfigModal } from './TagConfigModal.js';
 
 export interface RawBodyEditorProps {
   rawBody: RawBody;
   onChange: (rawBody: RawBody) => void;
   ancestorNodes: WorkflowNode[];
-  operations: Operation[];
+  /** Precomputed by the caller across the *whole* workflow (see utils/nodeLabel.ts's
+   * buildNodeLabels) — not just `ancestorNodes` — so a tag chip's label always matches what the
+   * same node shows on its canvas card and in every other picker. */
+  nodeLabels: Map<string, string>;
 }
 
 // `json()` only supplies the parser/language — it applies no color on its
@@ -48,20 +51,18 @@ const scripted = Annotation.define<boolean>();
 /** Dispatched with no document change, purely to make the chip decoration plugin recompute labels after a tag's config (not its placeholder text) changes. */
 const refreshChips = StateEffect.define<void>();
 
-function tagLabel(tag: BodyTag, nodesById: Map<string, WorkflowNode>, operationsById: Map<string, Operation>): string {
-  const node = nodesById.get(tag.sourceNodeId);
-  const opId = node ? (operationsById.get(node.operationId)?.id ?? node.operationId) : tag.sourceNodeId;
-  const nodeLabel = node ? `${opId} (${node.id.slice(0, 6)})` : `${tag.sourceNodeId} (missing)`;
+function tagLabel(tag: BodyTag, nodesById: Map<string, WorkflowNode>, nodeLabels: Map<string, string>): string {
+  const label = nodesById.has(tag.sourceNodeId) ? nodeLabels.get(tag.sourceNodeId)! : '(missing)';
 
-  if (tag.type === 'response_header') return `${nodeLabel} → header ${tag.headerName ?? ''}`;
-  if (tag.type === 'response_raw') return `${nodeLabel} → raw body`;
-  return `${nodeLabel} → ${tag.jsonPath || 'body'}`;
+  if (tag.type === 'response_header') return `${label} → header ${tag.headerName ?? ''}`;
+  if (tag.type === 'response_raw') return `${label} → raw body`;
+  return `${label} → ${tag.jsonPath || 'body'}`;
 }
 
 interface ChipConfig {
   tags: Record<string, BodyTag>;
   nodesById: Map<string, WorkflowNode>;
-  operationsById: Map<string, Operation>;
+  nodeLabels: Map<string, string>;
   onClickChip: (tagId: string) => void;
 }
 
@@ -122,7 +123,7 @@ function buildDecorations(text: string, config: ChipConfig): DecorationSet {
     }
 
     const broken = !config.nodesById.has(tag.sourceNodeId);
-    const label = tagLabel(tag, config.nodesById, config.operationsById);
+    const label = tagLabel(tag, config.nodesById, config.nodeLabels);
     ranges.push(Decoration.replace({ widget: new TagChipWidget(tagId, label, broken, config.onClickChip) }).range(from, to));
   }
   return Decoration.set(ranges);
@@ -242,7 +243,7 @@ export function buildJsonAutocompleteExtensions(
   ];
 }
 
-export function RawBodyEditor({ rawBody, onChange, ancestorNodes, operations }: RawBodyEditorProps) {
+export function RawBodyEditor({ rawBody, onChange, ancestorNodes, nodeLabels }: RawBodyEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const configRef = useRef<ChipConfig>(null as unknown as ChipConfig);
@@ -253,12 +254,11 @@ export function RawBodyEditor({ rawBody, onChange, ancestorNodes, operations }: 
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
 
   const nodesById = new Map(ancestorNodes.map((n) => [n.id, n]));
-  const operationsById = new Map(operations.map((o) => [o.id, o]));
 
   configRef.current = {
     tags: rawBody.tags,
     nodesById,
-    operationsById,
+    nodeLabels,
     onClickChip: (tagId) => setEditingTagId(tagId),
   };
 
@@ -368,7 +368,7 @@ export function RawBodyEditor({ rawBody, onChange, ancestorNodes, operations }: 
       {pendingInsert && (
         <TagConfigModal
           ancestorNodes={ancestorNodes}
-          operations={operations}
+          nodeLabels={nodeLabels}
           initialType={pendingInsert.type}
           onConfirm={handleInsertConfirm}
           onCancel={() => setPendingInsert(null)}
@@ -378,7 +378,7 @@ export function RawBodyEditor({ rawBody, onChange, ancestorNodes, operations }: 
       {editingTag && (
         <TagConfigModal
           ancestorNodes={ancestorNodes}
-          operations={operations}
+          nodeLabels={nodeLabels}
           initialType={editingTag.type}
           initialTag={editingTag}
           onConfirm={handleEditConfirm}

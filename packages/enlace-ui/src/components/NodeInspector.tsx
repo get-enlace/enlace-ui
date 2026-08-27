@@ -5,6 +5,7 @@ import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } 
 import { computeAncestors } from '../utils/graph.js';
 import { hasUnrepresentableShape } from '../utils/schemaExample.js';
 import { buildRawBodyFromForm, convertRawBodyToFieldValues } from '../utils/bodyTemplate.js';
+import { buildNodeLabels } from '../utils/nodeLabel.js';
 import { RawBodyEditor } from './RawBodyEditor.js';
 import { Modal } from './Modal.js';
 import type { SchemaField } from '../utils/flattenSchema.js';
@@ -30,6 +31,7 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
 
   const node = nodes.find((n) => n.id === selectedNodeId);
   const operation = operations.find((o) => o.id === node?.operationId);
+  const operationsById = useMemo(() => new Map(operations.map((o) => [o.id, o])), [operations]);
   const fields = useMemo(() => (operation ? flattenRequestFields(operation) : []), [operation]);
   const nonBodyFields = useMemo(() => fields.filter((f) => !f.path.startsWith('body.')), [fields]);
   const bodyFields = useMemo(() => fields.filter((f) => f.path.startsWith('body.')), [fields]);
@@ -45,6 +47,10 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
     const ancestorIds = computeAncestors(nodes, connections, node.id);
     return nodes.filter((n) => ancestorIds.has(n.id));
   }, [nodes, connections, node]);
+  // Global — every node in the workflow, not just this node's ancestors — so a node's label here
+  // always matches its canvas card and every other picker, regardless of which node is selected
+  // (see Canvas.tsx and utils/nodeLabel.ts's buildNodeLabels doc).
+  const nodeLabels = useMemo(() => buildNodeLabels(nodes, operationsById), [nodes, operationsById]);
 
   const collapseButton = (
     <button
@@ -75,9 +81,13 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
   function switchToRaw() {
     if (!node || !operation) return;
     setSwitchError(null);
-    if (!node.rawBody) {
-      setRawBody(node.id, buildRawBodyFromForm(operation, node.fieldValues));
-    }
+    // Always rebuild from the current form fields — Form is the mode being
+    // left, so it's the authoritative source. A stale `node.rawBody` left
+    // over from an earlier raw-mode session (e.g. from before the last
+    // Raw -> Form switch) must not win over field edits made since; see
+    // switchToForm below, which is already unconditional in the other
+    // direction (always re-derives from rawBody.template on every switch).
+    setRawBody(node.id, buildRawBodyFromForm(operation, node.fieldValues));
     setBodyMode(node.id, 'raw');
   }
 
@@ -221,7 +231,7 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
             >
               {ancestorNodes.map((n) => (
                 <option key={n.id} value={n.id}>
-                  {n.operationId} ({n.id.slice(0, 6)})
+                  {nodeLabels.get(n.id)}
                 </option>
               ))}
             </select>
@@ -329,7 +339,7 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
               rawBody={node.rawBody}
               onChange={(rawBody) => setRawBody(node.id, rawBody)}
               ancestorNodes={ancestorNodes}
-              operations={operations}
+              nodeLabels={nodeLabels}
             />
           ) : null}
         </div>

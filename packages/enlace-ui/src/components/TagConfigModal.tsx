@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import { getHeaderCaseInsensitive, resolveJsonPath } from '../utils/bodyTags.js';
 import { randomId } from '../utils/randomId.js';
-import type { BodyTag, BodyTagType, Operation, WorkflowNode } from '../types.js';
+import type { BodyTag, BodyTagType, WorkflowNode } from '../types.js';
 import { Modal } from './Modal.js';
 
 const TYPE_LABELS: Record<BodyTagType, string> = {
@@ -14,7 +14,10 @@ const TYPE_LABELS: Record<BodyTagType, string> = {
 export interface TagConfigModalProps {
   /** Reachable-via-connection ancestors of the node being edited — see utils/graph.ts's computeAncestors, the same set NodeInspector's form "Map from..." picker already uses. */
   ancestorNodes: WorkflowNode[];
-  operations: Operation[];
+  /** Precomputed by the caller across the *whole* workflow (see utils/nodeLabel.ts's
+   * buildNodeLabels) — not just `ancestorNodes` — so an option here always matches what the same
+   * node shows on its canvas card and in every other picker. */
+  nodeLabels: Map<string, string>;
   initialType: BodyTagType;
   /** Present when editing an existing chip (opened by clicking it in the editor) rather than inserting a new one. */
   initialTag?: BodyTag;
@@ -25,7 +28,7 @@ export interface TagConfigModalProps {
 
 export function TagConfigModal({
   ancestorNodes,
-  operations,
+  nodeLabels,
   initialType,
   initialTag,
   onConfirm,
@@ -102,7 +105,7 @@ export function TagConfigModal({
             </option>
             {ancestorNodes.map((n) => (
               <option key={n.id} value={n.id}>
-                {operations.find((o) => o.id === n.operationId)?.id ?? n.operationId} ({n.id.slice(0, 6)})
+                {nodeLabels.get(n.id)}
               </option>
             ))}
           </select>

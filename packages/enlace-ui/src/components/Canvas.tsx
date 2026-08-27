@@ -14,6 +14,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useWorkflowStore } from '../store/workflowStore.js';
+import { buildNodeLabels } from '../utils/nodeLabel.js';
 import { WorkflowNodeCard, type WorkflowNodeData } from './WorkflowNodeCard.js';
 
 const nodeTypes = { workflowNode: WorkflowNodeCard };
@@ -72,6 +73,14 @@ function CanvasInner() {
     setZoomVar(getViewport());
   }, [getViewport, setZoomVar]);
 
+  // Global — every node in the workflow at once, not scoped to any one node's ancestors — so a
+  // card's "#N" here always matches what that same node shows in every "Map from..." picker and
+  // tag chip (see utils/nodeLabel.ts's buildNodeLabels doc).
+  const nodeLabels = useMemo(() => {
+    const operationsById = new Map(operations.map((o) => [o.id, o]));
+    return buildNodeLabels(nodes, operationsById);
+  }, [nodes, operations]);
+
   const flowNodes: Node<WorkflowNodeData>[] = useMemo(
     () =>
       nodes.map((n) => ({
@@ -82,9 +91,10 @@ function CanvasInner() {
           node: n,
           operation: operations.find((o) => o.id === n.operationId),
           selected: n.id === selectedNodeId,
+          label: nodeLabels.get(n.id),
         },
       })),
-    [nodes, nodePositions, operations, selectedNodeId]
+    [nodes, nodePositions, operations, selectedNodeId, nodeLabels]
   );
 
   // Two distinct edge kinds, styled differently (see styles.css):

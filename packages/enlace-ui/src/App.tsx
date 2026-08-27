@@ -20,7 +20,10 @@ export default function App() {
   return (
     <div className="app">
       <header className="app__header">
-        <h1 className="app__title">Enlace</h1>
+        <h1 className="app__title">
+          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="app__logo" />
+          Enlace
+        </h1>
         <CredentialsPanel />
         <button className="btn btn--execute" onClick={run} disabled={isRunning}>
           {isRunning ? 'Running…' : 'Run'}

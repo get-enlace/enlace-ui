@@ -70,11 +70,19 @@ body {
 }
 
 .app__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 18px;
   font-weight: 700;
   margin: 0;
   flex: 1;
   letter-spacing: 0.2px;
+}
+
+.app__logo {
+  width: 20px;
+  height: 20px;
 }
 
 .btn {
@@ -1245,15 +1253,123 @@ body {
   color: #fff;
 }
 
-.debug-step pre {
+.debug-step__panels {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.debug-step__panel {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.debug-step__panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+  margin-bottom: 6px;
+}
+
+.debug-step__panel-empty {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.debug-step__credentials-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--color-popup);
+  background: var(--color-popup-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Headers are secondary to the body — collapsed by default so opening a step lands on the body,
+ * not a scroll past every header first. */
+.debug-headers {
+  margin-bottom: 6px;
+}
+
+.debug-headers__summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.debug-headers__summary::-webkit-details-marker {
+  display: none;
+}
+
+.debug-headers__summary::before {
+  content: '▸ ';
+}
+
+.debug-headers[open] > .debug-headers__summary::before {
+  content: '▾ ';
+}
+
+.debug-headers__empty {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  margin: 4px 0 0;
+}
+
+.debug-headers__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.debug-headers__table th,
+.debug-headers__table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 2px 8px 2px 0;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  word-break: break-word;
+}
+
+.debug-headers__table td {
+  color: var(--color-text);
+}
+
+.debug-body__label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+.debug-body__empty {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.debug-body__pre {
   background: #101113;
   color: #d8dde3;
   padding: 10px 12px;
   border-radius: 4px;
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 260px;
   font-family: var(--font-mono);
   font-size: 11px;
-  margin: 8px 0 0;
+  margin: 0;
   border: 1px solid var(--color-border);
 }
 

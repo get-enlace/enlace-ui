@@ -1,5 +1,5 @@
 import { useWorkflowStore } from '../store/workflowStore.js';
-import type { RunStepRequest } from '../types.js';
+import type { RunStepRequest, RunStepResponse } from '../types.js';
 
 /** An apiKey-in-query credential has no header to redact — its secret lives in `url` itself, named in `redactQueryParams` (see types.ts). Malformed/relative URLs fall back to the raw string rather than throwing inside the debug pane. */
 function redactUrl(url: string, paramNames: string[] | undefined): string {
@@ -25,6 +25,91 @@ function redactRequest(request: RunStepRequest): RunStepRequest {
       )
     ),
   };
+}
+
+/** `body` is `unknown` — could be a parsed JSON value, a plain string, or absent entirely. Pretty-print
+ * objects/arrays; show strings as-is; anything else falls back to String() rather than risking a throw. */
+function formatBody(body: unknown): string | null {
+  if (body === undefined || body === null) return null;
+  if (typeof body === 'string') return body;
+  try {
+    return JSON.stringify(body, null, 2);
+  } catch {
+    return String(body);
+  }
+}
+
+function HeadersList({ headers }: { headers: Record<string, string> }) {
+  const entries = Object.entries(headers);
+  return (
+    <details className="debug-headers">
+      <summary className="debug-headers__summary">Headers ({entries.length})</summary>
+      {entries.length === 0 ? (
+        <p className="debug-headers__empty">None</p>
+      ) : (
+        <table className="debug-headers__table">
+          <tbody>
+            {entries.map(([key, value]) => (
+              <tr key={key}>
+                <th>{key}</th>
+                <td>{value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </details>
+  );
+}
+
+// Body is the thing a user opens a step to actually read — shown immediately, full width, never
+// behind a second click the way headers are. That's the fix for "doom scrolling" past headers to
+// reach it.
+function BodyBlock({ value }: { value: unknown }) {
+  const text = formatBody(value);
+  return (
+    <div className="debug-body">
+      <div className="debug-body__label">Body</div>
+      {text === null ? <p className="debug-body__empty">No body</p> : <pre className="debug-body__pre">{text}</pre>}
+    </div>
+  );
+}
+
+function RequestPanel({ request }: { request: RunStepRequest }) {
+  return (
+    <div className="debug-step__panel">
+      <div className="debug-step__panel-title">
+        Request
+        {/* Not a secret — see RunStepRequest.credentials — but shown so it's visible *why* a
+            cookie-based call succeeded or failed, since nothing else about the request reveals
+            that a cookie was expected at all. */}
+        {request.credentials === 'include' && <span className="debug-step__credentials-chip">credentials: include</span>}
+      </div>
+      <HeadersList headers={request.headers} />
+      <BodyBlock value={request.body} />
+    </div>
+  );
+}
+
+function ResponsePanel({ response, error }: { response: RunStepResponse | undefined; error: string | undefined }) {
+  if (!response) {
+    return (
+      <div className="debug-step__panel">
+        <div className="debug-step__panel-title">Response</div>
+        <p className="debug-step__panel-empty">{error ?? 'No response'}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="debug-step__panel">
+      <div className="debug-step__panel-title">
+        Response
+        <span className={`status-badge ${response.status < 400 ? 'status-badge--ok' : 'status-badge--error'}`}>{response.status}</span>
+      </div>
+      <HeadersList headers={response.headers} />
+      <BodyBlock value={response.body} />
+    </div>
+  );
 }
 
 export interface DebugPaneProps {
@@ -86,8 +171,12 @@ export function DebugPane({ collapsed, onToggleCollapsed }: DebugPaneProps) {
                   </summary>
                   {/* Redacted here, client-side — the only place this can happen now that
                       execution runs entirely in the browser and there's no server round-trip
-                      to redact it in transit. */}
-                  <pre>{JSON.stringify({ request: redactRequest(step.request), response: step.response }, null, 2)}</pre>
+                      to redact it in transit. Side-by-side so the body — what a step is opened
+                      to actually read — never sits below a wall of headers on either side. */}
+                  <div className="debug-step__panels">
+                    <RequestPanel request={redactRequest(step.request)} />
+                    <ResponsePanel response={step.response} error={step.error} />
+                  </div>
                 </details>
               );
             })}

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import { TagConfigModal } from './TagConfigModal.js';
+import { buildNodeLabels } from '../utils/nodeLabel.js';
 import type { Operation, WorkflowNode } from '../types.js';
 
 function node(id: string, operationId: string): WorkflowNode {
@@ -11,6 +12,8 @@ function node(id: string, operationId: string): WorkflowNode {
 const ops: Operation[] = [
   { id: 'GET /orders/{id}', method: 'get', path: '/orders/{id}', parameters: [], requestBodySchema: null, responseSchema: null },
 ];
+const opsById = new Map(ops.map((o) => [o.id, o]));
+const labelsFor = (nodes: WorkflowNode[]) => buildNodeLabels(nodes, opsById);
 
 beforeEach(() => {
   useWorkflowStore.setState({ runResult: null });
@@ -22,7 +25,7 @@ describe('TagConfigModal', () => {
     render(
       <TagConfigModal
         ancestorNodes={[]}
-        operations={ops}
+        nodeLabels={labelsFor([])}
         initialType="response_body"
         onConfirm={onConfirm}
         onCancel={() => {}}
@@ -37,7 +40,7 @@ describe('TagConfigModal', () => {
     render(
       <TagConfigModal
         ancestorNodes={[a]}
-        operations={ops}
+        nodeLabels={labelsFor([a])}
         initialType="response_body"
         onConfirm={onConfirm}
         onCancel={() => {}}
@@ -58,7 +61,7 @@ describe('TagConfigModal', () => {
     render(
       <TagConfigModal
         ancestorNodes={[a]}
-        operations={ops}
+        nodeLabels={labelsFor([a])}
         initialType="response_header"
         onConfirm={onConfirm}
         onCancel={() => {}}
@@ -78,7 +81,7 @@ describe('TagConfigModal', () => {
   it('shows "no prior run" preview text when the source node has no captured response', () => {
     const a = node('node-a', 'GET /orders/{id}');
     render(
-      <TagConfigModal ancestorNodes={[a]} operations={ops} initialType="response_body" onConfirm={() => {}} onCancel={() => {}} />
+      <TagConfigModal ancestorNodes={[a]} nodeLabels={labelsFor([a])} initialType="response_body" onConfirm={() => {}} onCancel={() => {}} />
     );
     expect(screen.getByText(/No prior run captured/)).toBeInTheDocument();
   });
@@ -99,7 +102,7 @@ describe('TagConfigModal', () => {
     });
     const a = node('node-a', 'GET /orders/{id}');
     render(
-      <TagConfigModal ancestorNodes={[a]} operations={ops} initialType="response_body" onConfirm={() => {}} onCancel={() => {}} />
+      <TagConfigModal ancestorNodes={[a]} nodeLabels={labelsFor([a])} initialType="response_body" onConfirm={() => {}} onCancel={() => {}} />
     );
     fireEvent.change(screen.getByPlaceholderText(/blank = whole body/), { target: { value: 'items[0].id' } });
     expect(screen.getByText('"xyz"')).toBeInTheDocument();
@@ -111,7 +114,7 @@ describe('TagConfigModal', () => {
     render(
       <TagConfigModal
         ancestorNodes={[a]}
-        operations={ops}
+        nodeLabels={labelsFor([a])}
         initialType="response_body"
         initialTag={{ id: 'tag1', type: 'response_body', sourceNodeId: 'node-a', jsonPath: 'items[0].id' }}
         onConfirm={() => {}}
@@ -138,7 +141,7 @@ describe('TagConfigModal', () => {
     render(
       <TagConfigModal
         ancestorNodes={[replacement]}
-        operations={ops}
+        nodeLabels={labelsFor([replacement])}
         initialType="response_body"
         initialTag={{ id: 'tag1', type: 'response_body', sourceNodeId: 'node-deleted', jsonPath: 'item.title' }}
         onConfirm={onConfirm}
