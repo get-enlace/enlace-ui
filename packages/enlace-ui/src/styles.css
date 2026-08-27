@@ -387,6 +387,24 @@ body {
   stroke-dasharray: 5;
 }
 
+/* React Flow adds `.selected` to the edge it's tracking as selected — fed
+ * back from Canvas.tsx's own selectedEdgeId (edges are a value recomputed
+ * fresh every render, not React Flow's own state, so without doing that
+ * ourselves a click's selection wouldn't survive the next re-render).
+ * Same focus color both kinds already use elsewhere (node border, mapping
+ * edges' own stroke), just thicker + glowing so it reads as "selected"
+ * rather than "this is what a mapping edge always looks like". */
+.canvas .edge-connection.selected .react-flow__edge-path {
+  stroke: var(--color-focus);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 3px var(--color-focus));
+}
+
+.canvas .edge-mapping.selected .react-flow__edge-path {
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 3px var(--color-focus));
+}
+
 .canvas .react-flow__controls {
   box-shadow: none;
 }
@@ -531,6 +549,7 @@ body {
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow-wrap: anywhere;
 }

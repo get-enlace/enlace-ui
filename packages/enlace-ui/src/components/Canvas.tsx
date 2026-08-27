@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -7,6 +7,7 @@ import ReactFlow, {
   useReactFlow,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
   type NodeChange,
   type Viewport,
@@ -39,11 +40,22 @@ function CanvasInner() {
     updateNodePosition,
     selectNode,
     connectNodes,
+    disconnectNodes,
     removeNode,
   } = useWorkflowStore();
   const { screenToFlowPosition, fitView, getViewport } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const prevNodeCountRef = useRef(nodes.length);
+
+  // Canvas-local, not store state — unlike node selection (which the
+  // Inspector panel needs), nothing outside the canvas cares which edge
+  // is selected. `flowEdges` is a value freshly computed every render
+  // (not React Flow's own internal state, same as `flowNodes` above), so
+  // without tracking this ourselves and feeding it back in as each edge's
+  // `selected` prop, a click's selection would just vanish on the very
+  // next re-render instead of sticking around to show which edge Delete
+  // would act on.
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   // Handles live inside the zoomed viewport, so their hit target shrinks
   // right along with the canvas — at the 0.5 minZoom floor the connect
@@ -90,6 +102,10 @@ function CanvasInner() {
       target: c.toNodeId,
       className: 'edge-connection',
       markerEnd: { type: MarkerType.ArrowClosed, color: '#9aa0a6' },
+      // Carried through to onEdgesChange below, so a 'remove' change (select
+      // the edge, press Backspace/Delete) can call disconnectNodes with the
+      // right pair without parsing it back out of the id string.
+      data: { fromNodeId: c.fromNodeId, toNodeId: c.toNodeId },
     }));
 
     for (const node of nodes) {
@@ -105,8 +121,8 @@ function CanvasInner() {
         }
       }
     }
-    return edges;
-  }, [nodes, connections]);
+    return edges.map((e) => ({ ...e, selected: e.id === selectedEdgeId }));
+  }, [nodes, connections, selectedEdgeId]);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -146,6 +162,33 @@ function CanvasInner() {
       }
     },
     [updateNodePosition, removeNode]
+  );
+
+  // Same story as onNodesChange above, for edges: they're computed fresh
+  // from `connections`/`fieldValues` every render (flowEdges), not React
+  // Flow's own internal state, so selecting a "connection" edge and
+  // pressing Backspace/Delete does nothing to the store without this —
+  // the edge just reappears next render. Only "connection" edges (solid,
+  // user-drawn via onConnect, carrying `data` above) are removable this
+  // way; "mapping" edges (dashed/animated) are derived from a field's
+  // "Map from..." source and have no `data`, so they're left alone on
+  // 'remove' — clearing that mapping in the Node Inspector is what
+  // removes one. Both kinds still respond to 'select' (a click), feeding
+  // selectedEdgeId back into flowEdges above so the click's highlight
+  // actually sticks instead of disappearing on the next render.
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      for (const change of changes) {
+        if (change.type === 'select') {
+          setSelectedEdgeId(change.selected ? change.id : null);
+          if (change.selected) selectNode(null); // one selection at a time — an edge click shouldn't leave a node looking selected too
+        } else if (change.type === 'remove') {
+          const edge = flowEdges.find((e) => e.id === change.id);
+          if (edge?.data) disconnectNodes(edge.data.fromNodeId, edge.data.toNodeId);
+        }
+      }
+    },
+    [flowEdges, disconnectNodes, selectNode]
   );
 
   // Two things can otherwise leave a card fully or partially clipped with
@@ -199,10 +242,17 @@ function CanvasInner() {
         nodes={flowNodes}
         edges={flowEdges}
         nodeTypes={nodeTypes}
-        onNodeClick={(_, node) => selectNode(node.id)}
-        onPaneClick={() => selectNode(null)}
+        onNodeClick={(_, node) => {
+          selectNode(node.id);
+          setSelectedEdgeId(null);
+        }}
+        onPaneClick={() => {
+          selectNode(null);
+          setSelectedEdgeId(null);
+        }}
         onConnect={onConnect}
         onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onMove={(_, viewport) => setZoomVar(viewport)}
         fitView
         fitViewOptions={{ padding: 0.2 }}
