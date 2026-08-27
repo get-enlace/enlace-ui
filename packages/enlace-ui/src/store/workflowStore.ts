@@ -83,6 +83,8 @@ interface WorkflowState {
   setRawBody: (nodeId: string, rawBody: RawBody | null) => void;
   /** Establishes execution ORDER only — separate from field mapping (data source). */
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
+  /** Removes one explicit connection edge. Doesn't touch fieldValues — a mapped field that happens to rely on this same ordering still implies its own "runs after" edge regardless (see computeExecutionLevels), so this can't silently break a dependency the way removeNode's cleanup has to guard against. */
+  disconnectNodes: (fromNodeId: string, toNodeId: string) => void;
   /** Held in browser memory only — never sent anywhere except as the resolved header/query param on the actual request (see engine/credentials.ts). */
   addCredential: (credential: NewCredential) => void;
   /** Replaces a credential's fields in place, keeping its id — so every node's `credentialId` reference stays valid, unlike delete+re-add. */
@@ -201,6 +203,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       if (exists) return state;
       return { connections: [...state.connections, { fromNodeId, toNodeId }] };
     }),
+
+  disconnectNodes: (fromNodeId, toNodeId) =>
+    set((state) => ({
+      connections: state.connections.filter((c) => !(c.fromNodeId === fromNodeId && c.toNodeId === toNodeId)),
+    })),
 
   addCredential: (credential) => {
     const withId = { ...credential, id: randomId() } as Credential;

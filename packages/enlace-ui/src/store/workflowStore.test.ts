@@ -63,6 +63,49 @@ describe('removeNode', () => {
   });
 });
 
+describe('connectNodes / disconnectNodes', () => {
+  it('disconnectNodes removes just the one matching connection, leaving others intact', () => {
+    const { addNode, connectNodes, disconnectNodes } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    const c = addNode('GET /c');
+    connectNodes(a, b);
+    connectNodes(a, c);
+
+    disconnectNodes(a, b);
+
+    expect(useWorkflowStore.getState().connections).toEqual([{ fromNodeId: a, toNodeId: c }]);
+  });
+
+  it('disconnectNodes is a no-op when no such connection exists', () => {
+    const { addNode, connectNodes, disconnectNodes } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    connectNodes(a, b);
+
+    disconnectNodes(b, a); // reversed direction — not the same edge
+
+    expect(useWorkflowStore.getState().connections).toEqual([{ fromNodeId: a, toNodeId: b }]);
+  });
+
+  it("doesn't touch fieldValues — a connection is an ordering edge only, separate from field mapping", () => {
+    const { addNode, connectNodes, disconnectNodes, setFieldValue } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    connectNodes(a, b);
+    setFieldValue(b, 'path.id', { source: 'mapped', fromNodeId: a, fromResponseFieldPath: 'id' });
+
+    disconnectNodes(a, b);
+
+    expect(useWorkflowStore.getState().connections).toEqual([]);
+    expect(useWorkflowStore.getState().nodes.find((n) => n.id === b)!.fieldValues['path.id']).toEqual({
+      source: 'mapped',
+      fromNodeId: a,
+      fromResponseFieldPath: 'id',
+    });
+  });
+});
+
 describe('addCredential / updateCredential / removeCredential', () => {
   it('assigns a fresh id to a new credential', () => {
     const { addCredential } = useWorkflowStore.getState();
