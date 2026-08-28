@@ -433,34 +433,34 @@ body {
   filter: drop-shadow(0 0 3px var(--color-focus));
 }
 
-/* The clickable dot rendered at a connection edge's midpoint (see
-   BreakpointConnectionEdge.tsx) — toggles a breakpoint that pauses a run
-   there. Sits inside React Flow's EdgeLabelRenderer overlay, which is
-   pointer-events:none by default so it doesn't block canvas panning
-   elsewhere; this element opts itself back in. Position (translate to the
-   edge midpoint) and the zoom counter-scale both live in the component's
-   own inline style, not here — only visual treatment does. */
+/* The red dot rendered at an armed connection edge's midpoint (see
+   BreakpointConnectionEdge.tsx) — only rendered when a breakpoint is
+   actually armed on that connector; arming itself happens via a
+   double-click on the connector at the canvas level, no placeholder
+   marker on unarmed edges. Clicking this dot disarms (redundant with
+   double-clicking the connector again, but more discoverable — same
+   pattern as an IDE breakpoint gutter). Sits inside React Flow's
+   EdgeLabelRenderer overlay, which is pointer-events:none by default
+   so it doesn't block canvas panning elsewhere; this element opts
+   itself back in. Position (translate to the edge midpoint) and the
+   zoom counter-scale both live in the component's own inline style,
+   not here — only visual treatment does. */
 .breakpoint-marker {
   position: absolute;
   width: 14px;
   height: 14px;
   padding: 0;
   border-radius: 50%;
-  border: 2px solid var(--color-text-muted);
-  background: var(--color-panel-bg);
+  border: 2px solid var(--color-delete);
+  background: var(--color-delete);
+  box-shadow: 0 0 0 3px var(--color-delete-bg);
   cursor: pointer;
   pointer-events: all;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  transition: box-shadow 0.15s, opacity 0.15s;
 }
 
 .breakpoint-marker:hover {
-  border-color: var(--color-delete);
-}
-
-.breakpoint-marker--armed {
-  border-color: var(--color-delete);
-  background: var(--color-delete);
-  box-shadow: 0 0 0 3px var(--color-delete-bg);
+  box-shadow: 0 0 0 4px var(--color-delete-bg);
 }
 
 .breakpoint-marker:disabled {
@@ -469,11 +469,7 @@ body {
 }
 
 .breakpoint-marker:disabled:hover {
-  border-color: var(--color-text-muted);
-}
-
-.breakpoint-marker--armed:disabled:hover {
-  border-color: var(--color-delete);
+  box-shadow: 0 0 0 3px var(--color-delete-bg);
 }
 
 .canvas .react-flow__controls {

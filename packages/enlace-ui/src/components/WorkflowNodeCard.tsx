@@ -30,11 +30,14 @@ export interface WorkflowNodeData {
 // owns top-right) — only for the statuses worth calling out at a glance on
 // the canvas itself, without opening the Debugger tab. Text content is the
 // glyph; styling (color, per status) lives in styles.css.
+// Note: failed is `!`, not an `×`/`✕` — the remove button on the opposite
+// corner is already an `×`, so a red-circle-with-an-X badge would read as
+// a second "cancel/close" affordance rather than a failure indicator.
 const STATUS_BADGE_GLYPH: Partial<Record<RunStepStatus, string>> = {
   'in-flight': '●',
   paused: '⏸',
   completed: '✓',
-  failed: '✕',
+  failed: '!',
 };
 
 export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {

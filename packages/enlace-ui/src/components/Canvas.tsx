@@ -48,6 +48,7 @@ function CanvasInner() {
     connectNodes,
     disconnectNodes,
     removeNode,
+    toggleBreakpoint,
   } = useWorkflowStore();
   const { screenToFlowPosition, fitView, getViewport } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -280,6 +281,18 @@ function CanvasInner() {
         onConnect={onConnect}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        // Double-click a connector to arm a breakpoint (double-click again
+        // to disarm). Only connection edges carry `data.fromNodeId` — a
+        // double-click on a mapping edge (no data) is silently ignored,
+        // preserving the "breakpoints only arm on connectors" invariant.
+        // toggleBreakpoint itself no-ops while a run is in progress
+        // (workflowStore.ts's `isLocked`), so no extra guard needed here.
+        onEdgeDoubleClick={(_, edge) => {
+          const data = edge.data as { fromNodeId?: string; toNodeId?: string } | undefined;
+          if (data?.fromNodeId && data.toNodeId) {
+            toggleBreakpoint(data.fromNodeId, data.toNodeId);
+          }
+        }}
         onMove={(_, viewport) => setZoomVar(viewport)}
         fitView
         fitViewOptions={{ padding: 0.2 }}

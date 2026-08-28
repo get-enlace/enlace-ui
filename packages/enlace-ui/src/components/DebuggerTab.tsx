@@ -4,12 +4,15 @@ import { useWorkflowStore } from '../store/workflowStore.js';
 import { redactRequest } from './debugPaneShared.js';
 import type { Operation, RunStep, RunStepRequest, RunStepStatus, WorkflowNode } from '../types.js';
 
+// Kept in visual lockstep with WorkflowNodeCard.tsx's STATUS_BADGE_GLYPH
+// so a canvas card and its Debugger row read as the same status at a
+// glance. `!` (not `✕`) for failed — see the note in that file.
 const STATUS_ICON: Record<RunStepStatus, string> = {
   pending: '○',
   'in-flight': '●',
   paused: '⏸',
   completed: '✓',
-  failed: '✕',
+  failed: '!',
   skipped: '–',
 };
 

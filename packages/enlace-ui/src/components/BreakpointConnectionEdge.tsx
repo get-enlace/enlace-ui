@@ -16,10 +16,12 @@ export interface ConnectionEdgeData {
  * can only ever arm on a connector, never a field-mapping edge" true at
  * the rendering level, not just a runtime check — see issue #13.
  *
- * Renders the exact same bezier path a default edge would, plus a small
- * clickable marker at the midpoint (via `EdgeLabelRenderer`, since React
- * Flow has no built-in "extra decoration on an edge" mechanism) that
- * toggles a breakpoint on this connector.
+ * Arming happens via a **double-click on the connector itself** — wired at
+ * the canvas level (Canvas.tsx's `onEdgeDoubleClick`), not here, so no
+ * always-visible placeholder marker is needed on unarmed edges just to
+ * carry a click target. Once armed, the same double-click disarms; the
+ * dot rendered below is also directly clickable as a redundant, more
+ * discoverable disarm affordance (like an IDE breakpoint gutter).
  */
 export function BreakpointConnectionEdge({
   id,
@@ -48,45 +50,63 @@ export function BreakpointConnectionEdge({
     targetPosition,
   });
 
+  const hoverHint = isRunning
+    ? "Can't change breakpoints while the workflow is running"
+    : data?.armed
+      ? 'Click to select · Double-click to remove debug point'
+      : 'Click to select · Double-click to add debug point';
+
   return (
     <>
       <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
-      <EdgeLabelRenderer>
-        <button
-          type="button"
-          // nodrag/nopan: React Flow's own convention for interactive
-          // elements rendered via EdgeLabelRenderer — without these, a
-          // click here also starts a canvas pan/selection-drag gesture.
-          className={`nodrag nopan breakpoint-marker${data?.armed ? ' breakpoint-marker--armed' : ''}`}
-          disabled={isRunning}
-          // Counter-scaled against the same --rf-zoom CSS var Canvas.tsx
-          // maintains, same trick as .react-flow__handle::after in
-          // styles.css — without it this shrinks along with the canvas and
-          // becomes nearly unclickable at a zoomed-out cluttered canvas's
-          // minZoom floor.
-          style={{
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px) scale(calc(1 / var(--rf-zoom, 1)))`,
-          }}
-          // Stop both so this doesn't also select the edge (which a plain
-          // click on the path itself still does) or start a drag gesture
-          // before the click registers — same pattern as WorkflowNodeCard's
-          // remove button.
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (data) toggleBreakpoint(data.fromNodeId, data.toNodeId);
-          }}
-          title={
-            isRunning
-              ? "Can't change breakpoints while the workflow is running"
-              : data?.armed
-                ? 'Remove breakpoint'
-                : 'Add a breakpoint — pauses the run here'
-          }
-          aria-label={data?.armed ? 'Remove breakpoint' : 'Add a breakpoint'}
-          aria-pressed={data?.armed ?? false}
-        />
-      </EdgeLabelRenderer>
+      {/* SVG-native tooltip on the edge itself — surfaces the double-click
+          gesture (which is otherwise not self-advertising, unlike a
+          rendered marker). Browser shows it after the usual hover delay
+          when the pointer's over anywhere in this edge's group (the
+          visible path plus React Flow's own wider `.react-flow__edge-
+          interaction` hit-target sibling that this <title> is a sibling
+          of too), no JS or custom tooltip layer needed. */}
+      <title>{hoverHint}</title>
+      {data?.armed && (
+        <EdgeLabelRenderer>
+          <button
+            type="button"
+            // nodrag/nopan: React Flow's own convention for interactive
+            // elements rendered via EdgeLabelRenderer — without these, a
+            // click here also starts a canvas pan/selection-drag gesture.
+            className="nodrag nopan breakpoint-marker breakpoint-marker--armed"
+            disabled={isRunning}
+            // Counter-scaled against the same --rf-zoom CSS var Canvas.tsx
+            // maintains, same trick as .react-flow__handle::after in
+            // styles.css — without it this shrinks along with the canvas and
+            // becomes nearly unclickable at a zoomed-out cluttered canvas's
+            // minZoom floor.
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px) scale(calc(1 / var(--rf-zoom, 1)))`,
+            }}
+            // Stop both so this doesn't also select the edge (which a plain
+            // click on the path itself still does) or start a drag gesture
+            // before the click registers — same pattern as WorkflowNodeCard's
+            // remove button. onDoubleClick is stopped too so a double-click
+            // landing on the marker only disarms once (via the click that's
+            // already part of it), not disarm-then-rearm from Canvas.tsx's
+            // onEdgeDoubleClick firing on the same gesture.
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleBreakpoint(data.fromNodeId, data.toNodeId);
+            }}
+            onDoubleClick={(e) => e.stopPropagation()}
+            title={
+              isRunning
+                ? "Can't change breakpoints while the workflow is running"
+                : 'Remove breakpoint'
+            }
+            aria-label="Remove breakpoint"
+            aria-pressed
+          />
+        </EdgeLabelRenderer>
+      )}
     </>
   );
 }
