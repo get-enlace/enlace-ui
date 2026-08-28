@@ -65,10 +65,10 @@ describe('Canvas', () => {
 
     const { container } = render(<Canvas />);
 
-    expect(container.querySelector('.workflow-node')).toHaveClass('workflow-node--running');
+    expect(container.querySelector('.workflow-node')).toHaveClass('workflow-node--in-flight');
   });
 
-  it("doesn't highlight a node whose step hasn't started or has already settled", () => {
+  it("doesn't apply the in-flight pulse to a node that's already settled", () => {
     useWorkflowStore.setState({
       nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
       nodePositions: { n1: { x: 0, y: 0 } },
@@ -80,6 +80,7 @@ describe('Canvas', () => {
 
     const { container } = render(<Canvas />);
 
-    expect(container.querySelector('.workflow-node')).not.toHaveClass('workflow-node--running');
+    expect(container.querySelector('.workflow-node')).not.toHaveClass('workflow-node--in-flight');
+    expect(container.querySelector('.workflow-node')).toHaveClass('workflow-node--completed');
   });
 });

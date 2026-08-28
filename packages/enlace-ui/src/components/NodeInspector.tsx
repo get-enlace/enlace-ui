@@ -22,6 +22,7 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
     operations,
     selectedNodeId,
     credentials,
+    isRunning,
     setCredential,
     setFieldValue,
     mergeFieldValues,
@@ -272,6 +273,19 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
         {collapseButton}
       </div>
 
+      {/* A native <fieldset disabled> is what actually locks every plain
+          input/select/button below in one place — the store-level guards
+          on setFieldValue/setCredential/etc. (workflowStore.ts's isLocked)
+          are the real correctness fix (nothing here can bypass them even
+          if this ever got out of sync), this is just making the "why
+          didn't that do anything" question never come up. RawBodyEditor
+          gets its own readOnly prop instead, since it isn't a native form
+          control this wrapper reaches — see that component's own comment
+          on why. */}
+      {isRunning && (
+        <p className="node-inspector__banner">Workflow is running — editing is locked until it finishes.</p>
+      )}
+      <fieldset className="node-inspector__fieldset" disabled={isRunning}>
       <h2>{operation.id}</h2>
 
       <label className="node-inspector__field">
@@ -340,10 +354,12 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
               onChange={(rawBody) => setRawBody(node.id, rawBody)}
               ancestorNodes={ancestorNodes}
               nodeLabels={nodeLabels}
+              readOnly={isRunning}
             />
           ) : null}
         </div>
       )}
+      </fieldset>
 
       {pendingFormSwitch && (
         <Modal title="Switch to Form view?" onClose={() => setPendingFormSwitch(null)}>

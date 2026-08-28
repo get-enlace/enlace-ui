@@ -308,10 +308,11 @@ export interface RunResult {
 /**
  * A node's live status during a run — distinct from a `RunStep`, which only
  * exists once a node has actually settled (`'completed'`/`'failed'`).
- * `'paused'`/`'skipped'` aren't driven by anything yet (no breakpoint
- * gating exists today — see engine/chainExecutor.ts's `executeChain`); the
- * full union is declared now so the interactive-debugger work that adds
- * gating doesn't need a second type change on top of this one.
+ * `'paused'` means every dependency is satisfied but an armed breakpoint on
+ * an incoming connection is holding it back (see engine/chainExecutor.ts's
+ * `executeChain` and its `RunControl`); `'skipped'` means it will never
+ * fire this run — either a Stop was issued, or some other node failed —
+ * assigned the instant that becomes true, not lazily at run's end.
  */
 export type RunStepStatus = 'pending' | 'in-flight' | 'paused' | 'completed' | 'failed' | 'skipped';
 
@@ -328,4 +329,31 @@ export interface RunEvent {
   nodeId: string;
   status: RunStepStatus;
   step?: RunStep;
+  /**
+   * Present only on a `'paused'` event, and only once the preview finishes
+   * building (a second event follows the first `'paused'` event, which
+   * fires immediately with no `request` yet) — the fully-resolved request
+   * this node would send once released (headers/query/body/credential
+   * already applied), built the same way `runNode` builds one, just without
+   * firing it. Lets the Debugger tab show exactly what's about to go out
+   * before the user commits to Continue/Step.
+   */
+  request?: RunStepRequest;
+}
+
+/**
+ * A live handle into one in-progress `executeChain` call, handed back via
+ * `ChainExecutorOptions.onControl` — this is how Continue/Step/Stop
+ * (driven by the store, in response to user action) reach into a run
+ * that's already underway. See store/workflowStore.ts's `run()`, which
+ * captures this and exposes it as `continueExecution`/`stepNode`/
+ * `stopExecution` store actions.
+ */
+export interface RunControl {
+  /** Releases every node currently paused at a breakpoint. A *later* breakpoint further down the graph still pauses — this only clears what's paused right now. */
+  continue(): void;
+  /** Releases exactly one specific paused node, by id — the rest stay paused. */
+  step(nodeId: string): void;
+  /** Admits nothing new from here on; anything already in flight still runs to completion. Every node that was `'pending'` or `'paused'` at the moment of the call becomes `'skipped'`. */
+  stop(): void;
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DebugPane } from './DebugPane.js';
@@ -23,7 +23,18 @@ function makeStep(overrides: Partial<RunStep> = {}): RunStep {
 
 describe('DebugPane', () => {
   beforeEach(() => {
-    useWorkflowStore.setState({ runResult: null, isRunning: false, error: null });
+    useWorkflowStore.setState({
+      runResult: null,
+      isRunning: false,
+      error: null,
+      nodes: [],
+      connections: [],
+      operations: [],
+      stepStatusByNodeId: {},
+      armedBreakpoints: new Set(),
+      previewRequestByNodeId: {},
+      activeControl: null,
+    });
   });
 
   it('shows a placeholder before any run', () => {
@@ -138,5 +149,118 @@ describe('DebugPane', () => {
 
     await user.click(screen.getByRole('button', { name: 'Hide run output' }));
     expect(collapsed).toBe(true);
+  });
+
+  it('starts on the Run output tab, and stays there for anyone not using breakpoints', () => {
+    useWorkflowStore.setState({ runResult: { steps: [makeStep()] } });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+
+    expect(screen.getByRole('tab', { name: 'Run output' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('POST')).toBeInTheDocument();
+  });
+
+  describe('Debugger tab', () => {
+    it('shows a hint instead of rows when no breakpoint is armed', async () => {
+      const user = userEvent.setup();
+      render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+
+      await user.click(screen.getByRole('tab', { name: 'Debugger' }));
+      expect(screen.getByText('Arm a breakpoint on a connector to start debugging.')).toBeInTheDocument();
+    });
+
+    it('shows an aggregate status breakdown and a row per node once a breakpoint is armed', async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        nodes: [
+          { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
+          { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+        ],
+        connections: [{ fromNodeId: 'a', toNodeId: 'b' }],
+        operations: [
+          { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
+          { id: 'GET /b', method: 'get', path: '/b', parameters: [], requestBodySchema: null, responseSchema: null },
+        ],
+        armedBreakpoints: new Set(['a->b']),
+        stepStatusByNodeId: { a: 'completed', b: 'paused' },
+      });
+      render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+
+      await user.click(screen.getByRole('tab', { name: 'Debugger' }));
+
+      expect(screen.getByText('1 paused · 1 completed')).toBeInTheDocument();
+      expect(screen.getByText('/a')).toBeInTheDocument();
+      expect(screen.getByText('/b')).toBeInTheDocument();
+    });
+
+    it("expands a paused row into a unified 'preview' JSON block, distinct from Run Output's split panels", async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+        connections: [],
+        operations: [
+          { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
+        ],
+        armedBreakpoints: new Set(['x->a']),
+        stepStatusByNodeId: { a: 'paused' },
+        previewRequestByNodeId: {
+          a: { method: 'GET', url: 'http://localhost:4000/a', headers: { 'Content-Type': 'application/json' } },
+        },
+      });
+      render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+      await user.click(screen.getByRole('tab', { name: 'Debugger' }));
+      await user.click(screen.getByText('/a'));
+
+      expect(screen.getByText('Preview — resolved, not yet sent')).toBeInTheDocument();
+      // Not the Run Output tab's Request/Response side-by-side panels.
+      expect(document.querySelector('.debug-step__panels')).not.toBeInTheDocument();
+      // The row's own icon-only controls — see App.test.tsx for the
+      // separate global header controls this complements, not replaces.
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+      const dump = document.querySelector('.debugger-row__json')!.textContent!;
+      expect(dump).toContain('"url": "http://localhost:4000/a"');
+    });
+
+    it("wires a paused row's inline Step button to step that exact node", async () => {
+      const user = userEvent.setup();
+      const stepNode = vi.fn();
+      useWorkflowStore.setState({
+        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+        connections: [],
+        operations: [
+          { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
+        ],
+        armedBreakpoints: new Set(['x->a']),
+        stepStatusByNodeId: { a: 'paused' },
+        previewRequestByNodeId: {
+          a: { method: 'GET', url: 'http://localhost:4000/a', headers: {} },
+        },
+        stepNode,
+      });
+      render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+      await user.click(screen.getByRole('tab', { name: 'Debugger' }));
+
+      await user.click(screen.getByRole('button', { name: 'Step' }));
+      expect(stepNode).toHaveBeenCalledWith('a');
+    });
+
+    it('auto-switches to the Debugger tab the instant a node pauses, but not on every re-render while still paused', () => {
+      useWorkflowStore.setState({
+        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+        armedBreakpoints: new Set(['x->a']),
+        stepStatusByNodeId: { a: 'pending' },
+      });
+      const { rerender } = render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+      expect(screen.getByRole('tab', { name: 'Run output' })).toHaveAttribute('aria-selected', 'true');
+
+      useWorkflowStore.setState({ stepStatusByNodeId: { a: 'paused' } });
+      rerender(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+      expect(screen.getByRole('tab', { name: 'Debugger' })).toHaveAttribute('aria-selected', 'true');
+
+      // Switch back to Run output manually — a second render while `a` is
+      // still paused shouldn't force it back to Debugger.
+      screen.getByRole('tab', { name: 'Run output' }).click();
+      rerender(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+      expect(screen.getByRole('tab', { name: 'Run output' })).toHaveAttribute('aria-selected', 'true');
+    });
   });
 });

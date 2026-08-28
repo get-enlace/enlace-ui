@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Annotation, StateEffect, type Extension } from '@codemirror/state';
+import { Annotation, Compartment, EditorState, StateEffect, type Extension } from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -28,6 +28,17 @@ export interface RawBodyEditorProps {
    * buildNodeLabels) — not just `ancestorNodes` — so a tag chip's label always matches what the
    * same node shows on its canvas card and in every other picker. */
   nodeLabels: Map<string, string>;
+  /**
+   * Rejects edits at the CodeMirror level (`EditorState.readOnly`), not
+   * just by the caller ignoring `onChange` — this editor isn't a plain
+   * controlled React input, so it manages its own document imperatively;
+   * blocking the store update alone would leave a keystroke visibly
+   * "stick" in the editor with no way for it to ever resync back to the
+   * true (unchanged) `rawBody.template`, since the resync effect below
+   * only fires when that prop actually changes. See NodeInspector.tsx,
+   * the only caller, for why this is ever true (a run in progress).
+   */
+  readOnly?: boolean;
 }
 
 // `json()` only supplies the parser/language — it applies no color on its
@@ -243,12 +254,18 @@ export function buildJsonAutocompleteExtensions(
   ];
 }
 
-export function RawBodyEditor({ rawBody, onChange, ancestorNodes, nodeLabels }: RawBodyEditorProps) {
+export function RawBodyEditor({ rawBody, onChange, ancestorNodes, nodeLabels, readOnly = false }: RawBodyEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const configRef = useRef<ChipConfig>(null as unknown as ChipConfig);
   const liveRef = useRef({ rawBody, onChange });
   liveRef.current = { rawBody, onChange };
+  // A single Compartment slot, reconfigured (not rebuilt) whenever
+  // `readOnly` changes — see the effect below. Stable for the component's
+  // whole lifetime, same as viewRef; both are recreated together on
+  // remount, which is fine since a Compartment has no state of its own
+  // beyond being a handle into one EditorView's extension tree.
+  const readOnlyCompartmentRef = useRef(new Compartment());
 
   const [pendingInsert, setPendingInsert] = useState<{ type: BodyTagType; from: number; to: number } | null>(null);
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
@@ -282,6 +299,12 @@ export function RawBodyEditor({ rawBody, onChange, ancestorNodes, nodeLabels }: 
       chipPluginType,
       EditorView.atomicRanges.of((view) => view.plugin(chipPluginType)?.decorations ?? Decoration.none),
       updateListener,
+      // Both together, not just readOnly alone — readOnly blocks the
+      // transactions a keystroke/paste would produce, but leaves the doc
+      // itself contenteditable; editable(false) is what actually stops the
+      // caret/focus/IME too. CodeMirror's own recommended combination for
+      // "fully read-only", per its docs.
+      readOnlyCompartmentRef.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
     ];
 
     const view = new EditorView({
@@ -307,6 +330,21 @@ export function RawBodyEditor({ rawBody, onChange, ancestorNodes, nodeLabels }: 
       annotations: scripted.of(true),
     });
   }, [rawBody.template]);
+
+  // Toggling readOnly is a reconfigure, not a rebuild — the compartment
+  // slot (registered once at mount, above) is the whole point of using one
+  // instead of just conditionally including EditorState.readOnly.of(...)
+  // in the initial extensions list, which would need the view torn down
+  // and rebuilt (losing cursor position, undo history, scroll) every time
+  // a run starts or ends.
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: readOnlyCompartmentRef.current.reconfigure([
+        EditorState.readOnly.of(readOnly),
+        EditorView.editable.of(!readOnly),
+      ]),
+    });
+  }, [readOnly]);
 
   // Tag metadata (jsonPath/sourceNodeId/headerName) can change without the
   // placeholder text changing at all — force the chip widgets to re-render
@@ -363,7 +401,7 @@ export function RawBodyEditor({ rawBody, onChange, ancestorNodes, nodeLabels }: 
       <div className="raw-body-editor__hint">
         Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
       </div>
-      <div className="raw-body-editor__codemirror" ref={containerRef} />
+      <div className={`raw-body-editor__codemirror${readOnly ? ' raw-body-editor__codemirror--readonly' : ''}`} ref={containerRef} />
 
       {pendingInsert && (
         <TagConfigModal

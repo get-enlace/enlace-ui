@@ -23,9 +23,8 @@ npm run build          # builds enlace-ui (vite)
 on first run if it's missing; run `npm run build:ui` manually after editing
 canvas code outside the hot-reload dev server.
 
-See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the codebase is designed,
-and [`ROADMAP.md`](ROADMAP.md) for what's planned next — useful context
-before making a non-trivial change.
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the codebase is designed —
+useful context before making a non-trivial change.
 
 ## CI/CD
 

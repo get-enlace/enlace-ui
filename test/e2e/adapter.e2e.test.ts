@@ -1,6 +1,6 @@
 // Real end-to-end coverage of examples/sample-api/enlace.ts (a local copy
 // of @get-enlace/express's mount function — see that file's header
-// comment, and ROADMAP.md, for why it's copied rather than depended on):
+// comment for why it's copied rather than depended on):
 // an actual Express server, actual HTTP requests over the network stack.
 // The adapter's job is deliberately small (spec passthrough + static UI
 // serving — no execution endpoint at all), so that's all this proves.

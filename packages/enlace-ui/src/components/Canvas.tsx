@@ -13,11 +13,14 @@ import ReactFlow, {
   type Viewport,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { connectionKey } from '../engine/chainExecutor.js';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import { buildNodeLabels } from '../utils/nodeLabel.js';
+import { BreakpointConnectionEdge } from './BreakpointConnectionEdge.js';
 import { WorkflowNodeCard, type WorkflowNodeData } from './WorkflowNodeCard.js';
 
 const nodeTypes = { workflowNode: WorkflowNodeCard };
+const edgeTypes = { connection: BreakpointConnectionEdge };
 
 // useReactFlow (needed to translate a drop's screen coordinates into canvas
 // coordinates) only works inside a ReactFlowProvider, so the actual canvas
@@ -38,6 +41,7 @@ function CanvasInner() {
     operations,
     selectedNodeId,
     stepStatusByNodeId,
+    armedBreakpoints,
     addNode,
     updateNodePosition,
     selectNode,
@@ -92,7 +96,7 @@ function CanvasInner() {
           node: n,
           operation: operations.find((o) => o.id === n.operationId),
           selected: n.id === selectedNodeId,
-          isRunning: stepStatusByNodeId[n.id] === 'in-flight',
+          status: stepStatusByNodeId[n.id],
           label: nodeLabels.get(n.id),
         },
       })),
@@ -112,12 +116,22 @@ function CanvasInner() {
       id: `conn-${c.fromNodeId}->${c.toNodeId}`,
       source: c.fromNodeId,
       target: c.toNodeId,
+      // 'connection' (registered in edgeTypes above) — never applied to a
+      // mapping edge below, which is what makes "a breakpoint can only
+      // ever arm on a connector" true at the rendering level, not just a
+      // runtime check.
+      type: 'connection',
       className: 'edge-connection',
       markerEnd: { type: MarkerType.ArrowClosed, color: '#9aa0a6' },
       // Carried through to onEdgesChange below, so a 'remove' change (select
       // the edge, press Backspace/Delete) can call disconnectNodes with the
-      // right pair without parsing it back out of the id string.
-      data: { fromNodeId: c.fromNodeId, toNodeId: c.toNodeId },
+      // right pair without parsing it back out of the id string. `armed`
+      // drives BreakpointConnectionEdge's marker — see its own doc comment.
+      data: {
+        fromNodeId: c.fromNodeId,
+        toNodeId: c.toNodeId,
+        armed: armedBreakpoints.has(connectionKey(c.fromNodeId, c.toNodeId)),
+      },
     }));
 
     for (const node of nodes) {
@@ -134,7 +148,7 @@ function CanvasInner() {
       }
     }
     return edges.map((e) => ({ ...e, selected: e.id === selectedEdgeId }));
-  }, [nodes, connections, selectedEdgeId]);
+  }, [nodes, connections, selectedEdgeId, armedBreakpoints]);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -254,6 +268,7 @@ function CanvasInner() {
         nodes={flowNodes}
         edges={flowEdges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodeClick={(_, node) => {
           selectNode(node.id);
           setSelectedEdgeId(null);

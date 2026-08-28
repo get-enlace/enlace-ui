@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { fetchSpec } from '../api/client.js';
 import { parseOperations } from '../engine/specParser.js';
-import { executeChain } from '../engine/chainExecutor.js';
+import { connectionKey, executeChain } from '../engine/chainExecutor.js';
 import { extractDeclaredCredentials, type DeclaredCredential } from '../engine/securitySchemes.js';
 import { randomId } from '../utils/randomId.js';
 import type {
@@ -10,7 +10,9 @@ import type {
   NewCredential,
   Operation,
   RawBody,
+  RunControl,
   RunResult,
+  RunStepRequest,
   RunStepStatus,
   WorkflowConnection,
   WorkflowNode,
@@ -47,6 +49,27 @@ function resolveBaseUrl(spec: Record<string, any>): string | null {
   return servers[0].url;
 }
 
+/**
+ * `executeChain` (chainExecutor.ts) reads `nodes`/`connections`/
+ * `credentials`/`armedBreakpoints` exactly once, at the moment `run()`
+ * calls it — everything downstream (buildRequest, the dependency graph,
+ * breakpoint gating) works off that one snapshot for the rest of the run,
+ * not a live view of the store. Before this guard existed, editing a
+ * node's fields/credential/body, or the connection graph, while a run was
+ * in progress silently had no effect on that run at all: the Inspector
+ * looked editable and the edit visibly "took" in the store, but the
+ * in-flight/paused node's actual request still used whatever was true when
+ * the run started. That was already a real gap; the debugger's paused
+ * window (which can sit open indefinitely) turns it into an easy trap —
+ * exactly the "seems fine, does nothing" class of bug this blocks outright
+ * rather than documents. Node positions are explicitly exempt (see
+ * `updateNodePosition`) — purely visual, never part of the executed
+ * `Workflow`, nothing for a run to go stale against.
+ */
+function isLocked(state: WorkflowState): boolean {
+  return state.isRunning;
+}
+
 interface WorkflowState {
   operations: Operation[];
   /** Derived from the loaded spec's `servers[0].url` — null until loadOperations() resolves. */
@@ -69,11 +92,38 @@ interface WorkflowState {
    * `RunStep` yet.
    */
   stepStatusByNodeId: Record<string, RunStepStatus>;
+  /**
+   * Connector keys (`connectionKey(fromNodeId, toNodeId)`) with a
+   * breakpoint armed — canvas/session state, not part of the executed
+   * `Workflow`, same tier as `nodePositions`. Read by `run()` (snapshotted
+   * into `executeChain`'s `armedBreakpoints` option at the start of each
+   * run) and by Canvas.tsx (to render the marker).
+   */
+  armedBreakpoints: Set<string>;
+  /**
+   * A paused node's fully-resolved, about-to-fire request, keyed by node
+   * id — populated as `executeChain`'s pause-preview events arrive (see
+   * `RunEvent.request`). Cleared at the start of every run, same as
+   * `stepStatusByNodeId`.
+   */
+  previewRequestByNodeId: Record<string, RunStepRequest>;
+  /**
+   * The live handle into the current `executeChain` call, captured via its
+   * `onControl` callback — `continueExecution`/`stepNode`/`stopExecution`
+   * below just forward to whichever methods this holds. `null` whenever no
+   * run is in progress; calling any of the three actions then is a no-op.
+   */
+  activeControl: RunControl | null;
   isRunning: boolean;
   error: string | null;
 
   loadOperations: () => Promise<void>;
-  /** `position` is where the box was actually dropped on the canvas, if known. */
+  /**
+   * `position` is where the box was actually dropped on the canvas, if
+   * known. A no-op (returns `''`) while `isRunning` — see the module-level
+   * `isLocked` comment for why every structural/config mutation below
+   * shares this guard.
+   */
   addNode: (operationId: string, position?: Position) => string;
   updateNodePosition: (nodeId: string, position: Position) => void;
   /**
@@ -93,15 +143,32 @@ interface WorkflowState {
   setRawBody: (nodeId: string, rawBody: RawBody | null) => void;
   /** Establishes execution ORDER only — separate from field mapping (data source). */
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
-  /** Removes one explicit connection edge. Doesn't touch fieldValues — a mapped field that happens to rely on this same ordering still implies its own "runs after" edge regardless (see computeExecutionLevels), so this can't silently break a dependency the way removeNode's cleanup has to guard against. */
+  /** Removes one explicit connection edge. Doesn't touch fieldValues — a mapped field that happens to rely on this same ordering still implies its own "runs after" edge regardless (see computeExecutionLevels), so this can't silently break a dependency the way removeNode's cleanup has to guard against. Also disarms any breakpoint on that connection — same dangling-reference reasoning as removeNode's fieldValues cleanup. */
   disconnectNodes: (fromNodeId: string, toNodeId: string) => void;
+  /** Toggles a breakpoint on one connection edge — never meaningful for a field-mapping edge, since only WorkflowConnections are ever passed here (see components/Canvas.tsx, the only caller). */
+  toggleBreakpoint: (fromNodeId: string, toNodeId: string) => void;
+  /** Releases every node currently paused at a breakpoint in the active run. A no-op if no run is in progress. */
+  continueExecution: () => void;
+  /** Releases exactly one paused node, by id, in the active run. A no-op if no run is in progress or that node isn't currently paused. */
+  stepNode: (nodeId: string) => void;
+  /** Stops the active run: nothing new fires, everything already in flight still completes, every still-pending/paused node becomes 'skipped'. A no-op if no run is in progress. */
+  stopExecution: () => void;
   /** Held in browser memory only — never sent anywhere except as the resolved header/query param on the actual request (see engine/credentials.ts). */
   addCredential: (credential: NewCredential) => void;
   /** Replaces a credential's fields in place, keeping its id — so every node's `credentialId` reference stays valid, unlike delete+re-add. */
   updateCredential: (credentialId: string, credential: NewCredential) => void;
   /** Removes a credential and unsets it from any node still referencing it — same dangling-reference reasoning as removeNode's cleanup of mapped fields. */
   removeCredential: (credentialId: string) => void;
-  run: () => Promise<void>;
+  /**
+   * `useBreakpoints: true` (the "Debug" button) honors whatever's currently
+   * in `armedBreakpoints`, snapshotting it into this run and setting
+   * `activeControl` once `executeChain` hands one back. Omitted/false (the
+   * plain "Run" button) never gates on anything, regardless of what's
+   * armed — `activeControl` stays `null` for the whole run, which is also
+   * what App.tsx checks to decide whether to show Continue/Step/Stop at
+   * all: a plain run should never look like a debug session.
+   */
+  run: (options?: { useBreakpoints?: boolean }) => Promise<void>;
 }
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
@@ -115,6 +182,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   selectedNodeId: null,
   runResult: null,
   stepStatusByNodeId: {},
+  armedBreakpoints: new Set(),
+  previewRequestByNodeId: {},
+  activeControl: null,
   isRunning: false,
   error: null,
 
@@ -138,6 +208,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   addNode: (operationId, position) => {
+    if (isLocked(get())) return '';
     const id = randomId();
     const node: WorkflowNode = { id, operationId, credentialId: null, fieldValues: {} };
     set((state) => ({
@@ -153,6 +224,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   removeNode: (nodeId) =>
     set((state) => {
+      if (isLocked(state)) return state;
       const nodePositions = { ...state.nodePositions };
       delete nodePositions[nodeId];
 
@@ -181,34 +253,44 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
   setCredential: (nodeId, credentialId) =>
-    set((state) => ({
-      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, credentialId } : n)),
-    })),
+    set((state) => {
+      if (isLocked(state)) return state;
+      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, credentialId } : n)) };
+    }),
 
   setFieldValue: (nodeId, fieldPath, value) =>
-    set((state) => ({
-      nodes: state.nodes.map((n) =>
-        n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, [fieldPath]: value } } : n
-      ),
-    })),
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) =>
+          n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, [fieldPath]: value } } : n
+        ),
+      };
+    }),
 
   mergeFieldValues: (nodeId, values) =>
-    set((state) => ({
-      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, ...values } } : n)),
-    })),
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, ...values } } : n)),
+      };
+    }),
 
   setBodyMode: (nodeId, mode) =>
-    set((state) => ({
-      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, bodyMode: mode } : n)),
-    })),
+    set((state) => {
+      if (isLocked(state)) return state;
+      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, bodyMode: mode } : n)) };
+    }),
 
   setRawBody: (nodeId, rawBody) =>
-    set((state) => ({
-      nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, rawBody } : n)),
-    })),
+    set((state) => {
+      if (isLocked(state)) return state;
+      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, rawBody } : n)) };
+    }),
 
   connectNodes: (fromNodeId, toNodeId) =>
     set((state) => {
+      if (isLocked(state)) return state;
       if (fromNodeId === toNodeId) return state; // no self-loops
       const exists = state.connections.some((c) => c.fromNodeId === fromNodeId && c.toNodeId === toNodeId);
       if (exists) return state;
@@ -216,9 +298,29 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }),
 
   disconnectNodes: (fromNodeId, toNodeId) =>
-    set((state) => ({
-      connections: state.connections.filter((c) => !(c.fromNodeId === fromNodeId && c.toNodeId === toNodeId)),
-    })),
+    set((state) => {
+      if (isLocked(state)) return state;
+      const armedBreakpoints = new Set(state.armedBreakpoints);
+      armedBreakpoints.delete(connectionKey(fromNodeId, toNodeId));
+      return {
+        connections: state.connections.filter((c) => !(c.fromNodeId === fromNodeId && c.toNodeId === toNodeId)),
+        armedBreakpoints,
+      };
+    }),
+
+  toggleBreakpoint: (fromNodeId, toNodeId) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      const key = connectionKey(fromNodeId, toNodeId);
+      const armedBreakpoints = new Set(state.armedBreakpoints);
+      if (armedBreakpoints.has(key)) armedBreakpoints.delete(key);
+      else armedBreakpoints.add(key);
+      return { armedBreakpoints };
+    }),
+
+  continueExecution: () => get().activeControl?.continue(),
+  stepNode: (nodeId) => get().activeControl?.step(nodeId),
+  stopExecution: () => get().activeControl?.stop(),
 
   addCredential: (credential) => {
     const withId = { ...credential, id: randomId() } as Credential;
@@ -238,8 +340,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodes: state.nodes.map((n) => (n.credentialId === credentialId ? { ...n, credentialId: null } : n)),
     })),
 
-  run: async () => {
-    const { nodes } = get();
+  run: async (options) => {
+    const useBreakpoints = options?.useBreakpoints ?? false;
+    const { nodes, armedBreakpoints } = get();
     set({
       isRunning: true,
       error: null,
@@ -248,6 +351,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         acc[n.id] = 'pending';
         return acc;
       }, {}),
+      // Cleared here, not in the `finally` below — a paused/skipped node's
+      // preview, and the statuses above, are meant to survive right up
+      // until the *next* run starts (real review value on their own), not
+      // just until this run happens to finish. Only activeControl resets
+      // on completion (below): it's a live handle into a call that's now
+      // over, not session state worth keeping around.
+      previewRequestByNodeId: {},
+      // activeControl deliberately NOT cleared here — it's re-set once
+      // executeChain's onControl fires, a moment after this.
     });
     try {
       const { connections, operations, credentials, baseUrl } = get();
@@ -267,14 +379,33 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             runResult: event.step
               ? { steps: [...(state.runResult?.steps ?? []), event.step] }
               : state.runResult,
+            previewRequestByNodeId: event.request
+              ? { ...state.previewRequestByNodeId, [event.nodeId]: event.request }
+              : state.previewRequestByNodeId,
           }));
         },
+        // Only wired up for a "Debug" run — a plain "Run" never gates on
+        // anything (regardless of what's armed) and never sets
+        // activeControl, which is exactly what App.tsx checks to decide
+        // whether to show Continue/Step/Stop at all: a plain run should
+        // never look like a debug session just because some breakpoint
+        // happens to be armed from an earlier debug session.
+        ...(useBreakpoints
+          ? {
+              // Snapshotted at the start of this run — arming/disarming a
+              // breakpoint mid-run has no effect on a run already in
+              // progress (see ChainExecutorOptions.armedBreakpoints's own
+              // doc comment).
+              armedBreakpoints: new Set(armedBreakpoints),
+              onControl: (control) => set({ activeControl: control }),
+            }
+          : {}),
       });
       set({ runResult: result });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     } finally {
-      set({ isRunning: false });
+      set({ isRunning: false, activeControl: null });
     }
   },
 }));
