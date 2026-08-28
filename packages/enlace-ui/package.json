@@ -1,7 +1,7 @@
 {
   "name": "@get-enlace/ui",
   "private": false,
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Enlace's canvas UI — spec loading, canvas, inspector, debug pane, and the client-side chain-execution engine. Runs entirely in the browser. Early dev preview: no persistence yet, install via the `dev` dist-tag on GitHub Packages.",
   "license": "MIT",
   "repository": {
