@@ -1,13 +1,16 @@
 import { resolveCredentialInjection } from './credentials.js';
 import { resolveRawBody } from './rawBodyResolver.js';
+import { buildDependencyGraph } from './dependencyGraph.js';
 import { resolveTagsInValue } from '../utils/bodyTags.js';
 import type {
   Credential,
   FieldValue,
   Operation,
+  RunEvent,
   RunResult,
   RunStep,
   RunStepRequest,
+  RunStepStatus,
   Workflow,
   WorkflowConnection,
   WorkflowNode,
@@ -18,32 +21,6 @@ export class CyclicWorkflowError extends Error {
     super(`Workflow has a cyclic dependency involving nodes: ${nodeIds.join(', ')}`);
     this.name = 'CyclicWorkflowError';
   }
-}
-
-function buildDependencyGraph(nodes: WorkflowNode[], connections: WorkflowConnection[]): Map<string, Set<string>> {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const dependsOn = new Map<string, Set<string>>();
-  for (const node of nodes) dependsOn.set(node.id, new Set());
-
-  // Explicit connections (order only, no data — e.g. a node with no mapped
-  // fields that still needs to run in a particular slot).
-  for (const { fromNodeId, toNodeId } of connections) {
-    if (byId.has(fromNodeId) && dependsOn.has(toNodeId)) {
-      dependsOn.get(toNodeId)!.add(fromNodeId);
-    }
-  }
-
-  // Mapped fieldValues (a mapping always implies its source must run first,
-  // whether or not the user also drew an explicit connection).
-  for (const node of nodes) {
-    for (const fieldValue of Object.values(node.fieldValues)) {
-      if (fieldValue.source === 'mapped' && byId.has(fieldValue.fromNodeId)) {
-        dependsOn.get(node.id)!.add(fieldValue.fromNodeId);
-      }
-    }
-  }
-
-  return dependsOn;
 }
 
 /**
@@ -284,16 +261,32 @@ async function runNode(
 export interface ChainExecutorOptions {
   /** e.g. "http://localhost:4000" — prepended to each Operation.path. Derived from the spec's `servers[0].url` by the caller (see store/workflowStore.ts). */
   baseUrl: string;
+  /**
+   * Fired once per node status transition (at minimum `pending ->
+   * in-flight`, then once more on settling) as the run progresses, so a
+   * caller can render results live instead of waiting for the whole chain
+   * to finish — see store/workflowStore.ts's `run()`. Optional: a caller
+   * that ignores it sees no behavior difference, only the final `RunResult`
+   * this function still resolves to either way.
+   */
+  onEvent?: (event: RunEvent) => void;
 }
 
 /**
- * Executes a workflow's nodes in dependency order, one level (wave) at a
- * time, but every node within a level fires
- * concurrently via Promise.all, since none of them can depend on each
- * other (see computeExecutionLevels). A failure anywhere in a level halts
- * before the next level starts — no partial recovery — but everything
- * already in flight in that level runs to completion first; requests
- * already fired can't be un-sent.
+ * Executes a workflow's nodes in dependency order — each node fires the
+ * instant every node it depends on (the union of explicit connections and
+ * mapping-implied dependencies — see dependencyGraph.ts) has *completed*,
+ * not by waiting for a whole batch of unrelated nodes to finish first. This
+ * is a generalization of "run one level at a time, everything in a level
+ * concurrently": whenever nothing is gating a node, independent nodes still
+ * become ready and fire together in the same pass, exactly as a level would
+ * — computeExecutionLevels' level grouping is still used up front purely as
+ * a cycle check (throwing CyclicWorkflowError before anything fires), not
+ * to drive the actual firing order.
+ *
+ * A failure anywhere halts admission of any newly-ready node — no partial
+ * recovery — but everything already in flight at that point still runs to
+ * completion; requests already fired can't be un-sent.
  */
 export async function executeChain(
   workflow: Workflow,
@@ -301,30 +294,75 @@ export async function executeChain(
   credentialsById: Map<string, Credential>,
   options: ChainExecutorOptions
 ): Promise<RunResult> {
-  const levels = computeExecutionLevels(workflow.nodes, workflow.connections);
+  const { nodes, connections } = workflow;
+
+  // Cycle check only — throws CyclicWorkflowError before any request fires,
+  // exactly as before. The levels themselves aren't used to drive firing.
+  computeExecutionLevels(nodes, connections);
+
+  const dependsOn = buildDependencyGraph(nodes, connections);
+  const status = new Map<string, RunStepStatus>(nodes.map((n) => [n.id, 'pending']));
   const stepsByNodeId = new Map<string, RunStep>();
   const steps: RunStep[] = [];
 
-  for (const level of levels) {
-    const levelSteps = await Promise.all(
-      level.map((node) => {
-        const operation = operationsById.get(node.operationId);
-        if (!operation) {
-          throw new Error(`Unknown operation "${node.operationId}" referenced by node ${node.id}`);
-        }
-        return runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl);
-      })
-    );
+  const emit = (nodeId: string, s: RunStepStatus, step?: RunStep) => options.onEvent?.({ nodeId, status: s, step });
 
-    let levelFailed = false;
-    for (const step of levelSteps) {
-      steps.push(step);
-      stepsByNodeId.set(step.nodeId, step);
-      if (step.error) levelFailed = true;
+  const isSatisfied = (nodeId: string) => [...dependsOn.get(nodeId)!].every((depId) => status.get(depId) === 'completed');
+
+  // Once true, no *new* node is admitted — whatever's already in-flight
+  // still runs to completion (its request was already sent; there's no
+  // un-sending it). Generalizes the old "break before the next level"
+  // halt to per-node granularity.
+  let halted = false;
+  let inFlightCount = 0;
+  let unknownOperationError: Error | null = null;
+
+  // Resolves the instant something changes (a node fires or settles) so the
+  // loop below can re-scan for newly-ready nodes without polling.
+  let wake: (() => void) | null = null;
+  const progressed = () => {
+    wake?.();
+    wake = null;
+  };
+  const nextProgress = () => new Promise<void>((resolve) => (wake = resolve));
+
+  function fireReadyNodes() {
+    for (const node of nodes) {
+      if (unknownOperationError) return;
+      if (status.get(node.id) !== 'pending') continue;
+      if (halted || !isSatisfied(node.id)) continue;
+
+      const operation = operationsById.get(node.operationId);
+      if (!operation) {
+        unknownOperationError = new Error(`Unknown operation "${node.operationId}" referenced by node ${node.id}`);
+        progressed();
+        return;
+      }
+
+      status.set(node.id, 'in-flight');
+      inFlightCount++;
+      emit(node.id, 'in-flight');
+
+      runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl).then((step) => {
+        steps.push(step);
+        stepsByNodeId.set(step.nodeId, step);
+        const finalStatus = step.error ? 'failed' : 'completed';
+        status.set(node.id, finalStatus);
+        if (step.error) halted = true;
+        inFlightCount--;
+        emit(node.id, finalStatus, step);
+        progressed();
+      });
     }
-
-    if (levelFailed) break;
   }
 
+  fireReadyNodes();
+  while (inFlightCount > 0) {
+    await nextProgress();
+    if (unknownOperationError) break;
+    fireReadyNodes();
+  }
+
+  if (unknownOperationError) throw unknownOperationError;
   return { steps };
 }

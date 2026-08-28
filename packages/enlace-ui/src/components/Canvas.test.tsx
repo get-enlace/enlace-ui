@@ -26,6 +26,7 @@ describe('Canvas', () => {
       connections: [],
       operations: [petOperation],
       selectedNodeId: null,
+      stepStatusByNodeId: {},
     });
   });
 
@@ -50,5 +51,35 @@ describe('Canvas', () => {
     fireEvent.drop(canvas, { dataTransfer: { getData: () => '' } });
 
     expect(useWorkflowStore.getState().nodes).toHaveLength(0);
+  });
+
+  it("highlights a node's card while its step status is in-flight", () => {
+    useWorkflowStore.setState({
+      nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodePositions: { n1: { x: 0, y: 0 } },
+      connections: [],
+      operations: [petOperation],
+      selectedNodeId: null,
+      stepStatusByNodeId: { n1: 'in-flight' },
+    });
+
+    const { container } = render(<Canvas />);
+
+    expect(container.querySelector('.workflow-node')).toHaveClass('workflow-node--running');
+  });
+
+  it("doesn't highlight a node whose step hasn't started or has already settled", () => {
+    useWorkflowStore.setState({
+      nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodePositions: { n1: { x: 0, y: 0 } },
+      connections: [],
+      operations: [petOperation],
+      selectedNodeId: null,
+      stepStatusByNodeId: { n1: 'completed' },
+    });
+
+    const { container } = render(<Canvas />);
+
+    expect(container.querySelector('.workflow-node')).not.toHaveClass('workflow-node--running');
   });
 });

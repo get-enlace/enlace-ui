@@ -304,3 +304,28 @@ export interface RunStep {
 export interface RunResult {
   steps: RunStep[];
 }
+
+/**
+ * A node's live status during a run — distinct from a `RunStep`, which only
+ * exists once a node has actually settled (`'completed'`/`'failed'`).
+ * `'paused'`/`'skipped'` aren't driven by anything yet (no breakpoint
+ * gating exists today — see engine/chainExecutor.ts's `executeChain`); the
+ * full union is declared now so the interactive-debugger work that adds
+ * gating doesn't need a second type change on top of this one.
+ */
+export type RunStepStatus = 'pending' | 'in-flight' | 'paused' | 'completed' | 'failed' | 'skipped';
+
+/**
+ * One progress notification from `executeChain`'s `onEvent` callback,
+ * fired as each node transitions status — at minimum once on
+ * `pending -> in-flight` and once more on settling. `step` is only present
+ * once a `RunStep` actually exists for the node, i.e. on `'completed'`/
+ * `'failed'` events; the store (see store/workflowStore.ts's `run()`)
+ * consumes this stream to update `runResult`/live status incrementally
+ * instead of only once, after the whole chain finishes.
+ */
+export interface RunEvent {
+  nodeId: string;
+  status: RunStepStatus;
+  step?: RunStep;
+}

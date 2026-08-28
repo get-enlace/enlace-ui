@@ -7,10 +7,15 @@ import {
   topologicalSort,
 } from './chainExecutor.js';
 import { __clearCredentialTokenCacheForTests } from './credentials.js';
-import type { Credential, Operation, WorkflowConnection, WorkflowNode } from '../types.js';
+import type { Credential, Operation, RunEvent, WorkflowConnection, WorkflowNode } from '../types.js';
 
 function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): WorkflowNode {
   return { id, operationId: id, credentialId: null, fieldValues };
+}
+
+/** A minimal Operation whose `id` and `path` are both derived from `id`, so `operationsById.get(id)` and the mocked fetch's URL both key off the same identifier. */
+function op(id: string, path: string): Operation {
+  return { id, method: 'get', path, parameters: [], requestBodySchema: null, responseSchema: null };
 }
 
 function mockResponse(status: number, body: unknown) {
@@ -537,6 +542,128 @@ describe('executeChain', () => {
     expect(result.steps.every((s) => !s.error)).toBe(true);
     const [, orderInit] = fetchMock.mock.calls[1];
     expect(JSON.parse(orderInit.body)).toEqual({ note: 'strcust-1' });
+  });
+
+  it('fires a node the instant its own dependency settles, without waiting for an unrelated slower sibling in the same wave', async () => {
+    // a -> b (slow) and a -> c (fast) are independent siblings once a
+    // completes; d depends only on c. d must fire right after c settles,
+    // not wait around for b — the exact fan-out case level-batching got
+    // wrong (see engine/chainExecutor.ts's executeChain doc comment).
+    const callOrder: string[] = [];
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = new URL(url).pathname;
+      callOrder.push(`start:${path}`);
+      const delay = path === '/b' ? 40 : 5;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      callOrder.push(`end:${path}`);
+      return mockResponse(200, {});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const b = node('b');
+    const c = node('c');
+    const d = node('d');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'a', toNodeId: 'c' },
+      { fromNodeId: 'c', toNodeId: 'd' },
+    ];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+      ['c', op('c', '/c')],
+      ['d', op('d', '/d')],
+    ]);
+
+    await executeChain({ nodes: [a, b, c, d], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    expect(callOrder.indexOf('start:/d')).toBeGreaterThan(-1);
+    expect(callOrder.indexOf('start:/d')).toBeLessThan(callOrder.indexOf('end:/b'));
+  });
+
+  it('halts admission of new nodes after a failure, but lets an already-in-flight sibling complete and never fires a node only reachable after the halt', async () => {
+    // a -> b (slow, succeeds) and a -> c (fast, fails) are independent
+    // siblings; e depends only on b, not c at all. e's own dependency (b)
+    // does succeed, but by the time b finishes, c has already failed —
+    // e must still never fire, proving the halt blocks *all* new
+    // admissions, not just nodes downstream of the failing one.
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path === '/b') {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return mockResponse(200, {});
+      }
+      if (path === '/c') return mockResponse(500, {});
+      return mockResponse(200, {}); // /a, and /e if it ever (wrongly) fired
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const b = node('b');
+    const c = node('c');
+    const e = node('e');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'a', toNodeId: 'c' },
+      { fromNodeId: 'b', toNodeId: 'e' },
+    ];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+      ['c', op('c', '/c')],
+      ['e', op('e', '/e')],
+    ]);
+
+    const result = await executeChain({ nodes: [a, b, c, e], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'b', 'c']);
+    expect(result.steps.find((s) => s.nodeId === 'b')?.error).toBeUndefined();
+    expect(result.steps.find((s) => s.nodeId === 'c')?.error).toMatch(/status 500/);
+  });
+
+  it('emits an in-flight event before a settle event for each node, with independent same-wave nodes\' in-flight events both landing before either settles', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const b = node('b');
+    const operationsById = new Map([
+      ['a', op('a', '/noop')],
+      ['b', op('b', '/noop')],
+    ]);
+
+    const events: RunEvent[] = [];
+    await executeChain({ nodes: [a, b], connections: [] }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      onEvent: (event) => events.push(event),
+    });
+
+    const statuses = events.map((e) => e.status);
+    const lastInFlightIndex = statuses.lastIndexOf('in-flight');
+    const firstSettleIndex = statuses.findIndex((s) => s === 'completed' || s === 'failed');
+    expect(events.filter((e) => e.status === 'in-flight')).toHaveLength(2);
+    expect(events.filter((e) => e.status === 'completed')).toHaveLength(2);
+    expect(lastInFlightIndex).toBeLessThan(firstSettleIndex);
+
+    for (const id of ['a', 'b']) {
+      const inFlightIndex = events.findIndex((e) => e.nodeId === id && e.status === 'in-flight');
+      const settledIndex = events.findIndex((e) => e.nodeId === id && e.status === 'completed');
+      expect(inFlightIndex).toBeGreaterThanOrEqual(0);
+      expect(settledIndex).toBeGreaterThan(inFlightIndex);
+    }
+
+    for (const event of events) {
+      if (event.status === 'completed' || event.status === 'failed') {
+        expect(event.step).toBeDefined();
+      } else {
+        expect(event.step).toBeUndefined();
+      }
+    }
   });
 });
 

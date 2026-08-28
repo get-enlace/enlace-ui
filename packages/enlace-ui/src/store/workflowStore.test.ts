@@ -11,6 +11,12 @@ beforeEach(() => {
     selectedNodeId: null,
     credentials: [],
     declaredCredentials: [],
+    operations: [],
+    baseUrl: null,
+    runResult: null,
+    stepStatusByNodeId: {},
+    isRunning: false,
+    error: null,
   });
 });
 
@@ -191,6 +197,61 @@ describe('addCredential / updateCredential / removeCredential', () => {
       { id: staging.id, name: 'staging-renamed', type: 'bearer', token: 'new-secret' },
       prod,
     ]);
+  });
+});
+
+describe('run', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("updates runResult.steps and stepStatusByNodeId incrementally as each node settles, not only once the whole run finishes", async () => {
+    const noop = {
+      id: 'GET /noop',
+      method: 'get' as const,
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
+    const { addNode, run } = useWorkflowStore.getState();
+    const a = addNode('GET /noop');
+    const b = addNode('GET /noop');
+
+    let resolveB: (() => void) | undefined;
+    const fetchMock = vi
+      .fn()
+      // a settles immediately.
+      .mockResolvedValueOnce({ status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({}) })
+      // b stays pending until resolveB() is called below.
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveB = () =>
+              resolve({ status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({}) });
+          })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const runPromise = run();
+
+    // Let every microtask that can run without b resolving actually run,
+    // so a's settle event has landed in the store but b's hasn't.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const mid = useWorkflowStore.getState();
+    expect(mid.isRunning).toBe(true);
+    expect(mid.runResult?.steps.map((s) => s.nodeId)).toEqual([a]);
+    expect(mid.stepStatusByNodeId[a]).toBe('completed');
+    expect(mid.stepStatusByNodeId[b]).toBe('in-flight');
+
+    resolveB!();
+    await runPromise;
+
+    const final = useWorkflowStore.getState();
+    expect(final.isRunning).toBe(false);
+    expect(final.runResult?.steps.map((s) => s.nodeId).sort()).toEqual([a, b].sort());
+    expect(final.stepStatusByNodeId[a]).toBe('completed');
+    expect(final.stepStatusByNodeId[b]).toBe('completed');
   });
 });
 

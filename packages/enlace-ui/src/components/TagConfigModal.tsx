@@ -12,7 +12,7 @@ const TYPE_LABELS: Record<BodyTagType, string> = {
 };
 
 export interface TagConfigModalProps {
-  /** Reachable-via-connection ancestors of the node being edited — see utils/graph.ts's computeAncestors, the same set NodeInspector's form "Map from..." picker already uses. */
+  /** Reachable-via-connection ancestors of the node being edited — see engine/dependencyGraph.ts's computeAncestors, the same set NodeInspector's form "Map from..." picker already uses. */
   ancestorNodes: WorkflowNode[];
   /** Precomputed by the caller across the *whole* workflow (see utils/nodeLabel.ts's
    * buildNodeLabels) — not just `ancestorNodes` — so an option here always matches what the same

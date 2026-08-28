@@ -7,6 +7,13 @@ export interface WorkflowNodeData {
   operation?: Operation;
   selected: boolean;
   /**
+   * True while this node's request is actually in flight during a run —
+   * sourced from the store's `stepStatusByNodeId` (see store/workflowStore.ts's
+   * `run()`, which streams `executeChain`'s per-node events live). Purely a
+   * transient visual cue; not persisted, and unrelated to `selected`.
+   */
+  isRunning?: boolean;
+  /**
    * Precomputed by Canvas via utils/nodeLabel.ts's `buildNodeLabels`, across every node in the
    * workflow at once — global, not scoped to this node's neighborhood, so a node used twice
    * always shows the same "createCustomer #1"/"createCustomer #2" here as it does in every
@@ -17,7 +24,7 @@ export interface WorkflowNodeData {
 }
 
 export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
-  const { node, operation, selected, label } = data;
+  const { node, operation, selected, isRunning, label } = data;
   const removeNode = useWorkflowStore((s) => s.removeNode);
   const method = operation?.method ?? 'get';
   // Skip the legend when it would just repeat the method+path already shown in the header below —
@@ -29,7 +36,9 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
     // A real <fieldset>/<legend> — same as OperationList's cards — so the
     // browser cuts the operationId's gap in the top border itself, rather
     // than us hand-positioning a label over it.
-    <fieldset className={`workflow-node workflow-node--${method}${selected ? ' workflow-node--selected' : ''}`}>
+    <fieldset
+      className={`workflow-node workflow-node--${method}${selected ? ' workflow-node--selected' : ''}${isRunning ? ' workflow-node--running' : ''}`}
+    >
       {showLegend && <legend className="workflow-node__operation-id">{label}</legend>}
       {/* Drag from one box's right handle to another's left handle to
           establish execution ORDER (a WorkflowConnection) — separate from

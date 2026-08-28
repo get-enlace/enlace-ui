@@ -11,6 +11,7 @@ import type {
   Operation,
   RawBody,
   RunResult,
+  RunStepStatus,
   WorkflowConnection,
   WorkflowNode,
 } from '../types.js';
@@ -59,6 +60,15 @@ interface WorkflowState {
   declaredCredentials: DeclaredCredential[];
   selectedNodeId: string | null;
   runResult: RunResult | null;
+  /**
+   * Live per-node status for the current/last run, keyed by node id — reset
+   * to `'pending'` for every node at the start of `run()`, then updated as
+   * `executeChain`'s `onEvent` stream reports each transition. `runResult`
+   * only ever holds *settled* steps; this is what lets a consumer tell "not
+   * reached yet" apart from "currently in flight" for a node with no
+   * `RunStep` yet.
+   */
+  stepStatusByNodeId: Record<string, RunStepStatus>;
   isRunning: boolean;
   error: string | null;
 
@@ -104,6 +114,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   declaredCredentials: [],
   selectedNodeId: null,
   runResult: null,
+  stepStatusByNodeId: {},
   isRunning: false,
   error: null,
 
@@ -228,15 +239,37 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     })),
 
   run: async () => {
-    set({ isRunning: true, error: null });
+    const { nodes } = get();
+    set({
+      isRunning: true,
+      error: null,
+      runResult: { steps: [] },
+      stepStatusByNodeId: nodes.reduce<Record<string, RunStepStatus>>((acc, n) => {
+        acc[n.id] = 'pending';
+        return acc;
+      }, {}),
+    });
     try {
-      const { nodes, connections, operations, credentials, baseUrl } = get();
+      const { connections, operations, credentials, baseUrl } = get();
       if (!baseUrl) {
         throw new Error('Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.');
       }
       const operationsById = new Map(operations.map((o) => [o.id, o]));
       const credentialsById = new Map(credentials.map((c) => [c.id, c]));
-      const result = await executeChain({ nodes, connections }, operationsById, credentialsById, { baseUrl });
+      const result = await executeChain({ nodes, connections }, operationsById, credentialsById, {
+        baseUrl,
+        // Streams progress into the store as each node settles, instead of
+        // only setting `runResult` once at the very end — see
+        // components/DebugPane.tsx, which renders `runResult.steps` live.
+        onEvent: (event) => {
+          set((state) => ({
+            stepStatusByNodeId: { ...state.stepStatusByNodeId, [event.nodeId]: event.status },
+            runResult: event.step
+              ? { steps: [...(state.runResult?.steps ?? []), event.step] }
+              : state.runResult,
+          }));
+        },
+      });
       set({ runResult: result });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
