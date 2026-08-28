@@ -119,6 +119,16 @@ describe('WorkflowNodeCard', () => {
     expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--selected');
   });
 
+  it('applies the --running modifier class while the node is in flight', () => {
+    renderCard({ node: makeNode(), operation: makeOperation(), selected: false, isRunning: true });
+    expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--running');
+  });
+
+  it('omits the --running modifier class once the node is no longer in flight', () => {
+    renderCard({ node: makeNode(), operation: makeOperation(), selected: false, isRunning: false });
+    expect(document.querySelector('.workflow-node')).not.toHaveClass('workflow-node--running');
+  });
+
   it('removes the node from the store when the × button is clicked', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({ nodes: [makeNode({ id: 'node-1' })], nodePositions: { 'node-1': { x: 0, y: 0 } } });

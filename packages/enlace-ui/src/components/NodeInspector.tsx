@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import { coerceStaticValue } from '../utils/coerceValue.js';
 import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from '../utils/flattenSchema.js';
-import { computeAncestors } from '../utils/graph.js';
+import { computeAncestors } from '../engine/dependencyGraph.js';
 import { hasUnrepresentableShape } from '../utils/schemaExample.js';
 import { buildRawBodyFromForm, convertRawBodyToFieldValues } from '../utils/bodyTemplate.js';
 import { buildNodeLabels } from '../utils/nodeLabel.js';

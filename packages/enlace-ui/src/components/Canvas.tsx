@@ -37,6 +37,7 @@ function CanvasInner() {
     connections,
     operations,
     selectedNodeId,
+    stepStatusByNodeId,
     addNode,
     updateNodePosition,
     selectNode,
@@ -91,10 +92,11 @@ function CanvasInner() {
           node: n,
           operation: operations.find((o) => o.id === n.operationId),
           selected: n.id === selectedNodeId,
+          isRunning: stepStatusByNodeId[n.id] === 'in-flight',
           label: nodeLabels.get(n.id),
         },
       })),
-    [nodes, nodePositions, operations, selectedNodeId, nodeLabels]
+    [nodes, nodePositions, operations, selectedNodeId, stepStatusByNodeId, nodeLabels]
   );
 
   // Two distinct edge kinds, styled differently (see styles.css):

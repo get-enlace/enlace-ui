@@ -139,24 +139,24 @@ A field may be mapped from **any ancestor** in the connection graph, not just th
 ## 5. Request Flow
 
 1. User hits **Run** in the browser.
-2. The UI groups nodes into execution **levels** (waves) via Kahn's algorithm over the union of explicit `connections` and mapping-implied dependencies (a node mapping a field from another node's response must run after it, connection or not) — every node in a level has all its dependencies satisfied by prior levels, so nothing in a level can depend on another node in the same level. Throws `CyclicWorkflowError` before attempting execution if a cycle exists.
-3. Levels run one at a time, in order; **every node within a level fires concurrently** (concurrent `fetch()` calls), since the level-grouping guarantee makes that safe — this is what makes "run A, then B+C in parallel, then D (needs A and C)" actually run B and C concurrently, not just in a permissive relative order.
-4. For each node's request, in the level it's scheduled to:
+2. The dependency graph is the union of explicit `connections` and mapping-implied dependencies (a node mapping a field from another node's response must run after it, connection or not) — `computeExecutionLevels` (Kahn's algorithm) still runs once up front purely as a `CyclicWorkflowError` check before anything fires.
+3. Execution itself is **per-node, readiness-driven**, not batched by level: each node fires the instant every node it depends on has *completed*, independent of whatever else is or isn't still in flight elsewhere in the graph. Independent nodes with no pending dependencies still become ready and fire together in the same pass — exactly what a level would produce whenever nothing is gating anything — but a node is never held back waiting on an unrelated sibling that merely happens to share an ancestor (e.g. `A -> B` and `A -> C` in the same wave: a slow `B` never delays `C`, or anything depending only on `C`). This generalization exists so a future breakpoint on one connection can gate exactly the node(s) downstream of it without incorrectly gating unrelated concurrent branches — see `packages/enlace-ui/src/engine/chainExecutor.ts`'s `executeChain`.
+4. For each node's request, once it's ready to fire:
    - Resolve `fieldValues` — static values used directly; mapped values pulled from the actual captured response of the referenced upstream node.
    - Attach credential, if any — resolved per its type (`engine/credentials.ts`) into a header (bearer/basic/apiKey-in-header/either oauth2 grant), a query param (apiKey-in-query), or — uniquely for `popup_login` — a `credentials: 'include'` fetch option instead of any injected value at all, since `Cookie` is a forbidden fetch() request header and can only ever be attached by the browser's own cookie jar. The oauth2 types (`clientCredentials`, `password`) fetch (and in-memory-cache) a token from the credential's `tokenUrl` first; `popup_login` requires the user to complete login in a real browser popup first (see §7) — no fetch()-driven node can do this itself.
    - Execute the real HTTP request **directly from the browser** to the target API.
-   - Capture request + response for the debug pane, redacting credential values in the displayed log.
-5. If any node in a level fails, halt before the next level starts — everything else already in flight in that same level still runs to completion, since those requests can't be un-sent.
-6. Full run result rendered in the debug pane.
+   - Capture request + response, and emit a status-change event the store consumes to update the debug pane live (see point 6) — redacting credential values in the displayed log.
+5. If any node fails, halt admission of any newly-ready node — no partial recovery — but everything already in flight at that point still runs to completion, since those requests can't be un-sent.
+6. The debug pane renders each step as its request/response actually settles, not only once the whole run finishes — see `store/workflowStore.ts`'s `run()`, which streams `executeChain`'s per-node events into `runResult`/`stepStatusByNodeId` incrementally.
 
-Verified with a concurrency-counter unit test (not just an order assertion) proving independent branches genuinely overlap in flight — see `packages/enlace-ui/src/engine/chainExecutor.test.ts`.
+Verified with a concurrency-counter unit test (not just an order assertion) proving independent branches genuinely overlap in flight, plus a fan-out test proving a node fires as soon as its own dependency settles regardless of an unrelated slower sibling — see `packages/enlace-ui/src/engine/chainExecutor.test.ts`.
 
 ## 6. Frontend Structure
 
 - **Canvas**: renders the `Operation` list as draggable boxes; dragging one onto the canvas adds a `WorkflowNode`. Dragging box-to-box (via each node's connect handles) creates a `WorkflowConnection` — order only, no data — rendered as a solid arrow. Field mappings render as a separate dashed, animated edge, derived from `fieldValues`, not drawn directly on the canvas (see `ROADMAP.md` for direct field-to-field drag-connect).
 - **Node inspector**: per selected node — credential dropdown, and a list of request fields, each either a static input or a "map from..." picker listing every ancestor node in the connection graph.
 - **Run button**: triggers execution, disables interaction until the result returns.
-- **Debug pane**: renders `RunResult.steps` in order, expandable per step (request/response detail); collapsible as a whole panel.
+- **Debug pane**: renders `RunResult.steps` as each one settles during a run, not only once it finishes, expandable per step (request/response detail); collapsible as a whole panel.
 - Both side panels (node inspector, debug pane) and the operations sidebar are independently collapsible, so the canvas can reclaim their space.
 - Nodes are drag-repositionable and individually removable, with connections/mappings referencing a removed node cleaned up automatically rather than left dangling.
 

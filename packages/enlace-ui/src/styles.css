@@ -533,6 +533,26 @@ body {
   border-width: 2px;
 }
 
+/* Same border-width/color approach as --selected (not box-shadow — see
+   that rule's own comment on why: it'd draw straight through the legend
+   gap). Pulses independently of selection so a running node stays visibly
+   distinct even while selected — CSS animations take priority over the
+   static border-color above for as long as the animation runs. */
+@keyframes workflow-node-pulse {
+  0%,
+  100% {
+    border-color: var(--color-get);
+  }
+  50% {
+    border-color: var(--color-border);
+  }
+}
+
+.workflow-node--running {
+  border-width: 2px;
+  animation: workflow-node-pulse 1.1s ease-in-out infinite;
+}
+
 .workflow-node__header {
   display: flex;
   align-items: center;
@@ -1186,6 +1206,14 @@ body {
 .debug-pane__status--error {
   color: var(--color-error);
   font-weight: 600;
+}
+
+/* Sits above whatever rows have already settled, not alone — tighter than
+   the base `.debug-pane__status` padding so it reads as a lightweight
+   in-progress hint, not a full-height placeholder block. */
+.debug-pane__status--running {
+  padding: 6px 0;
+  font-size: 11px;
 }
 
 .debug-step {

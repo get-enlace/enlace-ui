@@ -139,14 +139,17 @@ export function DebugPane({ collapsed, onToggleCollapsed }: DebugPaneProps) {
 
       {!collapsed && (
         <div className="debug-pane__body">
-          {isRunning && <p className="debug-pane__status">Running…</p>}
+          {/* A hint alongside the list, not a gate in front of it — rows
+              for steps that have already settled render immediately as
+              each one completes, instead of waiting for isRunning to flip
+              false at the very end of the whole chain. */}
+          {isRunning && <p className="debug-pane__status debug-pane__status--running">Running…</p>}
           {!isRunning && error && <p className="debug-pane__status debug-pane__status--error">{error}</p>}
           {!isRunning && !error && !runResult && (
             <p className="debug-pane__status">Run the workflow to see each step's request and response.</p>
           )}
 
-          {!isRunning &&
-            !error &&
+          {!error &&
             runResult?.steps.map((step) => {
               const ok = !step.error;
               return (
