@@ -11,9 +11,9 @@
 ## 2. High-Level Component Diagram
 
 ```
-                     ┌───────────────────────────────┐
-                     │   Browser (all execution here)  │
-                     │                                  │
+                     ┌───────────────────────────────────┐
+                     │   Browser (all execution here)    │
+                     │                                   │
                      │  UI package (one codebase, JS):   │
                      │   - Canvas (nodes, connections)   │
                      │   - Node inspector (fields, creds)│
@@ -23,17 +23,17 @@
                      │   - Debug pane                    │
                      └───────────────┬───────────────────┘
                                      │
-             ┌───────────────────────┼────────────────────────┐
-             │ HTTP (spec)                                     │ HTTP (direct calls,
+             ┌───────────────────────┼──────────────────────────┐
+             │ HTTP (spec)                                      │ HTTP (direct calls,
              │                                                  │ browser → target API)
              ▼                                                  ▼
-   ┌─────────────────────────┐                       ┌───────────────────────┐
-   │  Adapter (Express today,│                       │  User's own target API │
-   │  more planned)          │                       │  (any language)        │
-   │                          │                       └───────────────────────┘
-   │  - Serves UI static bundle
-   │  - Serves/proxies OpenAPI doc
-   └─────────────────────────┘
+   ┌────────────────────────────────┐                      ┌───────────────────────┐
+   │  Adapter (Express today,       │                      │  User's own target API│
+   │  more planned)                 │                      │  (any language)       │
+   │                                │                      └───────────────────────┘
+   │  - Serves UI static bundle     |
+   │  - Serves/proxies OpenAPI doc  |
+   └────────────────────────────────┘
 ```
 
 Two distinct HTTP relationships exist, and they don't cross: the browser talks to its own adapter for UI assets and the spec; separately, the browser talks directly to the target API to execute chain steps. The adapter never proxies execution calls.
@@ -63,7 +63,7 @@ own repo per the language's own ecosystem conventions.
 
 None of these need to talk to each other, to a shared engine process, or to any particular runtime beyond their own — each adapter is a self-contained, idiomatic package in its own ecosystem, exactly matching how Springdoc and Swashbuckle each independently serve the same Swagger UI bundle without any cross-language coordination.
 
-See `ROADMAP.md` for planned additional adapters and packaging changes.
+Additional adapters and packaging changes are tracked in the workspace-level `ROADMAP.md` (one level up — see this workspace's own `CLAUDE.md`), not a file in this repo.
 
 ## 4. Data Model
 
@@ -116,7 +116,7 @@ Credential =
   | { id, name, fromSecurityScheme?, type: "oauth2_clientCredentials", tokenUrl, clientId, clientSecret, scope? }
   | { id, name, fromSecurityScheme?, type: "oauth2_password", tokenUrl, username, password, clientId?, clientSecret?, scope? }
   | { id, name, fromSecurityScheme?, type: "popup_login", loginUrl }
-  // more variants planned (full OAuth2 authorizationCode-grant support) — see ROADMAP.md
+  // more variants planned (full OAuth2 authorizationCode-grant support) — see the workspace-level ROADMAP.md
 
 RunResult {
   steps: [
@@ -140,23 +140,26 @@ A field may be mapped from **any ancestor** in the connection graph, not just th
 
 1. User hits **Run** in the browser.
 2. The dependency graph is the union of explicit `connections` and mapping-implied dependencies (a node mapping a field from another node's response must run after it, connection or not) — `computeExecutionLevels` (Kahn's algorithm) still runs once up front purely as a `CyclicWorkflowError` check before anything fires.
-3. Execution itself is **per-node, readiness-driven**, not batched by level: each node fires the instant every node it depends on has *completed*, independent of whatever else is or isn't still in flight elsewhere in the graph. Independent nodes with no pending dependencies still become ready and fire together in the same pass — exactly what a level would produce whenever nothing is gating anything — but a node is never held back waiting on an unrelated sibling that merely happens to share an ancestor (e.g. `A -> B` and `A -> C` in the same wave: a slow `B` never delays `C`, or anything depending only on `C`). This generalization exists so a future breakpoint on one connection can gate exactly the node(s) downstream of it without incorrectly gating unrelated concurrent branches — see `packages/enlace-ui/src/engine/chainExecutor.ts`'s `executeChain`.
-4. For each node's request, once it's ready to fire:
+3. Execution itself is **per-node, readiness-driven**, not batched by level: each node fires the instant every node it depends on has *completed*, independent of whatever else is or isn't still in flight elsewhere in the graph. Independent nodes with no pending dependencies still become ready and fire together in the same pass — exactly what a level would produce whenever nothing is gating anything — but a node is never held back waiting on an unrelated sibling that merely happens to share an ancestor (e.g. `A -> B` and `A -> C` in the same wave: a slow `B` never delays `C`, or anything depending only on `C`). This generalization is what lets a breakpoint on one connection gate exactly the node(s) downstream of it without incorrectly gating unrelated concurrent branches (see below) — see `packages/enlace-ui/src/engine/chainExecutor.ts`'s `executeChain`.
+4. A node whose dependencies are all satisfied but sits behind a **breakpoint** — armed on a `WorkflowConnection` via the red marker on its connector (Canvas.tsx's `BreakpointConnectionEdge`; never on a mapping edge) — pauses instead of firing, and its fully-resolved request (the same resolution a real fire would do) is built and reported as a preview without being sent. A paused run stays "in progress": `executeChain`'s returned promise doesn't settle until every paused/in-flight node does. Three controls drive it from there (`RunControl`, captured by `store/workflowStore.ts`'s `run()` as `activeControl`, exposed as one global set of buttons in `App.tsx`'s header — not per node/row — since Continue/Stop act on the whole run regardless and Step just needs one target, resolved from the selected node if it's paused or else the first paused node): **Continue** releases every node paused right now (a later breakpoint further down the graph still pauses); **Step** releases one specific paused node; **Stop** admits nothing further and settles every still-pending/paused node to `'skipped'`, though anything already in flight still runs to completion.
+5. For each node's request, once it's ready to fire (i.e. not paused):
    - Resolve `fieldValues` — static values used directly; mapped values pulled from the actual captured response of the referenced upstream node.
    - Attach credential, if any — resolved per its type (`engine/credentials.ts`) into a header (bearer/basic/apiKey-in-header/either oauth2 grant), a query param (apiKey-in-query), or — uniquely for `popup_login` — a `credentials: 'include'` fetch option instead of any injected value at all, since `Cookie` is a forbidden fetch() request header and can only ever be attached by the browser's own cookie jar. The oauth2 types (`clientCredentials`, `password`) fetch (and in-memory-cache) a token from the credential's `tokenUrl` first; `popup_login` requires the user to complete login in a real browser popup first (see §7) — no fetch()-driven node can do this itself.
    - Execute the real HTTP request **directly from the browser** to the target API.
-   - Capture request + response, and emit a status-change event the store consumes to update the debug pane live (see point 6) — redacting credential values in the displayed log.
-5. If any node fails, halt admission of any newly-ready node — no partial recovery — but everything already in flight at that point still runs to completion, since those requests can't be un-sent.
-6. The debug pane renders each step as its request/response actually settles, not only once the whole run finishes — see `store/workflowStore.ts`'s `run()`, which streams `executeChain`'s per-node events into `runResult`/`stepStatusByNodeId` incrementally.
+   - Capture request + response, and emit a status-change event the store consumes to update the debug pane live (see point 7) — redacting credential values in the displayed log.
+6. If any node fails — or the user issues Stop — halt admission of any newly-ready node — no partial recovery — but everything already in flight at that point still runs to completion, since those requests can't be un-sent; either way, every node still `'pending'`/`'paused'` at that moment settles to `'skipped'` immediately, rather than sitting in limbo for the rest of the run.
+7. The bottom pane has two tabs (`DebugPane.tsx`): **Run Output** renders each step as its request/response actually settles, not only once the whole run finishes, unaffected by whether any breakpoint is armed; **Debugger** pre-populates a row for every node before Run even starts (in dependency order, for display only), overlaid with live status (pending/in-flight/paused/completed/failed/skipped) and an aggregate breakdown ("2 completed · 1 paused · 1 pending") rather than one global run status — a run can be simultaneously executing one branch and gated on another. Both consume the same `store/workflowStore.ts`'s `run()`, which streams `executeChain`'s per-node events into `runResult`/`stepStatusByNodeId`/`previewRequestByNodeId` incrementally. The Debugger tab auto-switches into view the instant execution actually reaches an armed breakpoint.
+8. **Run** and **Debug** are two separate buttons, not one whose behavior silently depends on whatever's armed — `run()` only honors `armedBreakpoints` (and only sets `activeControl` at all) when called as `run({ useBreakpoints: true })`; a plain "Run" ignores every armed breakpoint outright, so having debug points set up never forces a stop-and-inspect run.
 
-Verified with a concurrency-counter unit test (not just an order assertion) proving independent branches genuinely overlap in flight, plus a fan-out test proving a node fires as soon as its own dependency settles regardless of an unrelated slower sibling — see `packages/enlace-ui/src/engine/chainExecutor.test.ts`.
+Verified with a concurrency-counter unit test (not just an order assertion) proving independent branches genuinely overlap in flight, a fan-out test proving a node fires as soon as its own dependency settles regardless of an unrelated slower sibling, and dedicated coverage for pause/continue/step/stop (including that Stop's admission-halt applies globally, not just to nodes downstream of whatever triggered it) — see `packages/enlace-ui/src/engine/chainExecutor.test.ts`.
 
 ## 6. Frontend Structure
 
-- **Canvas**: renders the `Operation` list as draggable boxes; dragging one onto the canvas adds a `WorkflowNode`. Dragging box-to-box (via each node's connect handles) creates a `WorkflowConnection` — order only, no data — rendered as a solid arrow. Field mappings render as a separate dashed, animated edge, derived from `fieldValues`, not drawn directly on the canvas (see `ROADMAP.md` for direct field-to-field drag-connect).
-- **Node inspector**: per selected node — credential dropdown, and a list of request fields, each either a static input or a "map from..." picker listing every ancestor node in the connection graph.
-- **Run button**: triggers execution, disables interaction until the result returns.
-- **Debug pane**: renders `RunResult.steps` as each one settles during a run, not only once it finishes, expandable per step (request/response detail); collapsible as a whole panel.
+- **Canvas**: renders the `Operation` list as draggable boxes; dragging one onto the canvas adds a `WorkflowNode`. Dragging box-to-box (via each node's connect handles) creates a `WorkflowConnection` — order only, no data — rendered as a solid arrow (`BreakpointConnectionEdge.tsx`). **Double-clicking a connector arms a breakpoint** on it (wired at the canvas level via React Flow's `onEdgeDoubleClick`, not on any always-visible per-edge affordance) — an armed connector shows a red dot at its midpoint that stays clickable as a redundant disarm target, and a second double-click on the connector also disarms. Field mappings render as a separate dashed, animated edge, derived from `fieldValues`, not drawn directly on the canvas (direct field-to-field drag-connect is on the workspace-level `ROADMAP.md`); double-clicking one is silently ignored — a breakpoint can never arm on a mapping edge. A node's card carries a small top-left status badge and border treatment for its live run status — pulsing blue while in-flight, solid amber (plus an inline "Paused here" label) once paused at a breakpoint, a green check/red cross once settled.
+- **Locked while a run is in progress** (`workflowStore.ts`'s `isLocked`): every node-config/data-mapping/graph-structure mutation — field values, credential assignment, body mode/raw body, add/remove node, connect/disconnect, arm/disarm breakpoint — no-ops at the store level, not just in whichever UI control also happens to be disabled to match. `executeChain` reads `nodes`/`connections`/`credentials`/`armedBreakpoints` exactly once, at the moment `run()` calls it; before this guard existed, an edit made while a run (or a paused debug session, which can sit open indefinitely) was in progress looked like it "took" in the store — the Inspector showed the new value — but silently had no effect on that run's actual behavior at all. Node position is the one deliberate exception: canvas-only, never part of the executed `Workflow`, so dragging a node stays allowed throughout a run.
+- **Node inspector**: per selected node — credential dropdown, and a list of request fields, each either a static input or a "map from..." picker listing every ancestor node in the connection graph. Locked (a native `<fieldset disabled>` around everything but the collapse button, plus a banner) while a run is in progress, whether debugging or not; the Raw JSON body editor (CodeMirror-based, not a plain form control) gets the equivalent treatment via its own `readOnly` prop, since a `<fieldset disabled>` wrapper alone doesn't reach it.
+- **Run / Debug buttons**: two distinct actions (see point 8 above), each disabled while a run is in progress. Once a run is actually controllable (`activeControl` set — only ever true for a Debug run), both disappear entirely, replaced by icon-only **Continue/Step/Stop** buttons (hover title as the accessible name, no visible label) — never shown alongside Run/Debug, so it's never ambiguous whether a plain run or a debug session is in progress.
+- **Debug pane**: two tabs — **Run Output** (`RunOutputTab.tsx`) renders `RunResult.steps` as each one settles during a run, not only once it finishes, using side-by-side request/response cards (`debugPaneShared.tsx`); **Debugger** (`DebuggerTab.tsx`) deliberately looks different, not a copy of that style — a compact, icon-led one-line-per-node list that expands into a single unified JSON block per side (the whole request or response object, redacted) rather than a split headers/body panel. A paused row also carries its own inline icon-only Continue/Step/Stop (Step here targets that exact node, unlike the header version's selected-or-first fallback) — a convenience alongside the global controls, not a replacement for them. The header shows an aggregate status breakdown ("2 completed · 1 paused · 1 pending") while this tab is active, computed by `summarizeDebuggerStatus`. The pane as a whole is collapsible.
 - Both side panels (node inspector, debug pane) and the operations sidebar are independently collapsible, so the canvas can reclaim their space.
 - Nodes are drag-repositionable and individually removable, with connections/mappings referencing a removed node cleaned up automatically rather than left dangling.
 
@@ -168,7 +171,7 @@ Built with React, React Flow, and Zustand.
 - The debug pane redacts the `Authorization` header value, and (for an apiKey credential sent `in: "query"`, where the secret lives in the URL itself rather than a header) the named query param in the displayed URL — shows that a credential was sent without exposing the raw value.
 - CORS is the target API's responsibility, since requests fire directly from the browser — this tool doesn't solve it, and that must be documented clearly wherever it matters.
 - No per-user auth inside the tool; access control is inherited entirely from whatever network perimeter (VPN, internal network, SSO-gated proxy) already protects the host environment.
-- `popup_login` never involves any secret Enlace holds — the actual login (third-party-IdP-driven: GitHub, Google, SSO, MFA — anything requiring a human to click through pages on another origin) happens in a real `window.open()`'d browser window that Enlace's own code never reads from or writes to. That's a deliberate limitation, not an oversight: CORS, consent screens, and registered-redirect-URI mismatches make it impossible for any fetch()-driven node to complete that kind of login itself. Once the popup closes, `chainExecutor.ts` sets `credentials: 'include'` on the actual request so the browser's own cookie jar attaches whatever the login set — this depends entirely on the target's CORS policy allowing credentialed cross-origin requests, same as any other CORS concern above. Deliberately scoped to *only* the server-sets-a-session-cookie case — a "the login flow hands back a token instead, paste it in" variant was designed and built, then dropped: the token could only be obtained via the very "Log in" button on the same form as the now-required Token field, which nothing communicated, leaving a required field the user had no way to fill in on their first attempt. Revisit only on real demand, with that ordering problem actually solved — see ROADMAP.md. Automatic capture of a token embedded in a popup's own redirect URL remains a separate, later concern (full OAuth2 `authorizationCode`-grant support, needing Enlace to own a registered callback route).
+- `popup_login` never involves any secret Enlace holds — the actual login (third-party-IdP-driven: GitHub, Google, SSO, MFA — anything requiring a human to click through pages on another origin) happens in a real `window.open()`'d browser window that Enlace's own code never reads from or writes to. That's a deliberate limitation, not an oversight: CORS, consent screens, and registered-redirect-URI mismatches make it impossible for any fetch()-driven node to complete that kind of login itself. Once the popup closes, `chainExecutor.ts` sets `credentials: 'include'` on the actual request so the browser's own cookie jar attaches whatever the login set — this depends entirely on the target's CORS policy allowing credentialed cross-origin requests, same as any other CORS concern above. Deliberately scoped to *only* the server-sets-a-session-cookie case — a "the login flow hands back a token instead, paste it in" variant was designed and built, then dropped: the token could only be obtained via the very "Log in" button on the same form as the now-required Token field, which nothing communicated, leaving a required field the user had no way to fill in on their first attempt. Revisit only on real demand, with that ordering problem actually solved — see the workspace-level `ROADMAP.md`. Automatic capture of a token embedded in a popup's own redirect URL remains a separate, later concern (full OAuth2 `authorizationCode`-grant support, needing Enlace to own a registered callback route).
 
 ## 8. Deployment / Distribution
 

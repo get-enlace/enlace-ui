@@ -57,6 +57,7 @@ describe('NodeInspector', () => {
       operations: [petOperation, getPetOperation],
       selectedNodeId: null,
       credentials: [],
+      isRunning: false,
     });
   });
 
@@ -340,6 +341,25 @@ describe('NodeInspector', () => {
 
       fireEvent.click(screen.getByText('Switch anyway'));
       expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('form');
+    });
+  });
+
+  describe('locked while a run is in progress', () => {
+    it('shows a banner and disables every field/credential control via the fieldset', () => {
+      useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1', isRunning: true });
+      render(<NodeInspector onCollapse={() => {}} />);
+
+      expect(screen.getByText('Workflow is running — editing is locked until it finishes.')).toBeInTheDocument();
+      expect(screen.getByLabelText('Credential')).toBeDisabled();
+      expect(fieldRow('body.qty').getByRole('textbox')).toBeDisabled();
+    });
+
+    it("doesn't show the banner or disable anything when not running", () => {
+      useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1', isRunning: false });
+      render(<NodeInspector onCollapse={() => {}} />);
+
+      expect(screen.queryByText(/editing is locked/)).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Credential')).not.toBeDisabled();
     });
   });
 });

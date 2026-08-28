@@ -36,7 +36,7 @@ export function createApp() {
   // The API under test — what the canvas's client-side chain execution
   // will actually call, directly from the browser (no server-side executor
   // in this adapter at all — see enlace.ts, a local copy of
-  // @get-enlace/express's mount function; see ROADMAP.md).
+  // @get-enlace/express's mount function).
   app.use(sampleApiRouter);
 
   // The Enlace canvas. Enlace only needs a valid OpenAPI document — it has

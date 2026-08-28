@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { connectionKey } from '../engine/chainExecutor.js';
 import { useWorkflowStore } from './workflowStore.js';
 
 // Reset to a clean slate before each test — zustand stores are module-level
@@ -15,6 +16,9 @@ beforeEach(() => {
     baseUrl: null,
     runResult: null,
     stepStatusByNodeId: {},
+    armedBreakpoints: new Set(),
+    previewRequestByNodeId: {},
+    activeControl: null,
     isRunning: false,
     error: null,
   });
@@ -109,6 +113,62 @@ describe('connectNodes / disconnectNodes', () => {
       fromNodeId: a,
       fromResponseFieldPath: 'id',
     });
+  });
+
+  it('disconnectNodes also disarms a breakpoint on that exact connection — same dangling-reference cleanup as removeNode', () => {
+    const { addNode, connectNodes, disconnectNodes, toggleBreakpoint } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    connectNodes(a, b);
+    toggleBreakpoint(a, b);
+    expect(useWorkflowStore.getState().armedBreakpoints.size).toBe(1);
+
+    disconnectNodes(a, b);
+
+    expect(useWorkflowStore.getState().armedBreakpoints.size).toBe(0);
+  });
+});
+
+describe('toggleBreakpoint', () => {
+  it('arms on the first call, disarms on the second, for that exact fromNodeId/toNodeId pair only', () => {
+    const { addNode, toggleBreakpoint } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    const c = addNode('GET /c');
+
+    toggleBreakpoint(a, b);
+    expect(useWorkflowStore.getState().armedBreakpoints).toEqual(new Set([connectionKey(a, b)]));
+
+    toggleBreakpoint(a, c);
+    expect(useWorkflowStore.getState().armedBreakpoints.size).toBe(2);
+
+    toggleBreakpoint(a, b);
+    expect(useWorkflowStore.getState().armedBreakpoints.size).toBe(1);
+  });
+});
+
+describe('continueExecution / stepNode / stopExecution', () => {
+  it('are no-ops when no run is in progress (activeControl is null)', () => {
+    const { continueExecution, stepNode, stopExecution } = useWorkflowStore.getState();
+    expect(() => continueExecution()).not.toThrow();
+    expect(() => stepNode('some-node')).not.toThrow();
+    expect(() => stopExecution()).not.toThrow();
+  });
+
+  it('forward to whatever activeControl currently holds', () => {
+    const continueSpy = vi.fn();
+    const stepSpy = vi.fn();
+    const stopSpy = vi.fn();
+    useWorkflowStore.setState({ activeControl: { continue: continueSpy, step: stepSpy, stop: stopSpy } });
+
+    const { continueExecution, stepNode, stopExecution } = useWorkflowStore.getState();
+    continueExecution();
+    stepNode('node-1');
+    stopExecution();
+
+    expect(continueSpy).toHaveBeenCalled();
+    expect(stepSpy).toHaveBeenCalledWith('node-1');
+    expect(stopSpy).toHaveBeenCalled();
   });
 });
 
@@ -253,6 +313,74 @@ describe('run', () => {
     expect(final.stepStatusByNodeId[a]).toBe('completed');
     expect(final.stepStatusByNodeId[b]).toBe('completed');
   });
+
+  it('run({ useBreakpoints: true }) pauses at an armed breakpoint, populates a preview, and resumes via continueExecution', async () => {
+    const noop = {
+      id: 'GET /noop',
+      method: 'get' as const,
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
+    const { addNode, connectNodes, toggleBreakpoint, run } = useWorkflowStore.getState();
+    const a = addNode('GET /noop');
+    const b = addNode('GET /noop');
+    connectNodes(a, b);
+    toggleBreakpoint(a, b);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({}) })
+    );
+
+    const runPromise = run({ useBreakpoints: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const mid = useWorkflowStore.getState();
+    expect(mid.stepStatusByNodeId[a]).toBe('completed');
+    expect(mid.stepStatusByNodeId[b]).toBe('paused');
+    expect(mid.previewRequestByNodeId[b]?.url).toBe('http://example.test/noop');
+    expect(mid.isRunning).toBe(true); // still "running" — a run isn't over just because it's paused
+    expect(mid.activeControl).not.toBeNull();
+
+    mid.continueExecution();
+    await runPromise;
+
+    const final = useWorkflowStore.getState();
+    expect(final.stepStatusByNodeId[b]).toBe('completed');
+    expect(final.activeControl).toBeNull();
+  });
+
+  it('a plain run() ignores armed breakpoints entirely and never sets activeControl — "Run" is not "Debug"', async () => {
+    const noop = {
+      id: 'GET /noop',
+      method: 'get' as const,
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
+    const { addNode, connectNodes, toggleBreakpoint, run } = useWorkflowStore.getState();
+    const a = addNode('GET /noop');
+    const b = addNode('GET /noop');
+    connectNodes(a, b);
+    toggleBreakpoint(a, b);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({}) })
+    );
+
+    await run();
+
+    const final = useWorkflowStore.getState();
+    expect(final.stepStatusByNodeId[a]).toBe('completed');
+    expect(final.stepStatusByNodeId[b]).toBe('completed'); // never paused, despite the armed breakpoint
+    expect(final.activeControl).toBeNull();
+  });
 });
 
 describe('loadOperations', () => {
@@ -287,5 +415,72 @@ describe('loadOperations', () => {
     await useWorkflowStore.getState().loadOperations();
 
     expect(useWorkflowStore.getState().declaredCredentials).toEqual([]);
+  });
+});
+
+describe('locked while a run is in progress', () => {
+  // executeChain (chainExecutor.ts) reads nodes/connections/credentials/
+  // armedBreakpoints exactly once, when run() calls it — every mutating
+  // action below would otherwise let the Inspector/Canvas look editable
+  // and "take" in the store while silently having no effect on the run
+  // already using the old snapshot. See workflowStore.ts's isLocked.
+  it('no-ops every node-config/data-mapping/graph-structure mutation while isRunning, leaving state untouched', () => {
+    const {
+      addNode,
+      connectNodes,
+      setCredential,
+      setFieldValue,
+      mergeFieldValues,
+      setBodyMode,
+      setRawBody,
+      toggleBreakpoint,
+    } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 100, y: 0 });
+    connectNodes(a, b);
+
+    useWorkflowStore.setState({ isRunning: true });
+    const before = useWorkflowStore.getState();
+
+    expect(addNode('GET /c')).toBe('');
+    setCredential(a, 'some-credential-id');
+    setFieldValue(a, 'body.x', { source: 'static', value: 'nope' });
+    mergeFieldValues(a, { 'body.y': { source: 'static', value: 'nope' } });
+    setBodyMode(a, 'raw');
+    setRawBody(a, { template: '{}', tags: {} });
+    useWorkflowStore.getState().connectNodes(b, a);
+    useWorkflowStore.getState().disconnectNodes(a, b);
+    toggleBreakpoint(a, b);
+    useWorkflowStore.getState().removeNode(a);
+
+    const after = useWorkflowStore.getState();
+    expect(after.nodes).toEqual(before.nodes);
+    expect(after.connections).toEqual(before.connections);
+    expect(after.armedBreakpoints).toEqual(before.armedBreakpoints);
+  });
+
+  it('still allows repositioning a node while running — purely visual, not config/data', () => {
+    const { addNode, updateNodePosition } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+
+    useWorkflowStore.setState({ isRunning: true });
+    updateNodePosition(a, { x: 250, y: 250 });
+
+    expect(useWorkflowStore.getState().nodePositions[a]).toEqual({ x: 250, y: 250 });
+  });
+
+  it('disconnectNodes locked while running does NOT disarm a breakpoint either — the whole action is a no-op, not just the connection removal', () => {
+    const { addNode, connectNodes, toggleBreakpoint, disconnectNodes } = useWorkflowStore.getState();
+    const a = addNode('GET /a');
+    const b = addNode('GET /b');
+    connectNodes(a, b);
+    toggleBreakpoint(a, b);
+
+    useWorkflowStore.setState({ isRunning: true });
+    disconnectNodes(a, b);
+
+    const state = useWorkflowStore.getState();
+    expect(state.connections).toEqual([{ fromNodeId: a, toNodeId: b }]);
+    expect(state.armedBreakpoints).toEqual(new Set([connectionKey(a, b)]));
   });
 });

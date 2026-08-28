@@ -51,7 +51,7 @@ function renderCard(data: WorkflowNodeData) {
 
 describe('WorkflowNodeCard', () => {
   beforeEach(() => {
-    useWorkflowStore.setState({ nodes: [], nodePositions: {}, connections: [], selectedNodeId: null });
+    useWorkflowStore.setState({ nodes: [], nodePositions: {}, connections: [], selectedNodeId: null, isRunning: false });
   });
 
   it('renders the method, path, and summary', () => {
@@ -119,14 +119,28 @@ describe('WorkflowNodeCard', () => {
     expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--selected');
   });
 
-  it('applies the --running modifier class while the node is in flight', () => {
-    renderCard({ node: makeNode(), operation: makeOperation(), selected: false, isRunning: true });
-    expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--running');
+  it('applies the --in-flight modifier class and a status badge while the node is in flight', () => {
+    renderCard({ node: makeNode(), operation: makeOperation(), selected: false, status: 'in-flight' });
+    expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--in-flight');
+    expect(document.querySelector('.workflow-node__status-badge--in-flight')).toBeInTheDocument();
   });
 
-  it('omits the --running modifier class once the node is no longer in flight', () => {
-    renderCard({ node: makeNode(), operation: makeOperation(), selected: false, isRunning: false });
-    expect(document.querySelector('.workflow-node')).not.toHaveClass('workflow-node--running');
+  it('applies the --paused modifier class, a status badge, and an inline "Paused here" label once the node pauses at a breakpoint', () => {
+    renderCard({ node: makeNode(), operation: makeOperation(), selected: false, status: 'paused' });
+    expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--paused');
+    expect(document.querySelector('.workflow-node__status-badge--paused')).toBeInTheDocument();
+    expect(screen.getByText('⏸ Paused here')).toBeInTheDocument();
+  });
+
+  it('applies a completed status badge once the node settles successfully, without a paused label', () => {
+    renderCard({ node: makeNode(), operation: makeOperation(), selected: false, status: 'completed' });
+    expect(document.querySelector('.workflow-node__status-badge--completed')).toBeInTheDocument();
+    expect(screen.queryByText('⏸ Paused here')).not.toBeInTheDocument();
+  });
+
+  it('omits any status modifier/badge before a node has ever run', () => {
+    renderCard({ node: makeNode(), operation: makeOperation(), selected: false });
+    expect(document.querySelector('[class*="workflow-node__status-badge"]')).not.toBeInTheDocument();
   });
 
   it('removes the node from the store when the × button is clicked', async () => {
@@ -137,5 +151,12 @@ describe('WorkflowNodeCard', () => {
     await user.click(screen.getByRole('button', { name: 'Remove this node' }));
 
     expect(useWorkflowStore.getState().nodes).toEqual([]);
+  });
+
+  it('disables the remove button while a run is in progress', () => {
+    useWorkflowStore.setState({ nodes: [makeNode({ id: 'node-1' })], nodePositions: { 'node-1': { x: 0, y: 0 } }, isRunning: true });
+    renderCard({ node: makeNode({ id: 'node-1' }), operation: makeOperation(), selected: false });
+
+    expect(screen.getByRole('button', { name: 'Remove this node' })).toBeDisabled();
   });
 });

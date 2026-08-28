@@ -123,6 +123,26 @@ body {
   color: var(--color-text-muted);
 }
 
+.btn--stop {
+  background: transparent;
+  border: 2px solid var(--color-delete);
+  color: var(--color-delete);
+}
+
+.app__run-controls {
+  display: flex;
+  gap: 8px;
+}
+
+/* Symbol-only variant — a hover title is the accessible name, no visible
+   label to size around, so this trades .btn's wide 7px/20px text padding
+   for a small square that just fits the glyph. */
+.btn--icon {
+  padding: 6px 10px;
+  font-size: 14px;
+  line-height: 1;
+}
+
 /* --- Body layout --- */
 
 /* Both the inspector and canvas columns use minmax() instead of a hard
@@ -413,6 +433,45 @@ body {
   filter: drop-shadow(0 0 3px var(--color-focus));
 }
 
+/* The red dot rendered at an armed connection edge's midpoint (see
+   BreakpointConnectionEdge.tsx) — only rendered when a breakpoint is
+   actually armed on that connector; arming itself happens via a
+   double-click on the connector at the canvas level, no placeholder
+   marker on unarmed edges. Clicking this dot disarms (redundant with
+   double-clicking the connector again, but more discoverable — same
+   pattern as an IDE breakpoint gutter). Sits inside React Flow's
+   EdgeLabelRenderer overlay, which is pointer-events:none by default
+   so it doesn't block canvas panning elsewhere; this element opts
+   itself back in. Position (translate to the edge midpoint) and the
+   zoom counter-scale both live in the component's own inline style,
+   not here — only visual treatment does. */
+.breakpoint-marker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--color-delete);
+  background: var(--color-delete);
+  box-shadow: 0 0 0 3px var(--color-delete-bg);
+  cursor: pointer;
+  pointer-events: all;
+  transition: box-shadow 0.15s, opacity 0.15s;
+}
+
+.breakpoint-marker:hover {
+  box-shadow: 0 0 0 4px var(--color-delete-bg);
+}
+
+.breakpoint-marker:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.breakpoint-marker:disabled:hover {
+  box-shadow: 0 0 0 3px var(--color-delete-bg);
+}
+
 .canvas .react-flow__controls {
   box-shadow: none;
 }
@@ -504,6 +563,17 @@ body {
   color: #fff;
 }
 
+.workflow-node__remove-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.workflow-node__remove-btn:disabled:hover {
+  background: var(--color-topbar-bg);
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+
 .workflow-node--get {
   background: linear-gradient(var(--color-get-bg), var(--color-get-bg)), var(--color-panel-bg);
   border-color: rgba(97, 175, 254, 0.4);
@@ -535,9 +605,9 @@ body {
 
 /* Same border-width/color approach as --selected (not box-shadow — see
    that rule's own comment on why: it'd draw straight through the legend
-   gap). Pulses independently of selection so a running node stays visibly
-   distinct even while selected — CSS animations take priority over the
-   static border-color above for as long as the animation runs. */
+   gap). Pulses independently of selection so an in-flight node stays
+   visibly distinct even while selected — CSS animations take priority
+   over the static border-color above for as long as the animation runs. */
 @keyframes workflow-node-pulse {
   0%,
   100% {
@@ -548,9 +618,77 @@ body {
   }
 }
 
-.workflow-node--running {
+.workflow-node--in-flight {
   border-width: 2px;
   animation: workflow-node-pulse 1.1s ease-in-out infinite;
+}
+
+/* A paused node gets a solid, non-animated treatment (unlike --in-flight's
+   pulse) — it isn't actively doing anything, it's waiting on the user, so a
+   steady color reads more like "stopped here" than "in progress". */
+.workflow-node--paused {
+  border-color: var(--color-warning);
+  border-width: 2px;
+}
+
+.workflow-node--failed {
+  border-color: var(--color-delete);
+  border-width: 2px;
+}
+
+/* Top-left corner badge — the remove button already owns top-right (see
+   .workflow-node__remove-btn). Only rendered for the statuses worth
+   flagging at a glance across a busy canvas without opening the Debugger
+   tab (see WorkflowNodeCard.tsx's STATUS_BADGE_GLYPH). */
+.workflow-node__status-badge {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+}
+
+.workflow-node__status-badge--in-flight {
+  background: var(--color-get);
+  animation: workflow-node-pulse-badge 1.1s ease-in-out infinite;
+}
+
+@keyframes workflow-node-pulse-badge {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.workflow-node__status-badge--paused {
+  background: var(--color-warning);
+  color: #1b1b1b;
+}
+
+.workflow-node__status-badge--completed {
+  background: var(--color-post);
+  color: #1b1b1b;
+}
+
+.workflow-node__status-badge--failed {
+  background: var(--color-delete);
+}
+
+.workflow-node__paused-label {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-warning);
 }
 
 .workflow-node__header {
@@ -1150,7 +1288,7 @@ body {
 .debug-pane__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   padding: 8px 16px;
   font-size: 12px;
   font-weight: 700;
@@ -1165,6 +1303,34 @@ body {
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
+  margin-left: auto;
+}
+
+.debug-pane__tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.debug-pane__tab {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.debug-pane__tab:hover {
+  color: var(--color-text);
+}
+
+.debug-pane__tab--active {
+  background: var(--color-panel-bg);
+  color: var(--color-text);
 }
 
 .debug-pane__toggle {
@@ -1280,6 +1446,7 @@ body {
   background: var(--color-delete);
   color: #fff;
 }
+
 
 .debug-step__panels {
   display: flex;
@@ -1401,6 +1568,143 @@ body {
   border: 1px solid var(--color-border);
 }
 
+/* --- Debugger tab (DebuggerTab.tsx) — pre-populated rows for the entire
+ * planned execution order (in dependency order, purely for display —
+ * actual firing is per-node/readiness-driven, not tied to this list),
+ * overlaid with live status. Deliberately its own compact, icon-led look —
+ * not Run Output's boxy side-by-side request/response cards (see
+ * debug-step__panels above): a one-line summary per row, and a single
+ * unified JSON block (the whole request or response object, redacted) when
+ * a row expands. The aggregate status breakdown lives in DebugPane.tsx's
+ * header (`.debug-pane__count`), not in here — see summarizeDebuggerStatus.
+ * Continue/Step/Stop appear both globally (App.tsx header) and inline on
+ * each paused row (`.debugger-row__controls`) — never in both text and icon
+ * form, always icon-only with a hover title as the accessible name. */
+
+.debugger-row {
+  border-bottom: 1px solid var(--color-border);
+  padding: 7px 0;
+}
+
+.debugger-row:last-child {
+  border-bottom: none;
+}
+
+.debugger-row__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text);
+}
+
+details.debugger-row > .debugger-row__summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+details.debugger-row > .debugger-row__summary::-webkit-details-marker {
+  display: none;
+}
+
+.debugger-row__controls {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.debugger-row__controls .btn--icon {
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.debugger-row__chevron {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.debugger-row[open] .debugger-row__chevron {
+  transform: rotate(90deg);
+}
+
+/* A single glyph, not a text pill — the compact alternative to
+   Run Output's .status-badge (see debugPaneShared.tsx). */
+.debugger-row__status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.debugger-row__status-icon--pending {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+.debugger-row__status-icon--in-flight {
+  color: var(--color-get);
+  animation: workflow-node-pulse-badge 1.1s ease-in-out infinite;
+}
+
+.debugger-row__status-icon--paused {
+  color: var(--color-warning);
+}
+
+.debugger-row__status-icon--completed {
+  color: var(--color-post);
+}
+
+.debugger-row__status-icon--failed {
+  color: var(--color-delete);
+}
+
+.debugger-row__status-icon--skipped {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+.debugger-row__detail {
+  margin: 8px 0 0 22px;
+}
+
+.debugger-row__detail-label {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 8px 0 4px;
+}
+
+.debugger-row__detail-label:first-child {
+  margin-top: 0;
+}
+
+.debugger-row__detail-label--preview {
+  color: var(--color-warning);
+}
+
+.debugger-row__json {
+  background: #101113;
+  color: #d8dde3;
+  padding: 10px 12px;
+  border-radius: 4px;
+  overflow: auto;
+  max-height: 260px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 0;
+  border: 1px solid var(--color-border);
+}
+
+.debugger-row__detail-empty {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  margin: 0;
+}
+
 /* --- Raw JSON body mode: mode toggle, banner, CodeMirror editor, tag
  * chips, and the first centered Modal in the app (everything else that
  * overlays the canvas is CredentialsPanel's edge-anchored drawer instead —
@@ -1486,6 +1790,23 @@ body {
   box-shadow: 0 0 0 2px var(--color-focus);
 }
 
+/* Reset the UA defaults (fieldset's own border/padding/margin, its
+   min-width: min-content quirk) same as .workflow-node/.operation-list__item
+   above — this exists purely so `disabled` can lock every plain input/
+   select/button in the inspector in one place while a run is in progress
+   (see NodeInspector.tsx and workflowStore.ts's isLocked); :disabled below
+   just dims it to match, same as a native disabled input already looks. */
+.node-inspector__fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.node-inspector__fieldset:disabled {
+  opacity: 0.6;
+}
+
 .node-inspector__banner {
   background: var(--color-warning-bg, rgba(252, 161, 48, 0.12));
   border: 1px solid var(--color-warning);
@@ -1530,6 +1851,14 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 4px;
   overflow: hidden;
+}
+
+/* Rejects edits at the CodeMirror level regardless (see RawBodyEditor.tsx's
+   readOnly prop) — this is just the matching visual cue, same dimmed
+   treatment as .node-inspector--locked's native form controls. */
+.raw-body-editor__codemirror--readonly {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .raw-body-editor__codemirror .cm-editor {

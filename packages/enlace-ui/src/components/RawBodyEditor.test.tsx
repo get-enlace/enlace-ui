@@ -287,4 +287,50 @@ describe('RawBodyEditor', () => {
     view.destroy();
     wrapper.remove();
   });
+
+  describe('readOnly', () => {
+    it('makes the CodeMirror doc non-editable and rejects a programmatic edit transaction', async () => {
+      const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
+      const { container } = render(
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} readOnly />
+      );
+      await waitFor(() => {
+        expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false');
+      });
+    });
+
+    it('is editable (the default) when readOnly is omitted', async () => {
+      const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
+      const { container } = render(
+        <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />
+      );
+      await waitFor(() => {
+        expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('true');
+      });
+    });
+
+    it('reconfigures live when the readOnly prop flips, without tearing down the editor (e.g. losing the typed doc)', async () => {
+      function Harness() {
+        const [readOnly, setReadOnly] = useState(false);
+        const rawBody: RawBody = { template: '{"name":"widget"}', tags: {} };
+        return (
+          <>
+            <button onClick={() => setReadOnly((v) => !v)}>toggle</button>
+            <RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} readOnly={readOnly} />
+          </>
+        );
+      }
+      const { container } = render(<Harness />);
+      await waitFor(() => {
+        expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('true');
+      });
+
+      fireEvent.click(screen.getByText('toggle'));
+      await waitFor(() => {
+        expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false');
+      });
+      // Same editor instance, same content — a reconfigure, not a remount.
+      expect(container.querySelector('.cm-content')?.textContent).toContain('widget');
+    });
+  });
 });

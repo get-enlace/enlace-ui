@@ -105,6 +105,5 @@ round-trip (POST for a token, verify its signature, attach it) works.
 ## Learn more
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — how Enlace is designed and why.
-- [`ROADMAP.md`](ROADMAP.md) — what's planned next.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — local development setup, test
   commands, and how CI/CD works.

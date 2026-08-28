@@ -1,6 +1,6 @@
 // Local copy of @get-enlace/express's mount function — that package now
-// lives in the separate get-enlace/enlace-js repo (see ROADMAP.md), so
-// this repo no longer depends on it (as a workspace or otherwise) for its
+// lives in the separate get-enlace/enlace-js repo, so this repo no longer
+// depends on it (as a workspace or otherwise) for its
 // own local dev/e2e testing. It's small enough that a copy is simpler and
 // more self-contained than depending on the other repo's published
 // package here, which would mean auth against GitHub Packages just to run

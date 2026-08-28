@@ -24,7 +24,10 @@ customersRouter.post('/customers', requireBasic, (req, res) => {
   }
   const customer: Customer = { id: randomUUID(), name, email, status: 'active' };
   customers.set(customer.id, customer);
-  res.status(201).json(customer);
+  // Simulate a slow DB write so the UI can show a spinner while waiting for the
+  setTimeout(() => {
+    res.status(201).json(customer);
+  }, 1000);
 });
 
 customersRouter.get('/customers/:id', (req, res) => {
@@ -47,7 +50,10 @@ customersRouter.patch('/customers/:id', requireBearer, (req, res) => {
   if (name !== undefined) customer.name = name;
   if (email !== undefined) customer.email = email;
   if (status !== undefined) customer.status = status;
-  res.json(customer);
+  // Simulate a slow DB write so the UI can show a spinner while waiting for the
+  setTimeout(() => {
+    res.json(customer);
+  }, 1000);
 });
 
 customersRouter.delete('/customers/:id', requireBearer, (req, res) => {

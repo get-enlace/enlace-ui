@@ -1,13 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   computeExecutionLevels,
+  connectionKey,
   CyclicWorkflowError,
   executeChain,
   getByPath,
   topologicalSort,
 } from './chainExecutor.js';
 import { __clearCredentialTokenCacheForTests } from './credentials.js';
-import type { Credential, Operation, RunEvent, WorkflowConnection, WorkflowNode } from '../types.js';
+import type { Credential, Operation, RunControl, RunEvent, WorkflowConnection, WorkflowNode } from '../types.js';
+
+/** Flushes every currently-pending microtask (fetch mocks resolving, buildRequest's own promise chain, etc.) without advancing real time, so a paused/settled state has fully landed before assertions run. */
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): WorkflowNode {
   return { id, operationId: id, credentialId: null, fieldValues };
@@ -664,6 +670,200 @@ describe('executeChain', () => {
         expect(event.step).toBeUndefined();
       }
     }
+  });
+});
+
+describe('executeChain — breakpoints, pause/continue/step/stop', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('pauses a node at an armed breakpoint instead of firing it, once its dependencies settle, and never sends its request until released', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const b = node('b');
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'a', toNodeId: 'b' }];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+    ]);
+
+    const events: RunEvent[] = [];
+    let control: RunControl | undefined;
+    const resultPromise = executeChain({ nodes: [a, b], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      armedBreakpoints: new Set([connectionKey('a', 'b')]),
+      onEvent: (e) => events.push(e),
+      onControl: (c) => (control = c),
+    });
+
+    await flushMicrotasks();
+    expect(events.find((e) => e.nodeId === 'b')?.status).toBe('paused');
+    expect(fetchMock).toHaveBeenCalledTimes(1); // only a — b never fired
+
+    control!.continue();
+    const result = await resultPromise;
+
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'b']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("never gates on a mapping-only edge — arming a key with no matching WorkflowConnection has no effect", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const b = node('b', { x: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' } });
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+    ]);
+
+    // a->b is a real dependency (via the mapped field) but never an
+    // explicit WorkflowConnection, so this key can never match anything —
+    // b should run straight through, never pausing.
+    const result = await executeChain({ nodes: [a, b], connections: [] }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      armedBreakpoints: new Set([connectionKey('a', 'b')]),
+    });
+
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'b']);
+  });
+
+  it('reports a pre-fire request preview once a paused node builds it, without ever sending it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(201, { id: 'order-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const b = node('b', {
+      'body.orderId': { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'id' },
+    });
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'a', toNodeId: 'b' }];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      [
+        'b',
+        {
+          ...op('b', '/b'),
+          requestBodySchema: { type: 'object', properties: { orderId: { type: 'string' } } },
+        },
+      ],
+    ]);
+
+    const events: RunEvent[] = [];
+    let control: RunControl | undefined;
+    const resultPromise = executeChain({ nodes: [a, b], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      armedBreakpoints: new Set([connectionKey('a', 'b')]),
+      onEvent: (e) => events.push(e),
+      onControl: (c) => (control = c),
+    });
+
+    await flushMicrotasks();
+    const previewEvent = events.find((e) => e.nodeId === 'b' && e.request);
+    expect(previewEvent?.request?.url).toBe('http://example.test/b');
+    // The preview reflects a's real captured response (mapped field
+    // resolution), the same way the request would if actually fired.
+    expect(previewEvent?.request?.body).toEqual({ orderId: 'order-1' });
+
+    control!.continue();
+    await resultPromise;
+  });
+
+  it('step() releases exactly one paused node, leaving any others paused', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const b = node('b');
+    const c = node('c');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'a', toNodeId: 'c' },
+    ];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+      ['c', op('c', '/c')],
+    ]);
+
+    const events: RunEvent[] = [];
+    let control: RunControl | undefined;
+    const resultPromise = executeChain({ nodes: [a, b, c], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      armedBreakpoints: new Set([connectionKey('a', 'b'), connectionKey('a', 'c')]),
+      onEvent: (e) => events.push(e),
+      onControl: (ctl) => (control = ctl),
+    });
+
+    await flushMicrotasks();
+    // Two events per paused node (an immediate status-only one, then a
+    // follow-up once its preview finishes building) — count distinct
+    // *nodes* currently paused, not raw event count.
+    const pausedNodeIds = new Set(events.filter((e) => e.status === 'paused').map((e) => e.nodeId));
+    expect(pausedNodeIds).toEqual(new Set(['b', 'c']));
+
+    control!.step('b');
+    await flushMicrotasks();
+
+    const bEvents = events.filter((e) => e.nodeId === 'b');
+    expect(bEvents[bEvents.length - 1].status).toBe('completed');
+    // c is still paused — step() only released b.
+    const cEvents = events.filter((e) => e.nodeId === 'c');
+    expect(cEvents[cEvents.length - 1].status).toBe('paused');
+
+    control!.step('c');
+    await resultPromise;
+  });
+
+  it('stop() admits nothing new — every pending/paused node becomes skipped — but an already-in-flight sibling still completes', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = new URL(url).pathname;
+      if (path === '/b') {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      }
+      return mockResponse(200, {});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // a -> b (unrelated, slow, no breakpoint — already in flight when Stop
+    // hits) and a -> c (armed breakpoint, pauses); d depends on c and is
+    // still merely 'pending' at the moment Stop is called.
+    const a = node('a');
+    const b = node('b');
+    const c = node('c');
+    const d = node('d');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'b' },
+      { fromNodeId: 'a', toNodeId: 'c' },
+      { fromNodeId: 'c', toNodeId: 'd' },
+    ];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+      ['c', op('c', '/c')],
+      ['d', op('d', '/d')],
+    ]);
+
+    const events: RunEvent[] = [];
+    let control: RunControl | undefined;
+    const resultPromise = executeChain({ nodes: [a, b, c, d], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      armedBreakpoints: new Set([connectionKey('a', 'c')]),
+      onEvent: (e) => events.push(e),
+      onControl: (ctl) => (control = ctl),
+    });
+
+    await flushMicrotasks();
+    expect(events.find((e) => e.nodeId === 'c')?.status).toBe('paused');
+
+    control!.stop();
+    const result = await resultPromise;
+
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'b']); // c/d never ran
+    expect(events.find((e) => e.nodeId === 'c' && e.status === 'skipped')).toBeTruthy();
+    expect(events.find((e) => e.nodeId === 'd' && e.status === 'skipped')).toBeTruthy();
+    expect(result.steps.find((s) => s.nodeId === 'b')?.error).toBeUndefined(); // b, already in flight, still completed
   });
 });
 

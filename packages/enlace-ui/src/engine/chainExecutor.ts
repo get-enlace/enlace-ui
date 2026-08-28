@@ -6,6 +6,7 @@ import type {
   Credential,
   FieldValue,
   Operation,
+  RunControl,
   RunEvent,
   RunResult,
   RunStep,
@@ -15,6 +16,16 @@ import type {
   WorkflowConnection,
   WorkflowNode,
 } from '../types.js';
+
+/**
+ * The key a `WorkflowConnection` is armed/looked-up under in a breakpoints
+ * set — shared so Canvas.tsx (arming, via a click on the connector) and
+ * workflowStore.ts (storing the set) agree on the same string with
+ * chainExecutor.ts (gating on it) without each inventing their own format.
+ */
+export function connectionKey(fromNodeId: string, toNodeId: string): string {
+  return `${fromNodeId}->${toNodeId}`;
+}
 
 export class CyclicWorkflowError extends Error {
   constructor(public readonly nodeIds: string[]) {
@@ -101,7 +112,15 @@ function resolveFieldValue(fieldValue: FieldValue, stepsByNodeId: Map<string, Ru
   return getByPath(priorStep?.response?.body, fieldValue.fromResponseFieldPath);
 }
 
-async function buildRequest(
+/**
+ * Resolves a node's fully-applied request — fields, tag chips, and
+ * credential injection — without sending it. `runNode` (below) is this
+ * plus the actual `fetch()`; exported separately so a paused node's row
+ * can preview exactly what's about to go out before it's released (see
+ * `executeChain`'s pause handling), using the same resolution logic a real
+ * fire would.
+ */
+export async function buildRequest(
   node: WorkflowNode,
   operation: Operation,
   stepsByNodeId: Map<string, RunStep>,
@@ -270,6 +289,25 @@ export interface ChainExecutorOptions {
    * this function still resolves to either way.
    */
   onEvent?: (event: RunEvent) => void;
+  /**
+   * `connectionKey(fromNodeId, toNodeId)` strings — a node with any
+   * incoming `WorkflowConnection` matching one of these pauses (status
+   * `'paused'`) the instant it would otherwise fire, instead of actually
+   * firing, until released via the `RunControl` handed to `onControl`.
+   * Never checked against mapping-implied dependencies, only explicit
+   * connections, matching "a breakpoint only ever arms on a connector."
+   * Snapshotted once at the start of this call — arming/disarming a
+   * breakpoint mid-run has no effect on a run already in progress.
+   */
+  armedBreakpoints?: Set<string>;
+  /**
+   * Called synchronously, once, before any node fires — hands the caller a
+   * `RunControl` for this specific run. Only meaningful when
+   * `armedBreakpoints` is non-empty, but always called either way so a
+   * caller has one uniform place to capture it (see store/workflowStore.ts's
+   * `run()`, which stashes it as `activeControl`).
+   */
+  onControl?: (control: RunControl) => void;
 }
 
 /**
@@ -284,9 +322,19 @@ export interface ChainExecutorOptions {
  * a cycle check (throwing CyclicWorkflowError before anything fires), not
  * to drive the actual firing order.
  *
- * A failure anywhere halts admission of any newly-ready node — no partial
- * recovery — but everything already in flight at that point still runs to
- * completion; requests already fired can't be un-sent.
+ * A node whose dependencies are all satisfied but sits behind an armed
+ * breakpoint (see `ChainExecutorOptions.armedBreakpoints`) pauses instead of
+ * firing — from the rest of the graph's point of view this is
+ * indistinguishable from the node just being slow, so nothing downstream
+ * needs special-casing; the existing dependency-satisfaction check already
+ * produces the correct wait.
+ *
+ * A failure anywhere — or a user-issued Stop via `RunControl` — halts
+ * admission of any newly-ready node — no partial recovery — but everything
+ * already in flight at that point still runs to completion; requests
+ * already fired can't be un-sent. Both also immediately settle every node
+ * that was still `'pending'` or `'paused'` at that moment to `'skipped'`,
+ * rather than leaving it in limbo for the rest of the run.
  */
 export async function executeChain(
   workflow: Workflow,
@@ -304,27 +352,81 @@ export async function executeChain(
   const status = new Map<string, RunStepStatus>(nodes.map((n) => [n.id, 'pending']));
   const stepsByNodeId = new Map<string, RunStep>();
   const steps: RunStep[] = [];
+  const armedBreakpoints = options.armedBreakpoints ?? new Set<string>();
+  // Node ids a breakpoint gated but Continue/Step has since released — a
+  // node only ever gets evaluated for gating once (it moves straight from
+  // 'paused' to 'pending' to 'in-flight' on release, never back), so
+  // recording the release here is enough; no need to track "which
+  // connection" was released separately from "which node."
+  const releasedNodeIds = new Set<string>();
 
-  const emit = (nodeId: string, s: RunStepStatus, step?: RunStep) => options.onEvent?.({ nodeId, status: s, step });
+  const emit = (nodeId: string, s: RunStepStatus, step?: RunStep, request?: RunStepRequest) =>
+    options.onEvent?.({ nodeId, status: s, step, request });
 
   const isSatisfied = (nodeId: string) => [...dependsOn.get(nodeId)!].every((depId) => status.get(depId) === 'completed');
 
+  const isGatedByBreakpoint = (nodeId: string) =>
+    !releasedNodeIds.has(nodeId) &&
+    connections.some((c) => c.toNodeId === nodeId && armedBreakpoints.has(connectionKey(c.fromNodeId, c.toNodeId)));
+
   // Once true, no *new* node is admitted — whatever's already in-flight
   // still runs to completion (its request was already sent; there's no
-  // un-sending it). Generalizes the old "break before the next level"
-  // halt to per-node granularity.
+  // un-sending it). Set by either a node failing or RunControl.stop().
   let halted = false;
   let inFlightCount = 0;
+  // Counts nodes currently sitting at 'paused' — the run isn't over while
+  // any of these exist, even though none of them count toward
+  // inFlightCount, so the wait loop below has to watch both.
+  let pausedCount = 0;
   let unknownOperationError: Error | null = null;
 
-  // Resolves the instant something changes (a node fires or settles) so the
-  // loop below can re-scan for newly-ready nodes without polling.
+  // Resolves the instant something changes (a node fires, settles, or a
+  // RunControl action releases/stops something) so the loop below can
+  // re-scan without polling — release/stop can happen an arbitrarily long
+  // time after the last node settled, e.g. while the user inspects a
+  // paused row, so this isn't purely an internal signal the way it was
+  // before breakpoints existed.
   let wake: (() => void) | null = null;
   const progressed = () => {
     wake?.();
     wake = null;
   };
   const nextProgress = () => new Promise<void>((resolve) => (wake = resolve));
+
+  // Shared by an ordinary failure and a user Stop: neither recovers, so
+  // anything not already settled or in flight is done for this run —
+  // surfacing that immediately (rather than leaving it silently 'pending'
+  // forever) is what lets the Debugger tab show *why* a node never ran.
+  function skipEverythingStillWaiting() {
+    for (const node of nodes) {
+      const s = status.get(node.id);
+      if (s === 'pending' || s === 'paused') {
+        if (s === 'paused') pausedCount--;
+        status.set(node.id, 'skipped');
+        emit(node.id, 'skipped');
+      }
+    }
+  }
+
+  function fireNode(node: WorkflowNode, operation: Operation) {
+    status.set(node.id, 'in-flight');
+    inFlightCount++;
+    emit(node.id, 'in-flight');
+
+    runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl).then((step) => {
+      steps.push(step);
+      stepsByNodeId.set(step.nodeId, step);
+      const finalStatus = step.error ? 'failed' : 'completed';
+      status.set(node.id, finalStatus);
+      inFlightCount--;
+      emit(node.id, finalStatus, step);
+      if (step.error) {
+        halted = true;
+        skipEverythingStillWaiting();
+      }
+      progressed();
+    });
+  }
 
   function fireReadyNodes() {
     for (const node of nodes) {
@@ -339,25 +441,63 @@ export async function executeChain(
         return;
       }
 
-      status.set(node.id, 'in-flight');
-      inFlightCount++;
-      emit(node.id, 'in-flight');
+      if (isGatedByBreakpoint(node.id)) {
+        status.set(node.id, 'paused');
+        pausedCount++;
+        emit(node.id, 'paused');
+        // Preview built asynchronously and reported as a follow-up event —
+        // it needs the same credential/mapping resolution buildRequest
+        // itself does, which can take a real round-trip (an oauth2 token
+        // fetch). A failure here isn't fatal to the pause itself: the row
+        // just shows no preview, same as if this were never attempted.
+        buildRequest(node, operation, stepsByNodeId, credentialsById, options.baseUrl)
+          .then((request) => {
+            // Guard against a race: Continue/Step may have already fired
+            // this node for real by the time the preview finishes building
+            // (e.g. a slow oauth2 token fetch) — an event claiming it's
+            // still 'paused' at that point would misreport its actual
+            // status, so only emit if nothing's changed underneath it.
+            if (status.get(node.id) === 'paused') emit(node.id, 'paused', undefined, request);
+          })
+          .catch(() => {});
+        continue;
+      }
 
-      runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl).then((step) => {
-        steps.push(step);
-        stepsByNodeId.set(step.nodeId, step);
-        const finalStatus = step.error ? 'failed' : 'completed';
-        status.set(node.id, finalStatus);
-        if (step.error) halted = true;
-        inFlightCount--;
-        emit(node.id, finalStatus, step);
-        progressed();
-      });
+      fireNode(node, operation);
     }
   }
 
+  if (options.onControl) {
+    options.onControl({
+      continue: () => {
+        let released = false;
+        for (const node of nodes) {
+          if (status.get(node.id) === 'paused') {
+            releasedNodeIds.add(node.id);
+            status.set(node.id, 'pending');
+            pausedCount--;
+            released = true;
+          }
+        }
+        if (released) progressed();
+      },
+      step: (nodeId: string) => {
+        if (status.get(nodeId) !== 'paused') return;
+        releasedNodeIds.add(nodeId);
+        status.set(nodeId, 'pending');
+        pausedCount--;
+        progressed();
+      },
+      stop: () => {
+        halted = true;
+        skipEverythingStillWaiting();
+        progressed();
+      },
+    });
+  }
+
   fireReadyNodes();
-  while (inFlightCount > 0) {
+  while (inFlightCount > 0 || pausedCount > 0) {
     await nextProgress();
     if (unknownOperationError) break;
     fireReadyNodes();
