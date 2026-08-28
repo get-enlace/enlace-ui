@@ -18,7 +18,9 @@
   "scripts": {
     "predev": "node scripts/ensure-ui-built.mjs",
     "dev": "tsx watch examples/sample-api/server.ts",
+    "dev:no-auth": "cross-env ENLACE_EXAMPLE_NO_AUTH=1 tsx watch examples/sample-api/server.ts",
     "start": "npm run dev",
+    "start:no-auth": "npm run dev:no-auth",
     "build": "npm run build:ui",
     "build:ui": "npm run build --workspace @get-enlace/ui",
     "typecheck": "tsc --noEmit",
@@ -32,6 +34,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.14.0",
     "@types/swagger-ui-express": "^4.1.6",
+    "cross-env": "^10.1.0",
     "express": "^4.19.2",
     "jose": "^6.2.10",
     "js-yaml": "^4.1.0",

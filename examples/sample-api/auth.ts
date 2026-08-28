@@ -12,8 +12,14 @@ function unauthorized(res: Response, message: string) {
   res.status(401).json({ error: message });
 }
 
+// Set via the `dev:no-auth`/`start:no-auth` npm scripts to bypass every
+// credential check below — handy for exercising the UI without wiring up
+// any of the demo auth flows first.
+const NO_AUTH = process.env.ENLACE_EXAMPLE_NO_AUTH === '1';
+
 /** bearerAuth: a static shared token, no issuer behind it to verify against — presence-checked only, matching openapi.json's "any bearer token is accepted" description. */
 export function requireBearer(req: Request, res: Response, next: NextFunction) {
+  if (NO_AUTH) return next();
   if (!req.header('authorization')?.startsWith('Bearer ')) {
     unauthorized(res, 'Missing Authorization: Bearer <token>');
     return;
@@ -23,6 +29,7 @@ export function requireBearer(req: Request, res: Response, next: NextFunction) {
 
 /** basicAuth: same story as bearer — well-formedness only, not checked against a real user store. */
 export function requireBasic(req: Request, res: Response, next: NextFunction) {
+  if (NO_AUTH) return next();
   if (!req.header('authorization')?.startsWith('Basic ')) {
     unauthorized(res, 'Missing Authorization: Basic <base64>');
     return;
@@ -32,6 +39,7 @@ export function requireBasic(req: Request, res: Response, next: NextFunction) {
 
 /** apiKeyAuth: any non-empty X-API-Key value accepted — same static-secret story as bearer/basic. */
 export function requireApiKey(req: Request, res: Response, next: NextFunction) {
+  if (NO_AUTH) return next();
   if (!req.header('x-api-key')) {
     unauthorized(res, 'Missing X-API-Key header');
     return;
@@ -55,6 +63,7 @@ const oauth2Jwks = createRemoteJWKSet(new URL(`${MOCK_OAUTH2_ISSUER_URL}/jwks`))
  * a real one would.
  */
 export async function requireOAuth2Token(req: Request, res: Response, next: NextFunction) {
+  if (NO_AUTH) return next();
   const header = req.header('authorization');
   if (!header?.startsWith('Bearer ')) {
     unauthorized(res, 'Missing Authorization: Bearer <token>');
