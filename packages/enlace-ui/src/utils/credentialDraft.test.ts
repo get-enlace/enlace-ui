@@ -14,6 +14,7 @@ describe('emptyDraft', () => {
       clientId: '',
       clientSecret: '',
       scope: '',
+      clientAuthMethod: 'basic',
     });
     expect(emptyDraft('oauth2_password', 'x')).toEqual({
       name: 'x',
@@ -24,6 +25,7 @@ describe('emptyDraft', () => {
       clientId: '',
       clientSecret: '',
       scope: '',
+      clientAuthMethod: 'basic',
     });
     expect(emptyDraft('popup_login', 'x')).toEqual({ name: 'x', type: 'popup_login', loginUrl: '' });
   });
@@ -53,32 +55,88 @@ describe('isDraftComplete', () => {
 
   it('oauth2_clientCredentials requires tokenUrl, clientId, and clientSecret', () => {
     expect(
-      isDraftComplete({ name: 'n', type: 'oauth2_clientCredentials', tokenUrl: '', clientId: 'x', clientSecret: 'x' })
+      isDraftComplete({
+        name: 'n',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: '',
+        clientId: 'x',
+        clientSecret: 'x',
+        clientAuthMethod: 'basic',
+      })
     ).toBe(false);
     expect(
-      isDraftComplete({ name: 'n', type: 'oauth2_clientCredentials', tokenUrl: 'x', clientId: '', clientSecret: 'x' })
+      isDraftComplete({
+        name: 'n',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: 'x',
+        clientId: '',
+        clientSecret: 'x',
+        clientAuthMethod: 'basic',
+      })
     ).toBe(false);
     expect(
-      isDraftComplete({ name: 'n', type: 'oauth2_clientCredentials', tokenUrl: 'x', clientId: 'x', clientSecret: '' })
+      isDraftComplete({
+        name: 'n',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: 'x',
+        clientId: 'x',
+        clientSecret: '',
+        clientAuthMethod: 'basic',
+      })
     ).toBe(false);
     expect(
-      isDraftComplete({ name: 'n', type: 'oauth2_clientCredentials', tokenUrl: 'x', clientId: 'x', clientSecret: 'x' })
+      isDraftComplete({
+        name: 'n',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: 'x',
+        clientId: 'x',
+        clientSecret: 'x',
+        clientAuthMethod: 'basic',
+      })
     ).toBe(true);
   });
 
   it('oauth2_password requires tokenUrl, username, and password, but not clientId/clientSecret', () => {
-    expect(isDraftComplete({ name: 'n', type: 'oauth2_password', tokenUrl: '', username: 'x', password: 'x' })).toBe(
-      false
-    );
-    expect(isDraftComplete({ name: 'n', type: 'oauth2_password', tokenUrl: 'x', username: '', password: 'x' })).toBe(
-      false
-    );
-    expect(isDraftComplete({ name: 'n', type: 'oauth2_password', tokenUrl: 'x', username: 'x', password: '' })).toBe(
-      false
-    );
-    expect(isDraftComplete({ name: 'n', type: 'oauth2_password', tokenUrl: 'x', username: 'x', password: 'x' })).toBe(
-      true
-    );
+    expect(
+      isDraftComplete({
+        name: 'n',
+        type: 'oauth2_password',
+        tokenUrl: '',
+        username: 'x',
+        password: 'x',
+        clientAuthMethod: 'basic',
+      })
+    ).toBe(false);
+    expect(
+      isDraftComplete({
+        name: 'n',
+        type: 'oauth2_password',
+        tokenUrl: 'x',
+        username: '',
+        password: 'x',
+        clientAuthMethod: 'basic',
+      })
+    ).toBe(false);
+    expect(
+      isDraftComplete({
+        name: 'n',
+        type: 'oauth2_password',
+        tokenUrl: 'x',
+        username: 'x',
+        password: '',
+        clientAuthMethod: 'basic',
+      })
+    ).toBe(false);
+    expect(
+      isDraftComplete({
+        name: 'n',
+        type: 'oauth2_password',
+        tokenUrl: 'x',
+        username: 'x',
+        password: 'x',
+        clientAuthMethod: 'basic',
+      })
+    ).toBe(true);
   });
 
   it('popup_login requires only loginUrl — no secret at all', () => {
@@ -103,8 +161,8 @@ describe('maskedPreview', () => {
       { id: '1', name: 'n', type: 'bearer', token: 'super-secret-token' },
       { id: '2', name: 'n', type: 'basic', username: 'alice', password: 'hunter2-super-secret' },
       { id: '3', name: 'n', type: 'apiKey', paramName: 'X-API-Key', in: 'header', key: 'super-secret-key' },
-      { id: '4', name: 'n', type: 'oauth2_clientCredentials', tokenUrl: 'x', clientId: 'id', clientSecret: 'super-secret-cs' },
-      { id: '5', name: 'n', type: 'oauth2_password', tokenUrl: 'x', username: 'alice', password: 'super-secret-pw' },
+      { id: '4', name: 'n', type: 'oauth2_clientCredentials', tokenUrl: 'x', clientId: 'id', clientSecret: 'super-secret-cs', clientAuthMethod: 'basic' },
+      { id: '5', name: 'n', type: 'oauth2_password', tokenUrl: 'x', username: 'alice', password: 'super-secret-pw', clientAuthMethod: 'basic' },
     ];
 
     for (const credential of credentials) {

@@ -19,9 +19,19 @@ export function emptyDraft(type: CredentialType, name: string): NewCredential {
     case 'apiKey':
       return { name, type, paramName: '', in: 'header', key: '' };
     case 'oauth2_clientCredentials':
-      return { name, type, tokenUrl: '', clientId: '', clientSecret: '', scope: '' };
+      return { name, type, tokenUrl: '', clientId: '', clientSecret: '', scope: '', clientAuthMethod: 'basic' };
     case 'oauth2_password':
-      return { name, type, tokenUrl: '', username: '', password: '', clientId: '', clientSecret: '', scope: '' };
+      return {
+        name,
+        type,
+        tokenUrl: '',
+        username: '',
+        password: '',
+        clientId: '',
+        clientSecret: '',
+        scope: '',
+        clientAuthMethod: 'basic',
+      };
     case 'popup_login':
       return { name, type, loginUrl: '' };
   }

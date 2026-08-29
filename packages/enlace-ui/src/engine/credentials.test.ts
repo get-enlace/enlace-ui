@@ -54,7 +54,7 @@ describe('resolveCredentialInjection', () => {
     expect(await resolveCredentialInjection(credential)).toEqual({ query: { apiKey: 'secret-key' } });
   });
 
-  it('POSTs the client-credentials grant to tokenUrl and returns a Bearer header', async () => {
+  it("POSTs the client-credentials grant with clientAuthMethod 'body' as form params, and returns a Bearer header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 60 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -66,6 +66,7 @@ describe('resolveCredentialInjection', () => {
       clientId: 'client-id',
       clientSecret: 'client-secret',
       scope: 'read write',
+      clientAuthMethod: 'body',
     };
 
     expect(await resolveCredentialInjection(credential)).toEqual({ headers: { Authorization: 'Bearer issued-token' } });
@@ -74,10 +75,37 @@ describe('resolveCredentialInjection', () => {
     expect(url).toBe('http://auth.test/token');
     expect(init.method).toBe('POST');
     expect(init.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+    expect(init.headers.Authorization).toBeUndefined();
     const body = new URLSearchParams(init.body);
     expect(body.get('grant_type')).toBe('client_credentials');
     expect(body.get('client_id')).toBe('client-id');
     expect(body.get('client_secret')).toBe('client-secret');
+    expect(body.get('scope')).toBe('read write');
+  });
+
+  it("POSTs the client-credentials grant with clientAuthMethod 'basic' as an Authorization header, omitting client_id/client_secret from the body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 60 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      scope: 'read write',
+      clientAuthMethod: 'basic',
+    };
+
+    expect(await resolveCredentialInjection(credential)).toEqual({ headers: { Authorization: 'Bearer issued-token' } });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers.Authorization).toBe(`Basic ${btoa('client-id:client-secret')}`);
+    const body = new URLSearchParams(init.body);
+    expect(body.get('grant_type')).toBe('client_credentials');
+    expect(body.has('client_id')).toBe(false);
+    expect(body.has('client_secret')).toBe(false);
     expect(body.get('scope')).toBe('read write');
   });
 
@@ -92,6 +120,7 @@ describe('resolveCredentialInjection', () => {
       tokenUrl: 'http://auth.test/token',
       clientId: 'client-id',
       clientSecret: 'client-secret',
+      clientAuthMethod: 'body',
     };
 
     await resolveCredentialInjection(credential);
@@ -111,6 +140,7 @@ describe('resolveCredentialInjection', () => {
       tokenUrl: 'http://auth.test/token',
       clientId: 'client-id',
       clientSecret: 'client-secret',
+      clientAuthMethod: 'body',
     };
 
     // expires_in: 10s is inside the 30s expiry buffer, so every call should refetch.
@@ -131,6 +161,7 @@ describe('resolveCredentialInjection', () => {
       tokenUrl: 'http://auth.test/token',
       clientId: 'client-id',
       clientSecret: 'client-secret',
+      clientAuthMethod: 'body',
     };
 
     await expect(resolveCredentialInjection(credential)).rejects.toThrow(/failed with status 401/);
@@ -147,12 +178,13 @@ describe('resolveCredentialInjection', () => {
       tokenUrl: 'http://auth.test/token',
       clientId: 'client-id',
       clientSecret: 'client-secret',
+      clientAuthMethod: 'body',
     };
 
     await expect(resolveCredentialInjection(credential)).rejects.toThrow(/had no access_token/);
   });
 
-  it('POSTs the password grant to tokenUrl, including optional client_id/client_secret/scope when present', async () => {
+  it("POSTs the password grant to tokenUrl with clientAuthMethod 'body', including optional client_id/client_secret/scope when present", async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 60 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -166,12 +198,14 @@ describe('resolveCredentialInjection', () => {
       clientId: 'client-id',
       clientSecret: 'client-secret',
       scope: 'read write',
+      clientAuthMethod: 'body',
     };
 
     expect(await resolveCredentialInjection(credential)).toEqual({ headers: { Authorization: 'Bearer issued-token' } });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://auth.test/token');
+    expect(init.headers.Authorization).toBeUndefined();
     const body = new URLSearchParams(init.body);
     expect(body.get('grant_type')).toBe('password');
     expect(body.get('username')).toBe('alice');
@@ -179,6 +213,34 @@ describe('resolveCredentialInjection', () => {
     expect(body.get('client_id')).toBe('client-id');
     expect(body.get('client_secret')).toBe('client-secret');
     expect(body.get('scope')).toBe('read write');
+  });
+
+  it("POSTs the password grant with clientAuthMethod 'basic' as an Authorization header, omitting client_id/client_secret from the body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 60 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_password',
+      tokenUrl: 'http://auth.test/token',
+      username: 'alice',
+      password: 'hunter2',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      clientAuthMethod: 'basic',
+    };
+
+    expect(await resolveCredentialInjection(credential)).toEqual({ headers: { Authorization: 'Bearer issued-token' } });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers.Authorization).toBe(`Basic ${btoa('client-id:client-secret')}`);
+    const body = new URLSearchParams(init.body);
+    expect(body.get('grant_type')).toBe('password');
+    expect(body.get('username')).toBe('alice');
+    expect(body.get('password')).toBe('hunter2');
+    expect(body.has('client_id')).toBe(false);
+    expect(body.has('client_secret')).toBe(false);
   });
 
   it('omits client_id/client_secret/scope from the password-grant body when not provided (public-client token endpoints)', async () => {
@@ -192,6 +254,7 @@ describe('resolveCredentialInjection', () => {
       tokenUrl: 'http://auth.test/token',
       username: 'alice',
       password: 'hunter2',
+      clientAuthMethod: 'body',
     };
 
     await resolveCredentialInjection(credential);
@@ -214,6 +277,7 @@ describe('resolveCredentialInjection', () => {
       tokenUrl: 'http://auth.test/token',
       username: 'alice',
       password: 'hunter2',
+      clientAuthMethod: 'body',
     };
 
     await resolveCredentialInjection(credential);

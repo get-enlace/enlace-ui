@@ -83,6 +83,7 @@ function toCredentialTemplate(schemeName: string, scheme: any): NewCredential | 
         clientId: '',
         clientSecret: '',
         scope: scopeNames(flows.clientCredentials.scopes),
+        clientAuthMethod: 'basic',
       });
     }
 
@@ -96,6 +97,7 @@ function toCredentialTemplate(schemeName: string, scheme: any): NewCredential | 
         clientId: '',
         clientSecret: '',
         scope: scopeNames(flows.password.scopes),
+        clientAuthMethod: 'basic',
       });
     }
 

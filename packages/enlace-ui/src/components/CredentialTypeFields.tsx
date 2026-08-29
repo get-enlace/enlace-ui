@@ -117,6 +117,20 @@ export function OAuth2ClientCredentialsFields({ draft, setDraft }: FieldsProps<O
         />
       </label>
       <label className="credentials-panel__field">
+        Client auth method
+        <select
+          value={draft.clientAuthMethod}
+          onChange={(e) => setDraft({ ...draft, clientAuthMethod: e.target.value as 'basic' | 'body' })}
+        >
+          <option value="basic">HTTP Basic header (RFC 6749 client_secret_basic)</option>
+          <option value="body">POST body params (client_secret_post)</option>
+        </select>
+      </label>
+      <p className="credentials-panel__hint">
+        How clientId/clientSecret are sent on the token request itself. Some identity servers require Basic and reject body params; pick Basic unless your token endpoint specifically
+        wants the older body-param style.
+      </p>
+      <label className="credentials-panel__field">
         Scope (optional)
         <input
           placeholder="scope"
@@ -180,6 +194,20 @@ export function OAuth2PasswordFields({ draft, setDraft }: FieldsProps<OAuth2Pass
           onChange={(e) => setDraft({ ...draft, clientSecret: e.target.value })}
         />
       </label>
+      <label className="credentials-panel__field">
+        Client auth method
+        <select
+          value={draft.clientAuthMethod}
+          onChange={(e) => setDraft({ ...draft, clientAuthMethod: e.target.value as 'basic' | 'body' })}
+        >
+          <option value="basic">HTTP Basic header (RFC 6749 client_secret_basic)</option>
+          <option value="body">POST body params (client_secret_post)</option>
+        </select>
+      </label>
+      <p className="credentials-panel__hint">
+        Only applies if client ID/secret above are filled in — a public client with neither has nothing to send
+        either way.
+      </p>
       <label className="credentials-panel__field">
         Scope (optional)
         <input
