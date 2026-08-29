@@ -103,8 +103,27 @@ Workflow {
   connections: WorkflowConnection[]
 }
 
+// Versioned JSON stored in a `.enlace` file. V1 exports one workflow but
+// uses an array so collections can hold multiple workflows later. Credentials
+// are collection-level so workflow node references keep resolving. Future
+// environments belong beside workflows/credentials, not inside Workflow.
+EnlaceCollection {
+  format: "enlace-collection"
+  version: 1
+  name: string
+  exportedAt: string
+  secrets: "stripped" | "included"
+  credentials: CredentialStub[] | Credential[]
+  workflows: [{
+    id, name
+    specHint: { title?, version?, operationIds }
+    nodes, connections, nodePositions
+  }]
+}
+
 // A discriminated union on `type` — each variant carries only the fields
-// that type needs. All held in browser memory only, never persisted.
+// that type needs. Held in browser memory unless the user explicitly chooses
+// a warned, full-credential `.enlace` export; stripped export remains default.
 // `fromSecurityScheme?` on every variant records the spec's own
 // `components.securitySchemes` key when the credential was configured
 // from what the spec declares (see engine/securitySchemes.ts) — purely
@@ -167,7 +186,7 @@ Built with React, React Flow, and Zustand.
 
 ## 7. Security Notes
 
-- Credentials are held in browser memory only for the session — never written to disk or logs by the UI itself.
+- Credentials are held in browser memory by default and never written to logs. A normal `.enlace` export includes credential configuration but strips authenticating values. The export dialog may include full credentials only after an explicit opt-in and acknowledgement that the resulting file contains usable secrets; full secrets are never written to `localStorage` or adapter persistence.
 - The debug pane redacts the `Authorization` header value, and (for an apiKey credential sent `in: "query"`, where the secret lives in the URL itself rather than a header) the named query param in the displayed URL — shows that a credential was sent without exposing the raw value.
 - CORS is the target API's responsibility, since requests fire directly from the browser — this tool doesn't solve it, and that must be documented clearly wherever it matters.
 - No per-user auth inside the tool; access control is inherited entirely from whatever network perimeter (VPN, internal network, SSO-gated proxy) already protects the host environment.

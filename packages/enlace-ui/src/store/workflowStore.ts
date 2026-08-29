@@ -4,8 +4,10 @@ import { parseOperations } from '../engine/specParser.js';
 import { connectionKey, executeChain } from '../engine/chainExecutor.js';
 import { extractDeclaredCredentials, type DeclaredCredential } from '../engine/securitySchemes.js';
 import { randomId } from '../utils/randomId.js';
+import { hydrateCollection, referencedIncompleteCredentials } from '../utils/workflowDocument.js';
 import type {
   Credential,
+  EnlaceCollection,
   FieldValue,
   NewCredential,
   Operation,
@@ -74,6 +76,8 @@ interface WorkflowState {
   operations: Operation[];
   /** Derived from the loaded spec's `servers[0].url` — null until loadOperations() resolves. */
   baseUrl: string | null;
+  /** `info.title` / `info.version` from the loaded spec — used only as a hint on exported workflow files. */
+  specInfo: { title?: string; version?: string } | null;
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
   /** Canvas layout only — not part of the executed Workflow. */
@@ -171,6 +175,14 @@ interface WorkflowState {
   /** Removes a credential and unsets it from any node still referencing it — same dangling-reference reasoning as removeNode's cleanup of mapped fields. */
   removeCredential: (credentialId: string) => void;
   /**
+   * Replaces the canvas (nodes, connections, positions) and credentials
+   * with the single workflow in a parsed `EnlaceCollection`. Leaves `operations` / `baseUrl` /
+   * `declaredCredentials` / `specInfo` alone — those come from this tab's
+   * spec. Clears `runResult`, debug session state, and selection because
+   * they belong to the discarded graph. A no-op while `isRunning`.
+   */
+  replaceWorkflow: (collection: EnlaceCollection) => void;
+  /**
    * `useBreakpoints: true` (the "Debug" button) honors whatever's currently
    * in `armedBreakpoints`, snapshotting it into this run and setting
    * `activeControl` once `executeChain` hands one back. Omitted/false (the
@@ -185,6 +197,7 @@ interface WorkflowState {
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   operations: [],
   baseUrl: null,
+  specInfo: null,
   nodes: [],
   connections: [],
   nodePositions: {},
@@ -205,9 +218,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       const operations = parseOperations(spec);
       const baseUrl = resolveBaseUrl(spec);
       const declaredCredentials = extractDeclaredCredentials(spec);
+      const info = spec.info ?? {};
+      const specInfo: { title?: string; version?: string } = {};
+      if (typeof info.title === 'string') specInfo.title = info.title;
+      if (typeof info.version === 'string') specInfo.version = info.version;
       set({
         operations,
         baseUrl,
+        specInfo,
         declaredCredentials,
         error: baseUrl
           ? null
@@ -351,9 +369,39 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodes: state.nodes.map((n) => (n.credentialId === credentialId ? { ...n, credentialId: null } : n)),
     })),
 
+  replaceWorkflow: (collection) => {
+    if (isLocked(get())) return;
+    const next = hydrateCollection(collection);
+    set({
+      nodes: next.nodes,
+      connections: next.connections,
+      nodePositions: next.nodePositions,
+      credentials: next.credentials,
+      selectedNodeId: null,
+      runResult: null,
+      stepStatusByNodeId: {},
+      armedBreakpoints: new Set(),
+      previewRequestByNodeId: {},
+      activeControl: null,
+      error: null,
+    });
+  },
+
   run: async (options) => {
     const useBreakpoints = options?.useBreakpoints ?? false;
-    const { nodes, armedBreakpoints } = get();
+    const { nodes, armedBreakpoints, credentials } = get();
+    const incomplete = referencedIncompleteCredentials(nodes, credentials);
+    if (incomplete.length > 0) {
+      const names = incomplete.map((c) => `"${c.name}"`).join(', ');
+      set({
+        error:
+          incomplete.length === 1
+            ? `Credential ${names} needs a secret before this chain can run.`
+            : `Credentials ${names} need a secret before this chain can run.`,
+      });
+      return;
+    }
+
     set({
       isRunning: true,
       error: null,
