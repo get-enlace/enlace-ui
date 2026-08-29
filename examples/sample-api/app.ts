@@ -11,6 +11,7 @@ import { enlace } from './enlace.js';
 import { customersRouter } from './customers.js';
 import { productsRouter } from './products.js';
 import { ordersRouter } from './orders.js';
+import { handleDemoLogin } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const specPath = path.join(__dirname, 'openapi.json');
@@ -28,6 +29,9 @@ const sampleApiRouter = Router();
 sampleApiRouter.use(customersRouter);
 sampleApiRouter.use(productsRouter);
 sampleApiRouter.use(ordersRouter);
+// Not a resource, so deliberately not part of any *Router above — backs
+// cookieAuth's demo login (see auth.ts's handleDemoLogin/requireCookie).
+sampleApiRouter.get('/auth/demo-login', handleDemoLogin);
 
 export function createApp() {
   const app = express();

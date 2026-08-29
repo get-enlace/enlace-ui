@@ -297,7 +297,7 @@ describe('executeChain', () => {
     expect(url).toBe('http://example.test/noop?apiKey=secret-key');
   });
 
-  it('sets credentials: "include" on the actual fetch() call for a popup_login/cookie credential, with no headers/query injected', async () => {
+  it('sets credentials: "include" on the actual fetch() call for a cookie credential, with no headers/query injected', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -313,7 +313,7 @@ describe('executeChain', () => {
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
-        { id: 'cred-1', name: 'Test', type: 'popup_login', loginUrl: 'https://app.test/auth/github' },
+        { id: 'cred-1', name: 'Test', type: 'cookie', loginUrl: 'https://app.test/auth/github' },
       ],
     ]);
 

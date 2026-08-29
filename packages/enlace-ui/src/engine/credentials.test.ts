@@ -286,11 +286,11 @@ describe('resolveCredentialInjection', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('resolves popup_login to credentials: "include", with no headers or query params at all', async () => {
+  it('resolves cookie to credentials: "include", with no headers or query params at all', async () => {
     const credential: Credential = {
       id: 'c1',
       name: 'Test',
-      type: 'popup_login',
+      type: 'cookie',
       loginUrl: 'https://app.example.com/auth/github',
     };
     expect(await resolveCredentialInjection(credential)).toEqual({ credentials: 'include' });

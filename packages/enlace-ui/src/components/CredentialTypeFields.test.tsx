@@ -8,7 +8,7 @@ import {
   ApiKeyFields,
   OAuth2ClientCredentialsFields,
   OAuth2PasswordFields,
-  PopupLoginFields,
+  CookieFields,
 } from './CredentialTypeFields.js';
 import type { NewCredential } from '../types.js';
 
@@ -204,17 +204,17 @@ describe('OAuth2PasswordFields', () => {
   });
 });
 
-describe('PopupLoginFields', () => {
+describe('CookieFields', () => {
   function Harness() {
-    const [draft, setDraft] = useState<NewCredential>({ name: '', type: 'popup_login', loginUrl: '' });
-    return <PopupLoginFields draft={draft as Extract<NewCredential, { type: 'popup_login' }>} setDraft={setDraft} />;
+    const [draft, setDraft] = useState<NewCredential>({ name: '', type: 'cookie', loginUrl: '' });
+    return <CookieFields draft={draft as Extract<NewCredential, { type: 'cookie' }>} setDraft={setDraft} />;
   }
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('renders a Login URL input that updates the draft', async () => {
+  it('renders a Login page URL input that updates the draft', async () => {
     const user = userEvent.setup();
     render(<Harness />);
 
@@ -223,27 +223,29 @@ describe('PopupLoginFields', () => {
     expect(input).toHaveValue('https://app.test/auth/github');
   });
 
-  it('explains this credential injects nothing itself and is a login trigger, with no secret to enter at all', () => {
+  it('explains this credential injects nothing itself, with no secret to enter at all', () => {
     render(<Harness />);
     expect(screen.getByText(/doesn't add anything to your requests itself/)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/token/)).not.toBeInTheDocument();
   });
 
-  it('"Log in…" is disabled until a login URL is entered, then opens it in a popup', async () => {
+  it('shows no "Open login page" link when loginUrl is empty', () => {
+    render(<Harness />);
+    expect(screen.queryByRole('button', { name: /Open login page/ })).not.toBeInTheDocument();
+  });
+
+  it('"Open login page" appears once a URL is entered, and opens it in a new tab with no popup sizing', async () => {
     const user = userEvent.setup();
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(<Harness />);
-
-    const loginButton = screen.getByRole('button', { name: 'Log in…' });
-    expect(loginButton).toBeDisabled();
 
     await user.type(
       screen.getByPlaceholderText('https://your-app.example.com/auth/login'),
       'https://app.test/auth/github'
     );
-    expect(loginButton).toBeEnabled();
+    const loginButton = screen.getByRole('button', { name: /Open login page/ });
 
     await user.click(loginButton);
-    expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank', expect.any(String));
+    expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank');
   });
 });

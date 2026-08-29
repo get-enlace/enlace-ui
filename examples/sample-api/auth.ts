@@ -3,7 +3,9 @@
 // Credentials drawer supports, deliberately spread one-per-operation (see
 // customers.ts/products.ts/orders.ts and openapi.json's per-operation
 // `security`) so trying each from the UI is a real, enforced round-trip —
-// see README's "Try the credentials demo".
+// see README's "Try the credentials demo". requireCookie is the odd one
+// out: unlike every other middleware here, its credential isn't a value
+// sent on the request at all — see its own comment below.
 import type { NextFunction, Request, Response } from 'express';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { MOCK_OAUTH2_ISSUER_URL } from './mockOAuth2.js';
@@ -45,6 +47,40 @@ export function requireApiKey(req: Request, res: Response, next: NextFunction) {
     return;
   }
   next();
+}
+
+// Backs cookieAuth in openapi.json — the one credential type that isn't a
+// header/query value at all. GET /auth/demo-login below sets this cookie
+// directly (no redirect, no real login page needed) so the whole round
+// trip is demoable against a bare API, unlike a real cookie-session login
+// which typically needs a real frontend to redirect into.
+export const DEMO_SESSION_COOKIE_NAME = 'enlace_demo_session';
+
+/** cookieAuth: presence-checked only (same "demo-only" story as bearer/basic/apiKey) — proves the session cookie set by GET /auth/demo-login actually rides along on a later request. */
+export function requireCookie(req: Request, res: Response, next: NextFunction) {
+  if (NO_AUTH) return next();
+  const cookieHeader = req.header('cookie') ?? '';
+  const hasSessionCookie = cookieHeader.split(';').some((c) => c.trim().startsWith(`${DEMO_SESSION_COOKIE_NAME}=`));
+  if (!hasSessionCookie) {
+    unauthorized(res, `Missing ${DEMO_SESSION_COOKIE_NAME} cookie — visit GET /auth/demo-login first`);
+    return;
+  }
+  next();
+}
+
+/**
+ * Sets the demo session cookie directly and returns a small static
+ * confirmation page — no redirect, no real UI. This is the whole "login"
+ * a Cookie credential's optional Login page URL points at: Enlace never
+ * drives this, the user just opens it in a new tab (or visits it
+ * directly), and the cookie is set as a side effect, exactly like a real
+ * login would set one — just without the real login in between.
+ */
+export function handleDemoLogin(_req: Request, res: Response) {
+  res.cookie(DEMO_SESSION_COOKIE_NAME, 'demo', { httpOnly: true, sameSite: 'lax' });
+  res.type('html').send(
+    '<!doctype html><html><body style="font-family: sans-serif; padding: 2rem;"><h3>Logged in</h3><p>You can close this tab and return to Enlace.</p></body></html>'
+  );
 }
 
 // Lazy + shared across every route using it — createRemoteJWKSet doesn't

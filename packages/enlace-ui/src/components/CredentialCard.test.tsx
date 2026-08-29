@@ -71,16 +71,16 @@ describe('CredentialCard', () => {
     expect(onDelete).toHaveBeenCalledWith('c1');
   });
 
-  it('shows no "Log in" button for non-popup_login credentials', () => {
+  it('shows no "Open login page" button for non-cookie credentials', () => {
     render(<CredentialCard credential={bearerCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
-    expect(screen.queryByRole('button', { name: /Log in/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open login page/ })).not.toBeInTheDocument();
   });
 
-  describe('popup_login', () => {
-    const popupCredential: Credential = {
+  describe('cookie', () => {
+    const cookieCredential: Credential = {
       id: 'c1',
       name: 'github-login',
-      type: 'popup_login',
+      type: 'cookie',
       loginUrl: 'https://app.test/auth/github',
     };
 
@@ -89,17 +89,23 @@ describe('CredentialCard', () => {
     });
 
     it('shows a masked-preview note that there is no stored secret', () => {
-      render(<CredentialCard credential={popupCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
-      expect(screen.getByText(/no stored secret/)).toBeInTheDocument();
+      render(<CredentialCard credential={cookieCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
+      expect(screen.getByText(/No stored secret/)).toBeInTheDocument();
     });
 
-    it('the "Log in" button opens the credential\'s loginUrl in a popup', async () => {
+    it('the "Open login page" button opens the credential\'s loginUrl in a new tab, plainly (no popup sizing)', async () => {
       const user = userEvent.setup();
       const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
-      render(<CredentialCard credential={popupCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
+      render(<CredentialCard credential={cookieCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
 
-      await user.click(screen.getByRole('button', { name: 'Log in for github-login' }));
-      expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank', expect.any(String));
+      await user.click(screen.getByRole('button', { name: 'Open login page for github-login' }));
+      expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank');
+    });
+
+    it('hides the button entirely when loginUrl is empty', () => {
+      const noUrlCredential: Credential = { id: 'c2', name: 'no-url', type: 'cookie', loginUrl: '' };
+      render(<CredentialCard credential={noUrlCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
+      expect(screen.queryByRole('button', { name: /Open login page/ })).not.toBeInTheDocument();
     });
   });
 });

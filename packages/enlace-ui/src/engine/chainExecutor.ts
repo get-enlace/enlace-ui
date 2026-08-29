@@ -164,10 +164,9 @@ export async function buildRequest(
 
   // Runs entirely client-side, same as the request itself: the secret
   // never leaves the tab except as whatever resolveCredentialInjection
-  // hands back (a header, a query param, or — uniquely for
-  // popup_login/cookie — a `credentials: 'include'` fetch option instead
-  // of any injected value at all) — sent straight to the target API, not
-  // routed through any adapter.
+  // hands back (a header, a query param, or — uniquely for cookie — a
+  // `credentials: 'include'` fetch option instead of any injected value at
+  // all) — sent straight to the target API, not routed through any adapter.
   const redactQueryParams: string[] = [];
   let credentials: 'include' | undefined;
   if (node.credentialId) {
@@ -246,7 +245,7 @@ async function runNode(
     // Browser fetch() — same interface as Node's, no adapter round-trip:
     // this hits the target API directly from the tab. `credentials` is
     // left undefined (fetch()'s own default, 'same-origin') unless a
-    // popup_login/cookie credential set it to 'include' — most nodes have
+    // cookie credential set it to 'include' — most nodes have
     // no reason to send cookies at all, and 'include' has real
     // consequences (the target's CORS response must explicitly allow
     // credentialed requests from this origin, not just any).

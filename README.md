@@ -83,7 +83,9 @@ credential type, genuinely enforced server-side — not decoration. `npm
 start` also boots a local mock OAuth2 issuer
 ([`oauth2-mock-server`](https://github.com/axa-group/oauth2-mock-server),
 on port 4001) so the two OAuth2 types are a real signed-JWT round trip, not
-a stub:
+a stub. The Cookie type isn't backed by the mock issuer — it's a plain
+`GET /auth/demo-login` endpoint that sets a session cookie directly, no
+redirect required:
 
 | Operation | Requires | Story |
 |---|---|---|
@@ -92,13 +94,14 @@ a stub:
 | `POST /orders` | API key (header) | a POS/kiosk integration |
 | `POST`/`PATCH`/`DELETE /products/{id}` | OAuth2 (password grant) | **only an admin**, logging in with their own username/password, can manage the catalog |
 | `DELETE /orders/{id}` | OAuth2 (client credentials) | an automated cleanup job — service-to-service, no human login |
+| `PATCH /orders/{id}` | Cookie (session) | a support agent, already logged into the internal support portal in another browser tab, updates an order's status |
 
 The mock issuer accepts *any* client id/secret or username/password — it's
 not really authenticating anyone, just proving the actual protocol
 round-trip (POST for a token, verify its signature, attach it) works.
 
 1. Continue from the parallel-execution demo above (or start fresh — either works).
-2. Open the **Credentials** drawer (topbar). Under "Declared in spec" you'll see all five schemes read straight from `openapi.json`, tokenUrl and all — click "Configure" on each and just fill in the missing name/secret field(s) (any value works).
+2. Open the **Credentials** drawer (topbar). Under "Declared in spec" you'll see all six schemes read straight from `openapi.json`, tokenUrl and all — click "Configure" on each and just fill in the missing name/secret field(s) (any value works). `cookieAuth` is the exception: it needs nothing but a name to save. Its optional Login page URL field is just a bookmark — set it to `http://localhost:4000/auth/demo-login` and use "Open login page ↗" (on the form, and again later on the saved card) to actually set the session cookie before running the `PATCH /orders/{id}` node.
 3. Attach each credential to the matching node via its inspector's "Credential" dropdown, then **Run**.
 4. To see the enforcement actually bite: leave one node's credential unset (or attach the wrong type) and Run again — that step comes back red with a 401, while the debug pane still redacts whatever credential *was* sent on the others.
 

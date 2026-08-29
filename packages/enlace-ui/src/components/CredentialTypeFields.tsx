@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { openLoginPopup } from '../utils/credentialDraft.js';
+import { openLoginUrl } from '../utils/credentialDraft.js';
 import type { NewCredential } from '../types.js';
 
 interface FieldsProps<T> {
@@ -272,51 +272,49 @@ export function OAuth2PasswordFields({ draft, setDraft }: FieldsProps<OAuth2Pass
   );
 }
 
-type PopupLoginDraft = Extract<NewCredential, { type: 'popup_login' }>;
+type CookieDraft = Extract<NewCredential, { type: 'cookie' }>;
 
 /**
  * Deliberately scoped to *only* the server-sets-a-session-cookie case —
- * see PopupLoginCredential's own comment in types.ts for the "gives me a
+ * see CookieCredential's own comment in types.ts for the "gives me a
  * token to paste in" variant that was designed, built, and dropped: the
- * token can only be obtained via the very "Log in" button on this same
- * form, which nothing communicated, leaving a required field the user had
- * no way to fill in on their first attempt.
+ * token could only be obtained by clicking a login-triggering button,
+ * which nothing communicated, leaving a required field the user had no
+ * way to fill in on their first attempt.
  */
-export function PopupLoginFields({ draft, setDraft }: FieldsProps<PopupLoginDraft>) {
+export function CookieFields({ draft, setDraft }: FieldsProps<CookieDraft>) {
   return (
     <>
-      {/* Third-party-IdP-driven login (GitHub, Google, SSO, MFA — anything
-          requiring a human to click through pages on another origin) can never
-          be completed by a fetch()-driven node: CORS, consent screens, and
-          registered-redirect-URI mismatches make that impossible. The popup
-          below is the whole mechanism — Enlace never drives or inspects that
-          navigation, and never sees the target's cookie either; the browser's
-          own cookie jar does that part invisibly, once chainExecutor.ts sets
-          `credentials: 'include'` on the actual request. */}
+      {/* The user logs into the target in their own browser, in any tab,
+          entirely independent of Enlace — this credential doesn't perform
+          or trigger that login, it only tells chainExecutor.ts to set
+          `credentials: 'include'` so requests carry whatever cookie that
+          independent login already set. */}
       <label className="credentials-panel__field">
-        Login URL
+        Login page URL (optional)
         <input
           placeholder="https://your-app.example.com/auth/login"
-          value={draft.loginUrl}
+          value={draft.loginUrl ?? ''}
           onChange={(e) => setDraft({ ...draft, loginUrl: e.target.value })}
         />
       </label>
-      <button
-        type="button"
-        className="btn btn--secondary credentials-panel__login-btn"
-        disabled={!draft.loginUrl}
-        onClick={() => openLoginPopup(draft.loginUrl)}
-      >
-        Log in…
-      </button>
+      {draft.loginUrl && (
+        <button
+          type="button"
+          className="btn btn--secondary credentials-panel__login-btn"
+          onClick={() => openLoginUrl(draft.loginUrl!)}
+        >
+          Open login page ↗
+        </button>
+      )}
 
       <p className="credentials-panel__hint">
-        This credential doesn't add anything to your requests itself — no header, no query param. It's a trigger:
-        click "Log in…" above to complete a real login for the target (e.g. a GitHub/Google/SSO-style login backed
-        by your app's own session) in a popup Enlace never sees. Once you're logged in, this browser already holds
-        the session cookie, and future requests carry it automatically — as long as the target's server allows
-        credentialed requests from this origin; that's the target's own CORS setting, not something Enlace can
-        change.
+        This credential doesn't add anything to your requests itself — no header, no query param. Log into the
+        target yourself, in any tab of this browser, however that target's own login works — Enlace has no part in
+        it. Once you're logged in, this browser already holds the session cookie, and requests using this credential
+        carry it automatically, as long as the target's server allows credentialed requests from this origin (that's
+        the target's own CORS setting, not something Enlace can change). The URL above, if you set one, is just a
+        convenience link to jump to the login page — handy again later if the session expires.
       </p>
     </>
   );

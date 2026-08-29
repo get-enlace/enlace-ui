@@ -57,13 +57,13 @@ describe('extractDeclaredCredentials', () => {
     expect(entry.template).toMatchObject({ type: 'apiKey', paramName: 'api_key', in: 'query' });
   });
 
-  it('maps an apiKey/cookie scheme to a popup_login template, with loginUrl left blank for the user to supply', () => {
+  it('maps an apiKey/cookie scheme to a cookie template, with loginUrl left blank for the user to supply', () => {
     const spec = specWithSchemes({ cookieAuth: { type: 'apiKey', in: 'cookie', name: 'session' } });
     const [entry] = extractDeclaredCredentials(spec);
 
     expect(entry.template).toEqual({
       name: 'cookieAuth',
-      type: 'popup_login',
+      type: 'cookie',
       loginUrl: '',
       fromSecurityScheme: 'cookieAuth',
     });
