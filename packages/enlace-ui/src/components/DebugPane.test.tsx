@@ -13,6 +13,7 @@ function makeStep(overrides: Partial<RunStep> = {}): RunStep {
       url: 'http://localhost:4000/pet',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer super-secret-token' },
       body: { name: 'Rex' },
+      credentials: 'omit',
     },
     response: { status: 200, headers: {}, body: { id: 1, name: 'Rex' } },
     timestampStart: '2026-01-01T00:00:00.000Z',
@@ -78,6 +79,7 @@ describe('DebugPane', () => {
               url: 'http://localhost:4000/pet?apiKey=super-secret-key&limit=10',
               headers: { 'Content-Type': 'application/json' },
               redactQueryParams: ['apiKey'],
+              credentials: 'omit',
             },
           }),
         ],
@@ -203,7 +205,12 @@ describe('DebugPane', () => {
         armedBreakpoints: new Set(['x->a']),
         stepStatusByNodeId: { a: 'paused' },
         previewRequestByNodeId: {
-          a: { method: 'GET', url: 'http://localhost:4000/a', headers: { 'Content-Type': 'application/json' } },
+          a: {
+            method: 'GET',
+            url: 'http://localhost:4000/a',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'omit',
+          },
         },
       });
       render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
@@ -232,7 +239,7 @@ describe('DebugPane', () => {
         armedBreakpoints: new Set(['x->a']),
         stepStatusByNodeId: { a: 'paused' },
         previewRequestByNodeId: {
-          a: { method: 'GET', url: 'http://localhost:4000/a', headers: {} },
+          a: { method: 'GET', url: 'http://localhost:4000/a', headers: {}, credentials: 'omit' },
         },
         stepNode,
       });

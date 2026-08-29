@@ -329,7 +329,7 @@ describe('executeChain', () => {
     expect(init.headers.Authorization).toBeUndefined();
   });
 
-  it('leaves fetch()\'s credentials option unset (its own default) for a node with no credential, or a non-cookie one', async () => {
+  it('explicitly sends credentials: "omit" (not left for fetch()\'s own "same-origin" default) for a node with no credential', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -351,7 +351,42 @@ describe('executeChain', () => {
     );
 
     const [, init] = fetchMock.mock.calls[0];
-    expect(init.credentials).toBeUndefined();
+    expect(init.credentials).toBe('omit');
+  });
+
+  // Regression test: leaving `credentials` undefined instead of explicitly
+  // 'omit' used to defer to fetch()'s own default, 'same-origin' — which
+  // sends along any cookie the browser already holds for that origin
+  // regardless of whether a Cookie credential is attached at all. That's
+  // exactly backwards from "no Cookie credential attached means no
+  // cookies, ever" and silently defeats credential-per-node scoping for
+  // any target sharing an origin with wherever Enlace is served from
+  // (the common case for an adapter serving its own API, not an edge
+  // case).
+  it('sends credentials: "omit" for a non-cookie credential too, not just no credential at all', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const credentialsById = new Map<string, Credential>([['cred-1', { id: 'cred-1', name: 'Test', type: 'bearer', token: 'secret' }]]);
+
+    await executeChain(
+      { nodes: [a], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.credentials).toBe('omit');
   });
 
   it('fetches an oauth2 password-grant token and sends it as a Bearer header', async () => {
