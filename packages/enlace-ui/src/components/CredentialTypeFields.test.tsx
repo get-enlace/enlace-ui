@@ -28,6 +28,23 @@ describe('BearerFields', () => {
     await user.type(input, 'secret-token');
     expect(input).toHaveValue('secret-token');
   });
+
+  it('toggles the token input between masked and revealed via the eye button, without touching the draft value', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    const input = screen.getByPlaceholderText('bearer token');
+    await user.type(input, 'secret-token');
+    expect(input).toHaveAttribute('type', 'password');
+
+    await user.click(screen.getByRole('button', { name: 'Show Token' }));
+    expect(input).toHaveAttribute('type', 'text');
+    expect(input).toHaveValue('secret-token');
+
+    await user.click(screen.getByRole('button', { name: 'Hide Token' }));
+    expect(input).toHaveAttribute('type', 'password');
+    expect(input).toHaveValue('secret-token');
+  });
 });
 
 describe('BasicFields', () => {
@@ -169,6 +186,21 @@ describe('OAuth2PasswordFields', () => {
     expect(screen.getByPlaceholderText('resource owner password')).toHaveValue('hunter2');
     expect(screen.getByText('Client ID (optional)')).toBeInTheDocument();
     expect(screen.getByText('Client secret (optional)')).toBeInTheDocument();
+  });
+
+  it('reveals Password and Client secret independently — toggling one leaves the other masked', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    const passwordInput = screen.getByPlaceholderText('resource owner password');
+    const clientSecretInput = screen.getByPlaceholderText('client secret');
+    expect(passwordInput).toHaveAttribute('type', 'password');
+    expect(clientSecretInput).toHaveAttribute('type', 'password');
+
+    await user.click(screen.getByRole('button', { name: 'Show Password' }));
+
+    expect(passwordInput).toHaveAttribute('type', 'text');
+    expect(clientSecretInput).toHaveAttribute('type', 'password');
   });
 });
 

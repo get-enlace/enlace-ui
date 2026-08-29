@@ -1223,6 +1223,37 @@ body {
   color: var(--color-text);
 }
 
+/* Wraps a SecretField's input + reveal toggle so the button sits inside
+ * the same visual field as the input, not off on its own line. */
+.credentials-panel__secret-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.credentials-panel__secret-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+.credentials-panel__reveal-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-panel-bg);
+  padding: 5px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.credentials-panel__reveal-btn:hover {
+  border-color: var(--color-focus);
+  color: var(--color-text);
+}
+
 .credentials-panel__warning {
   margin: 0;
   padding: 6px 8px;
@@ -1231,6 +1262,21 @@ body {
   font-size: 11px;
   line-height: 1.4;
   color: var(--color-warning);
+}
+
+/* Result of a failed "Verify & Save" attempt (oauth2_* credential types
+ * only) — the thrown resolveCredentialInjection message (bad status,
+ * missing access_token, network failure) surfaced verbatim so the actual
+ * token-endpoint problem is visible right where it happened, not just a
+ * generic "save failed". Nothing was saved when this shows. */
+.credentials-panel__verify-error {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--color-error);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-error);
 }
 
 /* Explanatory, not a warning — no border/accent color, just muted body

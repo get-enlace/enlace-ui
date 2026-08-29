@@ -5,14 +5,31 @@ import { CredentialCard } from './CredentialCard.js';
 import type { Credential } from '../types.js';
 
 const bearerCredential: Credential = { id: 'c1', name: 'staging', type: 'bearer', token: 'super-secret-token' };
+const apiKeyCredential: Credential = {
+  id: 'c2',
+  name: 'kiosk-key',
+  type: 'apiKey',
+  paramName: 'X-API-Key',
+  in: 'header',
+  key: 'super-secret-key',
+};
 
 describe('CredentialCard', () => {
-  it('shows the type badge, name, and masked preview — never the raw secret', () => {
+  it('shows the type badge, name, and a fully redacted preview — never the raw secret', () => {
+    render(<CredentialCard credential={apiKeyCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
+
+    expect(screen.getByText('API key')).toBeInTheDocument();
+    expect(screen.getByText('kiosk-key')).toBeInTheDocument();
+    expect(screen.getByText(/••••••••/)).toHaveTextContent('X-API-Key (header) · ••••••••');
+    expect(screen.queryByText(/super-secret-key/)).not.toBeInTheDocument();
+  });
+
+  it('shows no preview line at all for bearer — nothing non-secret to show beyond the badge/name', () => {
     render(<CredentialCard credential={bearerCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
 
     expect(screen.getByText('Bearer token')).toBeInTheDocument();
     expect(screen.getByText('staging')).toBeInTheDocument();
-    expect(screen.getByText(/••••/)).toHaveTextContent('••••oken');
+    expect(screen.queryByText(/••••/)).not.toBeInTheDocument();
     expect(screen.queryByText('super-secret-token')).not.toBeInTheDocument();
   });
 

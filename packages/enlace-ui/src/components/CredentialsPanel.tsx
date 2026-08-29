@@ -41,11 +41,16 @@ export function CredentialsPanel() {
     setIsAdding(true);
   };
 
-  const saveDraft = () => {
+  // `verifiedId` comes from CredentialForm's oauth2_* "Verify & Save" path
+  // — the id resolveCredentialInjection already cached a token under, so
+  // addCredential saves under that exact id instead of minting a new one
+  // (see workflowStore.ts's addCredential for why that reuse matters).
+  // Every other type calls this with no id, same as before.
+  const saveDraft = (verifiedId?: string) => {
     if (editingId) {
       updateCredential(editingId, draft);
     } else {
-      addCredential(draft);
+      addCredential(draft, verifiedId);
     }
     resetDraft();
   };

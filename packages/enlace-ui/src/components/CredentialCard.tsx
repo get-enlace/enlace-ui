@@ -11,6 +11,11 @@ export interface CredentialCardProps {
 
 /** One saved credential's row in the Credentials drawer — type badge, masked preview, and actions (Log in, for popup_login; Edit; Delete). */
 export function CredentialCard({ credential, usageCount, onEdit, onDelete }: CredentialCardProps) {
+  // '' for bearer/oauth2_clientCredentials — see maskedPreview's own
+  // comment for why those two have no non-secret detail worth a second
+  // line at all, rather than showing an empty one.
+  const preview = maskedPreview(credential);
+
   return (
     <li className={`credential-card credential-card--${credential.type}`}>
       <div className="credential-card__header">
@@ -51,7 +56,7 @@ export function CredentialCard({ credential, usageCount, onEdit, onDelete }: Cre
         </div>
       </div>
       <div className="credential-card__name">{credential.name}</div>
-      <div className="credential-card__preview">{maskedPreview(credential)}</div>
+      {preview && <div className="credential-card__preview">{preview}</div>}
       {credential.fromSecurityScheme && (
         <div className="credential-card__source">
           From spec: <code>{credential.fromSecurityScheme}</code>
