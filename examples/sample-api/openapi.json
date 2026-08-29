@@ -305,6 +305,7 @@
       "patch": {
         "summary": "Update an order",
         "operationId": "updateOrder",
+        "security": [{ "cookieAuth": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "requestBody": {
           "content": {
@@ -389,6 +390,12 @@
             "scopes": { "products:write": "Create, update, and delete products" }
           }
         }
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "enlace_demo_session",
+        "description": "Required on PATCH /orders/{id}. Demo-only: log in first at GET /auth/demo-login (open it as the credential's optional Login page URL) — it sets this cookie directly, no redirect. Since Enlace's canvas and this API share an origin, the browser carries the cookie automatically afterward."
       }
     }
   }

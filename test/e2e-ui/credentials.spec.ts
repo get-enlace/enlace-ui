@@ -15,10 +15,17 @@ test.describe('Credentials drawer', () => {
     await page.getByRole('button', { name: '0 credentials' }).click();
 
     await expect(page.getByRole('heading', { name: 'Declared in spec' })).toBeVisible();
-    for (const schemeName of ['basicAuth', 'bearerAuth', 'apiKeyAuth', 'oauth2ClientCreds', 'oauth2Password']) {
+    for (const schemeName of [
+      'basicAuth',
+      'bearerAuth',
+      'apiKeyAuth',
+      'oauth2ClientCreds',
+      'oauth2Password',
+      'cookieAuth',
+    ]) {
       await expect(page.locator('.declared-credential__name', { hasText: schemeName })).toBeVisible();
     }
-    await expect(page.getByRole('button', { name: 'Configure' })).toHaveCount(5);
+    await expect(page.getByRole('button', { name: 'Configure' })).toHaveCount(6);
   });
 
   test('configuring a declared credential pre-fills the form, saves it, and removes it from the declared list', async ({
@@ -43,7 +50,23 @@ test.describe('Credentials drawer', () => {
 
     // bearerAuth is now configured — no longer offered in the declared list.
     await expect(page.locator('.declared-credential', { hasText: 'bearerAuth' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Configure' })).toHaveCount(4);
+    await expect(page.getByRole('button', { name: 'Configure' })).toHaveCount(5);
+  });
+
+  test('configuring the declared cookieAuth credential needs only a name — Save is enabled immediately, no secret required', async ({
+    page,
+  }) => {
+    await page.getByRole('button', { name: '0 credentials' }).click();
+    await page.locator('.declared-credential', { hasText: 'cookieAuth' }).getByRole('button', { name: 'Configure' }).click();
+
+    await expect(page.getByLabel('Type')).toHaveValue('cookie');
+    // Unlike every other declared scheme, no secret field exists at all —
+    // Save is enabled the instant the pre-filled name is present.
+    await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('button', { name: '1 credential' })).toBeVisible();
+    await expect(page.locator('.credential-card', { hasText: 'cookieAuth' })).toBeVisible();
   });
 
   test('deleting a configured credential brings it back into the declared list', async ({ page }) => {

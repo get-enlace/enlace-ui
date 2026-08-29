@@ -32,12 +32,12 @@
   --color-focus: #61affe;
   --color-warning: #fca130;
 
-  /* popup_login's own accent — every method color above is already
+  /* cookie's own accent — every method color above is already
    * claimed by another credential type (see .credential-badge--* below),
    * and reusing --color-delete/--color-error here would read as "this
    * credential type is an error state", which it isn't. */
-  --color-popup: #a78bfa;
-  --color-popup-bg: rgba(167, 139, 250, 0.14);
+  --color-cookie: #a78bfa;
+  --color-cookie-bg: rgba(167, 139, 250, 0.14);
 }
 
 * {
@@ -938,8 +938,8 @@ body {
   border-left-color: var(--color-text-muted);
 }
 
-.credential-card--popup_login {
-  border-left-color: var(--color-popup);
+.credential-card--cookie {
+  border-left-color: var(--color-cookie);
 }
 
 .credential-card__header {
@@ -986,9 +986,9 @@ body {
   color: var(--color-text-muted);
 }
 
-.credential-badge--popup_login {
-  background: var(--color-popup-bg);
-  color: var(--color-popup);
+.credential-badge--cookie {
+  background: var(--color-cookie-bg);
+  color: var(--color-cookie);
 }
 
 .credential-card__actions {
@@ -1001,7 +1001,7 @@ body {
 .credential-card__login {
   background: transparent;
   border: none;
-  color: var(--color-popup);
+  color: var(--color-cookie);
   font-size: 11px;
   cursor: pointer;
   padding: 2px 4px;
@@ -1280,7 +1280,7 @@ body {
 }
 
 /* Explanatory, not a warning — no border/accent color, just muted body
- * copy. Used for popup_login's "what does this mean / what happens next"
+ * copy. Used for cookie's "what does this mean / what happens next"
  * notes, which are informational rather than risk-flagging. */
 .credentials-panel__hint {
   margin: 0;
@@ -1297,8 +1297,8 @@ body {
   align-self: flex-start;
   padding: 5px 14px;
   font-size: 11px;
-  border-color: var(--color-popup);
-  color: var(--color-popup);
+  border-color: var(--color-cookie);
+  color: var(--color-cookie);
 }
 
 .credentials-drawer__form-actions {
@@ -1530,8 +1530,8 @@ body {
   font-weight: 400;
   text-transform: none;
   letter-spacing: normal;
-  color: var(--color-popup);
-  background: var(--color-popup-bg);
+  color: var(--color-cookie);
+  background: var(--color-cookie-bg);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -1929,9 +1929,9 @@ details.debugger-row > .debugger-row__summary::-webkit-details-marker {
   display: inline-block;
   vertical-align: bottom;
   max-width: 220px;
-  background: var(--color-popup-bg);
-  color: var(--color-popup);
-  border: 1px solid var(--color-popup);
+  background: var(--color-cookie-bg);
+  color: var(--color-cookie);
+  border: 1px solid var(--color-cookie);
   border-radius: 999px;
   padding: 0 8px;
   font-size: 11px;

@@ -27,7 +27,7 @@ describe('emptyDraft', () => {
       scope: '',
       clientAuthMethod: 'basic',
     });
-    expect(emptyDraft('popup_login', 'x')).toEqual({ name: 'x', type: 'popup_login', loginUrl: '' });
+    expect(emptyDraft('cookie', 'x')).toEqual({ name: 'x', type: 'cookie', loginUrl: '' });
   });
 });
 
@@ -139,9 +139,10 @@ describe('isDraftComplete', () => {
     ).toBe(true);
   });
 
-  it('popup_login requires only loginUrl — no secret at all', () => {
-    expect(isDraftComplete({ name: 'n', type: 'popup_login', loginUrl: '' })).toBe(false);
-    expect(isDraftComplete({ name: 'n', type: 'popup_login', loginUrl: 'x' })).toBe(true);
+  it('cookie requires only a name — loginUrl is optional', () => {
+    expect(isDraftComplete({ name: '', type: 'cookie', loginUrl: '' })).toBe(false);
+    expect(isDraftComplete({ name: 'n', type: 'cookie', loginUrl: '' })).toBe(true);
+    expect(isDraftComplete({ name: 'n', type: 'cookie', loginUrl: 'x' })).toBe(true);
   });
 });
 
@@ -224,9 +225,9 @@ describe('maskedPreview', () => {
     expect(preview).not.toContain('hunter2');
   });
 
-  it('popup_login has no secret at all and says so', () => {
-    expect(maskedPreview({ id: '1', name: 'n', type: 'popup_login', loginUrl: 'https://x' })).toMatch(
-      /no stored secret/
+  it('cookie has no secret at all and says so', () => {
+    expect(maskedPreview({ id: '1', name: 'n', type: 'cookie', loginUrl: 'https://x' })).toMatch(
+      /No stored secret/
     );
   });
 });
@@ -246,7 +247,7 @@ describe('CREDENTIAL_TYPE_LABELS', () => {
       'apiKey',
       'oauth2_clientCredentials',
       'oauth2_password',
-      'popup_login',
+      'cookie',
     ];
     for (const type of types) {
       expect(CREDENTIAL_TYPE_LABELS[type]).toBeTruthy();

@@ -6,7 +6,7 @@ export const CREDENTIAL_TYPE_LABELS: Record<CredentialType, string> = {
   apiKey: 'API key',
   oauth2_clientCredentials: 'OAuth2 (client credentials)',
   oauth2_password: 'OAuth2 (password) · Legacy',
-  popup_login: 'Popup login (session cookie)',
+  cookie: 'Cookie (session)',
 };
 
 /** A fresh, empty draft for `type` — swapping type mid-edit resets the type-specific fields (and drops any spec-declared origin, since it no longer matches what was declared) rather than carrying stale ones across. */
@@ -32,7 +32,7 @@ export function emptyDraft(type: CredentialType, name: string): NewCredential {
         scope: '',
         clientAuthMethod: 'basic',
       };
-    case 'popup_login':
+    case 'cookie':
       return { name, type, loginUrl: '' };
   }
 }
@@ -43,8 +43,8 @@ export function emptyDraft(type: CredentialType, name: string): NewCredential {
  * engine/credentials.ts's resolveCredentialInjection) rather than a value
  * the user already holds. Drives CredentialForm.tsx's "Verify & Save" vs
  * plain "Save": bearer/basic/apiKey are static values with no endpoint of
- * their own to check against, and popup_login's verification already *is*
- * its "Log in…" button, so none of those four get a second check here.
+ * their own to check against, and cookie has no value at all to verify —
+ * none of those four get a second check here.
  */
 export function credentialNeedsVerification(type: CredentialType): boolean {
   return type === 'oauth2_clientCredentials' || type === 'oauth2_password';
@@ -64,9 +64,11 @@ export function isDraftComplete(draft: NewCredential): boolean {
     case 'oauth2_password':
       // clientId/clientSecret are optional (public-client token endpoints) — see OAuth2PasswordCredential in types.ts.
       return Boolean(draft.tokenUrl && draft.username && draft.password);
-    case 'popup_login':
-      // No secret value at all — the login URL is the whole form.
-      return Boolean(draft.loginUrl);
+    case 'cookie':
+      // No secret value at all, and the login URL is optional — just a
+      // bookmark link, not part of what this credential needs to be
+      // usable. `name` (checked above) is the only real requirement.
+      return true;
   }
 }
 
@@ -81,16 +83,14 @@ export function isDraftComplete(draft: NewCredential): boolean {
 const REDACTED = '••••••••';
 
 /**
- * A real browser popup, not a fetch() call — this is the whole mechanism
- * for `popup_login`: third-party-IdP login (GitHub, Google, SSO, MFA —
- * anything requiring a human to click through pages on another origin)
- * can't be driven by a node at all, so the actual login happens right
- * here, in a window Enlace never reads from or writes to. Sized rather
- * than left default so it reads as a deliberate login window, not a
- * stray full-size tab.
+ * A plain new-tab convenience link — not a mechanism Enlace drives. The
+ * user's actual login happens independently, however the target's login
+ * flow works; this just saves a copy-paste of the URL, both at creation
+ * time and again later on the saved card when the session cookie expires
+ * and re-login is needed.
  */
-export function openLoginPopup(loginUrl: string): void {
-  window.open(loginUrl, '_blank', 'width=520,height=680');
+export function openLoginUrl(loginUrl: string): void {
+  window.open(loginUrl, '_blank');
 }
 
 /** Strips `id` off a saved credential so it can seed the edit form's draft — the inverse of what addCredential/updateCredential do with a NewCredential. */
@@ -117,7 +117,7 @@ export function toDraft(credential: Credential): NewCredential {
  * - apiKey: the header/query param name — confirms *how* the key gets
  *   sent without hinting at its value. The key is always shown as
  *   REDACTED alongside it, purely as an "a value is set" indicator.
- * - popup_login: unchanged — there's genuinely no stored value at all.
+ * - cookie: unchanged — there's genuinely no stored value at all.
  */
 export function maskedPreview(credential: Credential): string {
   switch (credential.type) {
@@ -131,7 +131,7 @@ export function maskedPreview(credential: Credential): string {
       return '';
     case 'oauth2_password':
       return `${credential.username} · ${REDACTED}`;
-    case 'popup_login':
-      return 'Session cookie — no stored secret, relies on your browser being logged in';
+    case 'cookie':
+      return 'No stored secret — relies on your browser already being logged into the target';
   }
 }

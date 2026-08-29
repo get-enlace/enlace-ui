@@ -1,10 +1,12 @@
 // Real end-to-end coverage of the auth enforcement wired into
 // examples/sample-api (see auth.ts, mockOAuth2.ts, and each resource
-// router) — proves each of the five credential types Enlace's Credentials
+// router) — proves each of the six credential types Enlace's Credentials
 // drawer supports is genuinely checked over real HTTP, not just unit-level
 // middleware logic. The two OAuth2 types fetch an actual token from the
 // real (mock) issuer helpers.ts starts alongside the app, then send it — a
-// real signature verification happens on the other end, not a stub.
+// real signature verification happens on the other end, not a stub. The
+// cookie type (see the last describe block) has no token/header to fetch
+// at all — its "login" is GET /auth/demo-login setting a cookie directly.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { E2E_BASE_URL, E2E_OAUTH2_ISSUER_URL, startTestServer, stopTestServer } from './helpers.js';
 
@@ -145,6 +147,35 @@ describe('DELETE /orders/{id} — requires a real OAuth2 client-credentials toke
     const res = await fetch(`${E2E_BASE_URL}/orders/does-not-exist`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('PATCH /orders/{id} — requires a session cookie (independent login, not driven by Enlace)', () => {
+  it('401s with no cookie', async () => {
+    const res = await fetch(`${E2E_BASE_URL}/orders/does-not-matter`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'shipped' }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  // Node's fetch has no automatic cookie jar the way a browser does — a
+  // real browser attaches this via `credentials: 'include'` (see
+  // chainExecutor.ts) with no manual step at all; this test just has to
+  // do by hand what the browser does invisibly.
+  it('gets past auth once the demo-login cookie is set — 404 (not 401) proves auth ran and passed before the not-found check', async () => {
+    const loginRes = await fetch(`${E2E_BASE_URL}/auth/demo-login`);
+    const setCookie = loginRes.headers.get('set-cookie');
+    expect(setCookie).toBeTruthy();
+    const cookie = setCookie!.split(';')[0];
+
+    const res = await fetch(`${E2E_BASE_URL}/orders/does-not-exist`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ status: 'shipped' }),
     });
     expect(res.status).toBe(404);
   });

@@ -5,7 +5,7 @@ import {
   BearerFields,
   OAuth2ClientCredentialsFields,
   OAuth2PasswordFields,
-  PopupLoginFields,
+  CookieFields,
 } from './CredentialTypeFields.js';
 import { CREDENTIAL_TYPE_LABELS, credentialNeedsVerification, emptyDraft, isDraftComplete } from '../utils/credentialDraft.js';
 import { resolveCredentialInjection } from '../engine/credentials.js';
@@ -137,7 +137,7 @@ export function CredentialForm({ draft, setDraft, editingId, onCancel, onSave }:
         <OAuth2ClientCredentialsFields draft={draft} setDraft={handleSetDraft} />
       )}
       {draft.type === 'oauth2_password' && <OAuth2PasswordFields draft={draft} setDraft={handleSetDraft} />}
-      {draft.type === 'popup_login' && <PopupLoginFields draft={draft} setDraft={handleSetDraft} />}
+      {draft.type === 'cookie' && <CookieFields draft={draft} setDraft={handleSetDraft} />}
 
       {verifyError && (
         <p className="credentials-panel__verify-error" role="alert">

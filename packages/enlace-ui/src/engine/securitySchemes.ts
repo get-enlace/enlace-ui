@@ -63,13 +63,13 @@ function toCredentialTemplate(schemeName: string, scheme: any): NewCredential | 
   // named X" (e.g. NestJS's DocumentBuilder.addCookieAuth()), but the
   // scheme itself never says how that cookie gets set, so there's no
   // loginUrl to pre-fill the way every other scheme's structural fields
-  // get pre-filled — the user still has to supply the login page. Mapped
-  // to popup_login regardless, since that's the only credential type this
-  // scheme could ever mean: `Cookie` can't be injected as a header (see
+  // get pre-filled — the user can optionally add one later. Mapped to
+  // cookie regardless, since that's the only credential type this scheme
+  // could ever mean: `Cookie` can't be injected as a header (see
   // engine/credentials.ts), so there is no apiKey-shaped equivalent for
   // `in: 'cookie'` the way there is for header/query above.
   if (scheme.type === 'apiKey' && scheme.in === 'cookie') {
-    return withSource(schemeName, { name: schemeName, type: 'popup_login', loginUrl: '' });
+    return withSource(schemeName, { name: schemeName, type: 'cookie', loginUrl: '' });
   }
 
   if (scheme.type === 'oauth2') {

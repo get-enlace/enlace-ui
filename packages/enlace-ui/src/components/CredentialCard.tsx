@@ -1,4 +1,4 @@
-import { CREDENTIAL_TYPE_LABELS, maskedPreview, openLoginPopup } from '../utils/credentialDraft.js';
+import { CREDENTIAL_TYPE_LABELS, maskedPreview, openLoginUrl } from '../utils/credentialDraft.js';
 import type { Credential } from '../types.js';
 
 export interface CredentialCardProps {
@@ -9,7 +9,7 @@ export interface CredentialCardProps {
   onDelete: (credentialId: string) => void;
 }
 
-/** One saved credential's row in the Credentials drawer — type badge, masked preview, and actions (Log in, for popup_login; Edit; Delete). */
+/** One saved credential's row in the Credentials drawer — type badge, masked preview, and actions (Open login page, for cookie; Edit; Delete). */
 export function CredentialCard({ credential, usageCount, onEdit, onDelete }: CredentialCardProps) {
   // '' for bearer/oauth2_clientCredentials — see maskedPreview's own
   // comment for why those two have no non-secret detail worth a second
@@ -23,18 +23,18 @@ export function CredentialCard({ credential, usageCount, onEdit, onDelete }: Cre
           {CREDENTIAL_TYPE_LABELS[credential.type]}
         </span>
         <div className="credential-card__actions">
-          {credential.type === 'popup_login' && (
+          {credential.type === 'cookie' && credential.loginUrl && (
             <button
               type="button"
               className="credential-card__login"
-              onClick={() => openLoginPopup(credential.loginUrl)}
-              aria-label={`Log in for ${credential.name}`}
+              onClick={() => openLoginUrl(credential.loginUrl!)}
+              aria-label={`Open login page for ${credential.name}`}
               // Sessions expire — shown on the saved card, not just at
               // creation time, since re-establishing login is a
               // recurring action rather than a one-off.
-              title="Opens the login page in a popup — complete login there, then re-run your nodes."
+              title="Opens the login page in a new tab — log in there if your session has expired."
             >
-              Log in
+              Open login page
             </button>
           )}
           <button

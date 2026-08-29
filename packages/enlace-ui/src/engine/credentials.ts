@@ -4,9 +4,9 @@ export interface CredentialInjection {
   headers?: Record<string, string>;
   query?: Record<string, string>;
   /**
-   * Set to `'include'` for a `popup_login`/`cookie` credential — tells
-   * chainExecutor.ts's actual `fetch()` call to send the browser's cookies
-   * along. This is the *only* mechanism that ever attaches a cookie:
+   * Set to `'include'` for a `cookie` credential — tells chainExecutor.ts's
+   * actual `fetch()` call to send the browser's cookies along. This is the
+   * *only* mechanism that ever attaches a cookie:
    * `Cookie` is a forbidden fetch() request header (per the Fetch spec —
    * every browser silently drops it if JS tries to set it), so no
    * credential type can inject one via `headers` the way every other type
@@ -121,7 +121,7 @@ async function fetchCachedOAuth2Token(
 /**
  * Resolves a credential into what to inject on the actual request — a
  * header (bearer/basic/apiKey-in-header/oauth2), a query param
- * (apiKey-in-query), or (uniquely for popup_login) a `credentials:
+ * (apiKey-in-query), or (uniquely for cookie) a `credentials:
  * 'include'` fetch option instead of any injected value at all — see
  * CredentialInjection's own comment on why a cookie can never be injected
  * as a header. Async because the oauth2 types may need a live
@@ -180,12 +180,12 @@ export async function resolveCredentialInjection(credential: Credential): Promis
       const accessToken = await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
-    case 'popup_login':
+    case 'cookie':
       // No injection at all — the one Credential variant that doesn't
       // actually hold a value to attach. This just flips a fetch option
       // so the browser's own cookie jar (already populated by whatever
-      // login the user completed in the popup) tags along on its own.
-      // See PopupLoginCredential's own comment in types.ts for the fuller
+      // independent login the user completed) tags along on its own.
+      // See CookieCredential's own comment in types.ts for the fuller
       // "action, not a credential" framing, and for why a "paste in a
       // token instead" variant was designed, built, and then dropped.
       return { credentials: 'include' };

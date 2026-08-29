@@ -48,12 +48,12 @@ export interface RawBodyEditorProps {
 // code-theme, so the editor reads as part of the same system: property
 // names in the same blue as a GET badge, string values in the same green
 // as a POST badge, numbers/booleans in PUT's orange, null in the
-// popup-credential purple, punctuation muted.
+// cookie-credential purple, punctuation muted.
 const jsonHighlightStyle = HighlightStyle.define([
   { tag: t.propertyName, color: 'var(--color-get)' },
   { tag: t.string, color: 'var(--color-post)' },
   { tag: [t.number, t.bool], color: 'var(--color-put)' },
-  { tag: t.null, color: 'var(--color-popup)' },
+  { tag: t.null, color: 'var(--color-cookie)' },
   { tag: [t.separator, t.squareBracket, t.brace], color: 'var(--color-text-muted)' },
 ]);
 

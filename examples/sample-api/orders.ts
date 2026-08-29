@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { customers } from './customers.js';
 import { products } from './products.js';
-import { requireApiKey, requireOAuth2Token } from './auth.js';
+import { requireApiKey, requireCookie, requireOAuth2Token } from './auth.js';
 
 export interface Order {
   id: string;
@@ -52,7 +52,10 @@ ordersRouter.get('/orders/:id', (req, res) => {
   res.json(order);
 });
 
-ordersRouter.patch('/orders/:id', (req, res) => {
+// A support agent, already logged into the internal support portal in
+// another browser tab, updates an order's status — cookieAuth in
+// openapi.json. See auth.ts's requireCookie/GET /auth/demo-login.
+ordersRouter.patch('/orders/:id', requireCookie, (req, res) => {
   const order = orders.get(req.params.id);
   if (!order) {
     res.status(404).json({ error: 'not found' });
