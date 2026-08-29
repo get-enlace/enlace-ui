@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { connectionKey } from '../engine/chainExecutor.js';
 import { useWorkflowStore } from './workflowStore.js';
+import { serializeCollection } from '../utils/workflowDocument.js';
 
 // Reset to a clean slate before each test — zustand stores are module-level
 // singletons, so state otherwise leaks across tests.
@@ -14,6 +15,7 @@ beforeEach(() => {
     declaredCredentials: [],
     operations: [],
     baseUrl: null,
+    specInfo: null,
     runResult: null,
     stepStatusByNodeId: {},
     armedBreakpoints: new Set(),
@@ -415,6 +417,106 @@ describe('loadOperations', () => {
     await useWorkflowStore.getState().loadOperations();
 
     expect(useWorkflowStore.getState().declaredCredentials).toEqual([]);
+  });
+
+  it('stashes spec info.title and info.version for workflow export', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          info: { title: 'Sample API', version: '1.0.0' },
+          paths: {},
+          servers: [{ url: 'http://x' }],
+        }),
+      })
+    );
+
+    await useWorkflowStore.getState().loadOperations();
+
+    expect(useWorkflowStore.getState().specInfo).toEqual({ title: 'Sample API', version: '1.0.0' });
+  });
+});
+
+describe('replaceWorkflow', () => {
+  it('swaps the graph and credentials, clears runResult, and leaves operations / baseUrl intact', () => {
+    const keepOp = {
+      id: 'GET /kept',
+      method: 'get' as const,
+      path: '/kept',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    useWorkflowStore.setState({
+      operations: [keepOp],
+      baseUrl: 'http://example.test',
+      specInfo: { title: 'Sample API' },
+      runResult: {
+        steps: [
+          {
+            nodeId: 'old',
+            request: { method: 'GET', url: 'http://example.test/old', headers: {} },
+            timestampStart: '',
+            timestampEnd: '',
+          },
+        ],
+      },
+    });
+    const { addNode, addCredential, setCredential, selectNode, replaceWorkflow } = useWorkflowStore.getState();
+    const oldId = addNode('GET /old', { x: 1, y: 1 });
+    addCredential({ name: 'old-cred', type: 'bearer', token: 'old-secret' });
+    setCredential(oldId, useWorkflowStore.getState().credentials[0].id);
+    selectNode(oldId);
+
+    const incoming = serializeCollection({
+      nodes: [{ id: 'n-new', operationId: 'POST /orders', credentialId: 'c-new', fieldValues: {} }],
+      connections: [],
+      nodePositions: { 'n-new': { x: 40, y: 80 } },
+      credentials: [{ id: 'c-new', name: 'imported', type: 'bearer', token: 'must-not-survive' }],
+    });
+    replaceWorkflow(incoming);
+
+    const state = useWorkflowStore.getState();
+    expect(state.nodes).toEqual([{ id: 'n-new', operationId: 'POST /orders', credentialId: 'c-new', fieldValues: {} }]);
+    expect(state.nodePositions).toEqual({ 'n-new': { x: 40, y: 80 } });
+    expect(state.credentials).toEqual([{ id: 'c-new', name: 'imported', type: 'bearer', token: '' }]);
+    expect(state.selectedNodeId).toBeNull();
+    expect(state.runResult).toBeNull();
+    expect(state.operations).toEqual([keepOp]);
+    expect(state.baseUrl).toBe('http://example.test');
+    expect(state.specInfo).toEqual({ title: 'Sample API' });
+  });
+});
+
+describe('run incomplete-credential guard', () => {
+  it('refuses to run when a referenced credential has no secret, and does not call fetch', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    useWorkflowStore.setState({
+      baseUrl: 'http://example.test',
+      operations: [
+        {
+          id: 'GET /noop',
+          method: 'get',
+          path: '/noop',
+          parameters: [],
+          requestBodySchema: null,
+          responseSchema: null,
+        },
+      ],
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: '' }],
+    });
+    const { addNode, setCredential, run } = useWorkflowStore.getState();
+    const id = addNode('GET /noop');
+    setCredential(id, 'c1');
+
+    await run();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useWorkflowStore.getState().isRunning).toBe(false);
+    expect(useWorkflowStore.getState().error).toBe('Credential "staging" needs a secret before this chain can run.');
+    vi.unstubAllGlobals();
   });
 });
 

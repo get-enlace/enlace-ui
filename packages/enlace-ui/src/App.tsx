@@ -5,6 +5,7 @@ import { Canvas } from './components/Canvas.js';
 import { NodeInspector } from './components/NodeInspector.js';
 import { DebugPane } from './components/DebugPane.js';
 import { CredentialsPanel } from './components/CredentialsPanel.js';
+import { WorkflowFileMenu } from './components/WorkflowFileMenu.js';
 
 export default function App() {
   const {
@@ -47,6 +48,7 @@ export default function App() {
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="app__logo" />
           Enlace
         </h1>
+        <WorkflowFileMenu />
         <CredentialsPanel />
         {/* Run vs. Debug are two distinct actions, not one button whose
             behavior silently depends on whatever's armed: a user with

@@ -100,10 +100,98 @@ export interface WorkflowConnection {
   toNodeId: string;
 }
 
-/** In-memory only for now — persistence is planned but not built yet. */
+/**
+ * In-memory execution shape — `nodes` + `connections` only. Layout,
+ * credential records, and spec hints live in an `EnlaceCollection`, the
+ * shareable file format (see utils/collectionDocument.ts).
+ */
 export interface Workflow {
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
+}
+
+export const ENLACE_COLLECTION_FORMAT = 'enlace-collection' as const;
+export const ENLACE_COLLECTION_VERSION = 1 as const;
+
+export interface CollectionSpecHint {
+  title?: string;
+  version?: string;
+  /** Unique `WorkflowNode.operationId` values used by this chain. */
+  operationIds: string[];
+}
+
+/**
+ * A credential as written to a stripped `EnlaceCollection` — same `id` as the
+ * in-memory credential so `node.credentialId` still points at it, but
+ * without any value that authenticates. Hydrated back to a `Credential`
+ * with empty secret fields on import (see utils/collectionDocument.ts).
+ */
+export type CredentialStub =
+  | { id: string; name: string; fromSecurityScheme?: string; type: 'bearer' }
+  | { id: string; name: string; fromSecurityScheme?: string; type: 'basic'; username?: string }
+  | {
+      id: string;
+      name: string;
+      fromSecurityScheme?: string;
+      type: 'apiKey';
+      paramName: string;
+      in: 'header' | 'query';
+    }
+  | {
+      id: string;
+      name: string;
+      fromSecurityScheme?: string;
+      type: 'oauth2_clientCredentials';
+      tokenUrl: string;
+      clientId?: string;
+      scope?: string;
+      clientAuthMethod?: OAuth2ClientAuthMethod;
+    }
+  | {
+      id: string;
+      name: string;
+      fromSecurityScheme?: string;
+      type: 'oauth2_password';
+      tokenUrl: string;
+      username?: string;
+      clientId?: string;
+      scope?: string;
+      clientAuthMethod?: OAuth2ClientAuthMethod;
+    }
+  | { id: string; name: string; fromSecurityScheme?: string; type: 'cookie'; loginUrl?: string };
+
+export interface CollectionWorkflow {
+  id: string;
+  name: string;
+  specHint: CollectionSpecHint;
+  nodes: WorkflowNode[];
+  connections: WorkflowConnection[];
+  nodePositions: Record<string, { x: number; y: number }>;
+}
+
+export type CollectionSecretsMode = 'stripped' | 'included';
+
+/**
+ * Versioned `.enlace` file. V1 exports one workflow but uses an array so
+ * later multi-workflow support does not require another envelope format.
+ */
+export interface EnlaceCollection {
+  format: typeof ENLACE_COLLECTION_FORMAT;
+  version: typeof ENLACE_COLLECTION_VERSION;
+  name: string;
+  exportedAt: string;
+  secrets: CollectionSecretsMode;
+  credentials: Array<CredentialStub | Credential>;
+  workflows: CollectionWorkflow[];
+}
+
+export interface CollectionWarnings {
+  unknownOperationIds: string[];
+  credentialsNeedingSecrets: Array<{ id: string; name: string; type: CredentialType }>;
+  /** The imported collection deliberately contains usable credential secrets. */
+  secretsIncluded: boolean;
+  /** Secret keys were present despite `secrets: "stripped"` and were discarded. */
+  unexpectedSecretsDiscarded: boolean;
 }
 
 // Phase 1 added bearer/basic/apiKey/oauth2_clientCredentials/oauth2_password
@@ -266,10 +354,9 @@ export interface CookieCredential extends CredentialBase {
 }
 
 /**
- * Held entirely in browser memory (the store, not persisted) — the secret
- * values never leave the tab except as headers/query params on the actual
- * request to the target API itself (or, for the oauth2_* types, the token
- * endpoint). See engine/credentials.ts's `resolveCredentialInjection`.
+ * Held in browser memory by default. The only persistence path for secret
+ * values is an explicitly acknowledged full-credential `.enlace` export;
+ * normal exports contain `CredentialStub` records instead.
  */
 export type Credential =
   | BearerCredential

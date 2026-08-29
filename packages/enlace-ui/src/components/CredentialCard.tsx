@@ -1,4 +1,4 @@
-import { CREDENTIAL_TYPE_LABELS, maskedPreview, openLoginUrl } from '../utils/credentialDraft.js';
+import { CREDENTIAL_TYPE_LABELS, isDraftComplete, maskedPreview, openLoginUrl, toDraft } from '../utils/credentialDraft.js';
 import type { Credential } from '../types.js';
 
 export interface CredentialCardProps {
@@ -11,6 +11,7 @@ export interface CredentialCardProps {
 
 /** One saved credential's row in the Credentials drawer — type badge, masked preview, and actions (Open login page, for cookie; Edit; Delete). */
 export function CredentialCard({ credential, usageCount, onEdit, onDelete }: CredentialCardProps) {
+  const complete = isDraftComplete(toDraft(credential));
   // '' for bearer/oauth2_clientCredentials — see maskedPreview's own
   // comment for why those two have no non-secret detail worth a second
   // line at all, rather than showing an empty one.
@@ -56,7 +57,11 @@ export function CredentialCard({ credential, usageCount, onEdit, onDelete }: Cre
         </div>
       </div>
       <div className="credential-card__name">{credential.name}</div>
-      {preview && <div className="credential-card__preview">{preview}</div>}
+      {!complete ? (
+        <div className="credential-card__preview credential-card__preview--incomplete">Needs a value</div>
+      ) : preview ? (
+        <div className="credential-card__preview">{preview}</div>
+      ) : null}
       {credential.fromSecurityScheme && (
         <div className="credential-card__source">
           From spec: <code>{credential.fromSecurityScheme}</code>

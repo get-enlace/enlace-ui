@@ -71,6 +71,13 @@ describe('CredentialCard', () => {
     expect(onDelete).toHaveBeenCalledWith('c1');
   });
 
+  it('shows "Needs a value" instead of an empty mask when the secret is missing', () => {
+    const incomplete: Credential = { id: 'c1', name: 'staging', type: 'bearer', token: '' };
+    render(<CredentialCard credential={incomplete} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
+    expect(screen.getByText('Needs a value')).toBeInTheDocument();
+    expect(screen.queryByText(/••••/)).not.toBeInTheDocument();
+  });
+
   it('shows no "Open login page" button for non-cookie credentials', () => {
     render(<CredentialCard credential={bearerCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
     expect(screen.queryByRole('button', { name: /Open login page/ })).not.toBeInTheDocument();
