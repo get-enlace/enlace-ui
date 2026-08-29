@@ -88,7 +88,13 @@ describe('getHeaderCaseInsensitive', () => {
 });
 
 function step(nodeId: string, response?: RunStep['response']): RunStep {
-  return { nodeId, request: { method: 'GET', url: 'http://x', headers: {} }, timestampStart: '', timestampEnd: '', response };
+  return {
+    nodeId,
+    request: { method: 'GET', url: 'http://x', headers: {}, credentials: 'omit' },
+    timestampStart: '',
+    timestampEnd: '',
+    response,
+  };
 }
 
 describe('resolveTagValue', () => {

@@ -3,7 +3,13 @@ import { resolveRawBody } from './rawBodyResolver.js';
 import type { BodyTag, RawBody, RunStep } from '../types.js';
 
 function step(nodeId: string, response?: RunStep['response']): RunStep {
-  return { nodeId, request: { method: 'GET', url: 'http://x', headers: {} }, timestampStart: '', timestampEnd: '', response };
+  return {
+    nodeId,
+    request: { method: 'GET', url: 'http://x', headers: {}, credentials: 'omit' },
+    timestampStart: '',
+    timestampEnd: '',
+    response,
+  };
 }
 
 function bodyTag(overrides: Partial<BodyTag> & Pick<BodyTag, 'type' | 'sourceNodeId'>): BodyTag {

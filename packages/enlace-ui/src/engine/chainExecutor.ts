@@ -168,7 +168,12 @@ export async function buildRequest(
   // `credentials: 'include'` fetch option instead of any injected value at
   // all) — sent straight to the target API, not routed through any adapter.
   const redactQueryParams: string[] = [];
-  let credentials: 'include' | undefined;
+  // Explicit 'omit' as the base case, not left undefined — see
+  // RunStepRequest.credentials's own comment for why: fetch()'s default
+  // ('same-origin') would otherwise leak an existing browser cookie on any
+  // same-origin target regardless of whether a Cookie credential is even
+  // attached.
+  let credentials: 'include' | 'omit' = 'omit';
   if (node.credentialId) {
     const credential = credentialsById.get(node.credentialId);
     if (credential) {
@@ -178,7 +183,7 @@ export async function buildRequest(
         query.set(key, value);
         redactQueryParams.push(key);
       }
-      credentials = injection.credentials;
+      if (injection.credentials) credentials = injection.credentials;
     }
   }
 
@@ -232,7 +237,12 @@ async function runNode(
   } catch (err) {
     return {
       nodeId: node.id,
-      request: { method: operation.method.toUpperCase(), url: `${baseUrl}${operation.path}`, headers: {} },
+      request: {
+        method: operation.method.toUpperCase(),
+        url: `${baseUrl}${operation.path}`,
+        headers: {},
+        credentials: 'omit',
+      },
       timestampStart,
       timestampEnd: new Date().toISOString(),
       error: err instanceof Error ? err.message : String(err),
@@ -244,9 +254,9 @@ async function runNode(
   try {
     // Browser fetch() — same interface as Node's, no adapter round-trip:
     // this hits the target API directly from the tab. `credentials` is
-    // left undefined (fetch()'s own default, 'same-origin') unless a
-    // cookie credential set it to 'include' — most nodes have
-    // no reason to send cookies at all, and 'include' has real
+    // always explicit ('omit' unless a cookie credential set it to
+    // 'include' — see RunStepRequest.credentials) rather than left for
+    // fetch()'s own 'same-origin' default to decide — 'include' has real
     // consequences (the target's CORS response must explicitly allow
     // credentialed requests from this origin, not just any).
     const res = await fetch(request.url, {

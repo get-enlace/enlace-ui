@@ -300,13 +300,23 @@ export interface RunStepRequest {
    */
   redactQueryParams?: string[];
   /**
-   * Set to `'include'` when the node's credential is a `cookie` type —
-   * see engine/chainExecutor.ts. Shown as-is in the debug pane (not a
-   * secret; there's nothing to redact) so it's visible *why* a
+   * `'include'` only when the node's credential is a `cookie` type,
+   * `'omit'` otherwise — always explicit, never left for fetch()'s own
+   * default to decide (see engine/chainExecutor.ts's real `fetch()` call).
+   * That matters: fetch()'s default is `'same-origin'`, not `'omit'` — for
+   * any target sharing an origin with wherever Enlace's canvas is served
+   * from (the norm, not an edge case: adapters commonly serve the canvas
+   * and the target API from the same host/port), the browser would send
+   * along any cookie already sitting in its jar for that origin even with
+   * no Cookie credential attached at all, silently defeating the entire
+   * point of credential-per-node scoping. Explicit `'omit'` closes that
+   * gap — no Cookie credential attached genuinely means no cookies, ever,
+   * regardless of origin. Shown as-is in the debug pane when `'include'`
+   * (not a secret; there's nothing to redact) so it's visible *why* a
    * cookie-based call succeeded or failed, since nothing else about the
    * request reveals that a cookie was expected at all.
    */
-  credentials?: 'include';
+  credentials: 'include' | 'omit';
 }
 
 export interface RunStepResponse {

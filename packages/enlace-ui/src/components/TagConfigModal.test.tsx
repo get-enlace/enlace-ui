@@ -92,7 +92,7 @@ describe('TagConfigModal', () => {
         steps: [
           {
             nodeId: 'node-a',
-            request: { method: 'GET', url: 'http://x', headers: {} },
+            request: { method: 'GET', url: 'http://x', headers: {}, credentials: 'omit' },
             response: { status: 200, headers: {}, body: { items: [{ id: 'xyz' }] } },
             timestampStart: '',
             timestampEnd: '',
