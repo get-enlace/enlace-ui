@@ -84,6 +84,7 @@ describe('OAuth2ClientCredentialsFields', () => {
       clientId: '',
       clientSecret: '',
       scope: '',
+      clientAuthMethod: 'basic',
     });
     return (
       <OAuth2ClientCredentialsFields
@@ -117,6 +118,17 @@ describe('OAuth2ClientCredentialsFields', () => {
     expect(screen.getByPlaceholderText('client secret')).toHaveValue('my-secret');
     expect(screen.getByPlaceholderText('scope')).toHaveValue('read write');
   });
+
+  it('defaults clientAuthMethod to Basic and lets it switch to POST body', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    expect(screen.getByDisplayValue('HTTP Basic header (RFC 6749 client_secret_basic)')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByDisplayValue('HTTP Basic header (RFC 6749 client_secret_basic)'), 'body');
+
+    expect(screen.getByDisplayValue('POST body params (client_secret_post)')).toBeInTheDocument();
+  });
 });
 
 describe('OAuth2PasswordFields', () => {
@@ -130,6 +142,7 @@ describe('OAuth2PasswordFields', () => {
       clientId: '',
       clientSecret: '',
       scope: '',
+      clientAuthMethod: 'basic',
     });
     return (
       <OAuth2PasswordFields draft={draft as Extract<NewCredential, { type: 'oauth2_password' }>} setDraft={setDraft} />

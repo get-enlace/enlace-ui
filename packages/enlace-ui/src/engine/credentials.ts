@@ -49,18 +49,27 @@ const inFlightRequests = new Map<string, Promise<string>>();
 const EXPIRY_BUFFER_MS = 30_000;
 const DEFAULT_TOKEN_TTL_SECONDS = 300;
 
-/** POSTs a `grant_type`-agnostic token request — the two grants below only differ in which params they put in `params`. */
+/** POSTs a `grant_type`-agnostic token request — the two grants below only differ in which params they put in `params` and whether `basicAuth` is set. */
 async function requestOAuth2Token(
   tokenUrl: string,
-  params: Record<string, string>
+  params: Record<string, string>,
+  basicAuth?: { clientId: string; clientSecret: string }
 ): Promise<{ accessToken: string; expiresInSeconds: number }> {
   // Direct browser -> auth server call — same "browser talks straight to
   // the target" relationship as the actual API request, no adapter
   // round-trip. The secret never touches enlace-ui's own server side
   // because there isn't one.
+  const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  // `client_secret_basic` (RFC 6749 §2.3.1) — clientId/clientSecret go on
+  // the *token request's* own Authorization header, distinct from (and
+  // resolved well before) the Bearer header the resulting access token
+  // gets injected with on the actual API call.
+  if (basicAuth) {
+    headers.Authorization = `Basic ${toBase64(`${basicAuth.clientId}:${basicAuth.clientSecret}`)}`;
+  }
   const res = await fetch(tokenUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers,
     body: new URLSearchParams(params).toString(),
   });
 
@@ -81,7 +90,8 @@ async function requestOAuth2Token(
 async function fetchCachedOAuth2Token(
   credentialId: string,
   tokenUrl: string,
-  params: Record<string, string>
+  params: Record<string, string>,
+  basicAuth?: { clientId: string; clientSecret: string }
 ): Promise<string> {
   const cached = tokenCache.get(credentialId);
   if (cached && cached.expiresAt > Date.now() + EXPIRY_BUFFER_MS) {
@@ -92,7 +102,7 @@ async function fetchCachedOAuth2Token(
   if (inFlight) return inFlight;
 
   const request = (async () => {
-    const { accessToken, expiresInSeconds } = await requestOAuth2Token(tokenUrl, params);
+    const { accessToken, expiresInSeconds } = await requestOAuth2Token(tokenUrl, params, basicAuth);
     tokenCache.set(credentialId, { accessToken, expiresAt: Date.now() + expiresInSeconds * 1000 });
     return accessToken;
   })();
@@ -130,27 +140,44 @@ export async function resolveCredentialInjection(credential: Credential): Promis
         ? { query: { [credential.paramName]: credential.key } }
         : { headers: { [credential.paramName]: credential.key } };
     case 'oauth2_clientCredentials': {
-      const params: Record<string, string> = {
-        grant_type: 'client_credentials',
-        client_id: credential.clientId,
-        client_secret: credential.clientSecret,
-      };
+      const params: Record<string, string> = { grant_type: 'client_credentials' };
       if (credential.scope) params.scope = credential.scope;
-      const accessToken = await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params);
+      // clientAuthMethod picks where clientId/clientSecret go on *this*
+      // token request — 'basic' as an Authorization header (see
+      // requestOAuth2Token), 'body' as form params alongside grant_type.
+      // Either way the actual API call downstream only ever sees the
+      // resulting access token as a Bearer header.
+      const basicAuth =
+        credential.clientAuthMethod === 'basic'
+          ? { clientId: credential.clientId, clientSecret: credential.clientSecret }
+          : undefined;
+      if (credential.clientAuthMethod === 'body') {
+        params.client_id = credential.clientId;
+        params.client_secret = credential.clientSecret;
+      }
+      const accessToken = await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
     case 'oauth2_password': {
       // client_id/client_secret are optional per RFC 6749 §4.3 — plenty of
-      // token endpoints accept a public client with neither.
+      // token endpoints accept a public client with neither, in which case
+      // clientAuthMethod has nothing to apply to.
       const params: Record<string, string> = {
         grant_type: 'password',
         username: credential.username,
         password: credential.password,
       };
-      if (credential.clientId) params.client_id = credential.clientId;
-      if (credential.clientSecret) params.client_secret = credential.clientSecret;
       if (credential.scope) params.scope = credential.scope;
-      const accessToken = await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params);
+      const hasClientAuth = Boolean(credential.clientId && credential.clientSecret);
+      const basicAuth =
+        hasClientAuth && credential.clientAuthMethod === 'basic'
+          ? { clientId: credential.clientId!, clientSecret: credential.clientSecret! }
+          : undefined;
+      if (hasClientAuth && credential.clientAuthMethod === 'body') {
+        params.client_id = credential.clientId!;
+        params.client_secret = credential.clientSecret!;
+      }
+      const accessToken = await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
     case 'popup_login':

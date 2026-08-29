@@ -90,6 +90,7 @@ describe('extractDeclaredCredentials', () => {
       clientId: '',
       clientSecret: '',
       scope: 'read write',
+      clientAuthMethod: 'basic',
       fromSecurityScheme: 'oauth2ClientCreds',
     });
   });
@@ -112,6 +113,7 @@ describe('extractDeclaredCredentials', () => {
       clientId: '',
       clientSecret: '',
       scope: '',
+      clientAuthMethod: 'basic',
       fromSecurityScheme: 'oauth2Password',
     });
   });

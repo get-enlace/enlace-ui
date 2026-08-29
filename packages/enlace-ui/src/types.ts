@@ -165,6 +165,22 @@ export interface ApiKeyCredential extends CredentialBase {
 }
 
 /**
+ * How clientId/clientSecret are sent on the *token endpoint* request
+ * itself (never the actual API call — that always gets the resulting
+ * bearer token in an Authorization header, regardless of this setting).
+ * `'basic'` is RFC 6749 §2.3.1's `client_secret_basic` — an
+ * `Authorization: Basic base64(clientId:clientSecret)` header on the
+ * token request — which is what most .NET identity servers (IdentityServer/
+ * Duende and similar) require and reject anything else for. `'body'` is
+ * `client_secret_post` — clientId/clientSecret as form params alongside
+ * grant_type, which is what Enlace sent unconditionally before this field
+ * existed. Defaults to `'basic'` since RFC 6749 requires every token
+ * endpoint to support it, while body-param auth is only an optional
+ * extension some servers skip.
+ */
+export type OAuth2ClientAuthMethod = 'basic' | 'body';
+
+/**
  * OAuth2 client-credentials grant — no human interaction, so it's the one
  * OAuth2 grant fully automatable from the browser: POST to `tokenUrl` with
  * clientId/clientSecret, cache the resulting bearer token in memory (see
@@ -177,6 +193,7 @@ export interface OAuth2ClientCredentialsCredential extends CredentialBase {
   clientId: string;
   clientSecret: string;
   scope?: string;
+  clientAuthMethod: OAuth2ClientAuthMethod;
 }
 
 /**
@@ -187,6 +204,9 @@ export interface OAuth2ClientCredentialsCredential extends CredentialBase {
  * don't get. `clientId`/`clientSecret` are optional because plenty of
  * token endpoints accept a public client with neither — when either is
  * present it's sent alongside `username`/`password`, per RFC 6749 §4.3.
+ * `clientAuthMethod` (see OAuth2ClientAuthMethod) only takes effect when
+ * clientId/clientSecret are actually set — a public client with neither
+ * has nothing to send via Basic or body either way.
  */
 export interface OAuth2PasswordCredential extends CredentialBase {
   type: 'oauth2_password';
@@ -196,6 +216,7 @@ export interface OAuth2PasswordCredential extends CredentialBase {
   clientId?: string;
   clientSecret?: string;
   scope?: string;
+  clientAuthMethod: OAuth2ClientAuthMethod;
 }
 
 /**

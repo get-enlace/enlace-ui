@@ -382,6 +382,7 @@ describe('executeChain', () => {
           tokenUrl: 'http://auth.test/token',
           username: 'alice',
           password: 'hunter2',
+          clientAuthMethod: 'body',
         },
       ],
     ]);
@@ -428,6 +429,7 @@ describe('executeChain', () => {
           tokenUrl: 'http://auth.test/token',
           clientId: 'client-id',
           clientSecret: 'client-secret',
+          clientAuthMethod: 'body',
         },
       ],
     ]);
@@ -471,6 +473,7 @@ describe('executeChain', () => {
           tokenUrl: 'http://auth.test/token',
           clientId: 'client-id',
           clientSecret: 'client-secret',
+          clientAuthMethod: 'body',
         },
       ],
     ]);
