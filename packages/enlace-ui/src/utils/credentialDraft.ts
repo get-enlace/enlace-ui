@@ -37,6 +37,19 @@ export function emptyDraft(type: CredentialType, name: string): NewCredential {
   }
 }
 
+/**
+ * True only for the credential types that resolve via a live network call
+ * (the oauth2_* grants hitting their token endpoint — see
+ * engine/credentials.ts's resolveCredentialInjection) rather than a value
+ * the user already holds. Drives CredentialForm.tsx's "Verify & Save" vs
+ * plain "Save": bearer/basic/apiKey are static values with no endpoint of
+ * their own to check against, and popup_login's verification already *is*
+ * its "Log in…" button, so none of those four get a second check here.
+ */
+export function credentialNeedsVerification(type: CredentialType): boolean {
+  return type === 'oauth2_clientCredentials' || type === 'oauth2_password';
+}
+
 export function isDraftComplete(draft: NewCredential): boolean {
   if (!draft.name) return false;
   switch (draft.type) {
@@ -57,11 +70,15 @@ export function isDraftComplete(draft: NewCredential): boolean {
   }
 }
 
-/** Never the raw secret — just enough to tell two similarly-named credentials apart at a glance. */
-export function maskTail(value: string): string {
-  if (!value) return '';
-  return `••••${value.slice(-4)}`;
-}
+/**
+ * A fixed, non-revealing stand-in for "a secret is set here" — deliberately
+ * carries no information about the actual value (not even its length):
+ * partially revealing a secret's tail character, as this used to do, gives
+ * away real characters of it for essentially no benefit, since the
+ * credential's own `name` field (shown above this on the card) is already
+ * what tells two similarly-configured credentials apart at a glance.
+ */
+const REDACTED = '••••••••';
 
 /**
  * A real browser popup, not a fetch() call — this is the whole mechanism
@@ -82,18 +99,38 @@ export function toDraft(credential: Credential): NewCredential {
   return rest;
 }
 
+/**
+ * The saved card's second line, under the credential's own `name`. Per
+ * type, shows whatever *non-secret* structural detail actually helps tell
+ * two credentials apart at a glance — never a fragment of the secret
+ * itself (see REDACTED above):
+ *
+ * - bearer / oauth2_clientCredentials: nothing at all. A bearer token is
+ *   just an opaque string with no other field, and a client id/secret pair
+ *   is "mostly random chars" per its own nature — neither has a
+ *   non-secret detail worth surfacing, so the preview line is omitted
+ *   entirely (CredentialCard.tsx hides the row when this returns '').
+ *   `name` is already how the user is expected to tell these apart.
+ * - basic / oauth2_password: the username — genuinely useful to confirm
+ *   which account this is, unlike the password itself, which the form
+ *   below already flags as sensitive.
+ * - apiKey: the header/query param name — confirms *how* the key gets
+ *   sent without hinting at its value. The key is always shown as
+ *   REDACTED alongside it, purely as an "a value is set" indicator.
+ * - popup_login: unchanged — there's genuinely no stored value at all.
+ */
 export function maskedPreview(credential: Credential): string {
   switch (credential.type) {
     case 'bearer':
-      return maskTail(credential.token);
+      return '';
     case 'basic':
-      return `${credential.username} / ${maskTail(credential.password)}`;
+      return credential.username;
     case 'apiKey':
-      return `${credential.paramName} (${credential.in}) · ${maskTail(credential.key)}`;
+      return `${credential.paramName} (${credential.in}) · ${REDACTED}`;
     case 'oauth2_clientCredentials':
-      return `${credential.clientId} · ${maskTail(credential.clientSecret)}`;
+      return '';
     case 'oauth2_password':
-      return `${credential.username} · ${maskTail(credential.password)}`;
+      return `${credential.username} · ${REDACTED}`;
     case 'popup_login':
       return 'Session cookie — no stored secret, relies on your browser being logged in';
   }

@@ -1,10 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { CredentialForm } from './CredentialForm.js';
 import { emptyDraft } from '../utils/credentialDraft.js';
+import { __clearCredentialTokenCacheForTests } from '../engine/credentials.js';
 import type { NewCredential } from '../types.js';
+
+function mockTokenResponse(status: number, body: unknown) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    json: async () => body,
+  } as unknown as Response;
+}
 
 // CredentialForm is fully controlled (draft/setDraft owned by the caller,
 // same as the real CredentialsPanel usage) — this harness gives that state
@@ -93,5 +102,73 @@ describe('CredentialForm', () => {
   it('shows no spec banner at all for a credential with no fromSecurityScheme', () => {
     render(<Harness initialDraft={emptyDraft('bearer', '')} />);
     expect(screen.queryByText(/securitySchemes\./)).not.toBeInTheDocument();
+  });
+
+  describe('oauth2_* Verify & Save', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      __clearCredentialTokenCacheForTests();
+    });
+
+    it('reads "Verify & Save" (not plain "Save") for oauth2_clientCredentials', () => {
+      render(<Harness initialDraft={emptyDraft('oauth2_clientCredentials', '')} />);
+      expect(screen.getByRole('button', { name: 'Verify & Save' })).toBeInTheDocument();
+    });
+
+    it('hits the token endpoint and calls onSave with the id it verified, on success', async () => {
+      const user = userEvent.setup();
+      const fetchMock = vi.fn().mockResolvedValue(mockTokenResponse(200, { access_token: 'tok', expires_in: 60 }));
+      vi.stubGlobal('fetch', fetchMock);
+      const onSave = vi.fn();
+
+      render(<Harness initialDraft={emptyDraft('oauth2_clientCredentials', '')} onSave={onSave} />);
+      await user.type(screen.getByPlaceholderText('name'), 'guest-token');
+      await user.type(screen.getByPlaceholderText('https://auth.example.com/oauth/token'), 'http://auth.test/token');
+      await user.type(screen.getByPlaceholderText('client id'), 'client-id');
+      await user.type(screen.getByPlaceholderText('client secret'), 'client-secret');
+
+      await user.click(screen.getByRole('button', { name: 'Verify & Save' }));
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+      expect(fetchMock).toHaveBeenCalledWith('http://auth.test/token', expect.anything());
+      expect(typeof onSave.mock.calls[0][0]).toBe('string');
+      expect(onSave.mock.calls[0][0]).not.toBe('');
+    });
+
+    it('shows the failure inline and does not call onSave when the token endpoint rejects the request', async () => {
+      const user = userEvent.setup();
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockTokenResponse(401, {})));
+      const onSave = vi.fn();
+
+      render(<Harness initialDraft={emptyDraft('oauth2_clientCredentials', '')} onSave={onSave} />);
+      await user.type(screen.getByPlaceholderText('name'), 'guest-token');
+      await user.type(screen.getByPlaceholderText('https://auth.example.com/oauth/token'), 'http://auth.test/token');
+      await user.type(screen.getByPlaceholderText('client id'), 'client-id');
+      await user.type(screen.getByPlaceholderText('client secret'), 'client-secret');
+
+      await user.click(screen.getByRole('button', { name: 'Verify & Save' }));
+
+      expect(await screen.findByText(/Verification failed:.*failed with status 401/)).toBeInTheDocument();
+      expect(onSave).not.toHaveBeenCalled();
+      // Back to idle, editable — not stuck on "Verifying…".
+      expect(screen.getByRole('button', { name: 'Verify & Save' })).toBeEnabled();
+    });
+
+    it('clears a previous verification error as soon as any field changes', async () => {
+      const user = userEvent.setup();
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockTokenResponse(401, {})));
+
+      render(<Harness initialDraft={emptyDraft('oauth2_clientCredentials', '')} />);
+      await user.type(screen.getByPlaceholderText('name'), 'guest-token');
+      await user.type(screen.getByPlaceholderText('https://auth.example.com/oauth/token'), 'http://auth.test/token');
+      await user.type(screen.getByPlaceholderText('client id'), 'client-id');
+      await user.type(screen.getByPlaceholderText('client secret'), 'client-secret');
+      await user.click(screen.getByRole('button', { name: 'Verify & Save' }));
+      expect(await screen.findByText(/Verification failed/)).toBeInTheDocument();
+
+      await user.type(screen.getByPlaceholderText('client secret'), '-retry');
+
+      expect(screen.queryByText(/Verification failed/)).not.toBeInTheDocument();
+    });
   });
 });

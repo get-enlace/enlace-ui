@@ -153,8 +153,19 @@ interface WorkflowState {
   stepNode: (nodeId: string) => void;
   /** Stops the active run: nothing new fires, everything already in flight still completes, every still-pending/paused node becomes 'skipped'. A no-op if no run is in progress. */
   stopExecution: () => void;
-  /** Held in browser memory only — never sent anywhere except as the resolved header/query param on the actual request (see engine/credentials.ts). */
-  addCredential: (credential: NewCredential) => void;
+  /**
+   * Held in browser memory only — never sent anywhere except as the resolved
+   * header/query param on the actual request (see engine/credentials.ts).
+   * `id` is optional and normally omitted — a fresh id is minted here. The
+   * one exception is the oauth2_* "Verify & Save" flow (CredentialForm.tsx),
+   * which already ran the credential through `resolveCredentialInjection`
+   * pre-save to confirm the token endpoint works, caching the resulting
+   * token under a pre-minted id (see engine/credentials.ts's tokenCache) —
+   * passing that same id through here means the credential's first real
+   * run reuses that cached token instead of hitting the token endpoint (and
+   * any 2FA/guest-token flow behind it) a second time.
+   */
+  addCredential: (credential: NewCredential, id?: string) => void;
   /** Replaces a credential's fields in place, keeping its id — so every node's `credentialId` reference stays valid, unlike delete+re-add. */
   updateCredential: (credentialId: string, credential: NewCredential) => void;
   /** Removes a credential and unsets it from any node still referencing it — same dangling-reference reasoning as removeNode's cleanup of mapped fields. */
@@ -322,8 +333,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   stepNode: (nodeId) => get().activeControl?.step(nodeId),
   stopExecution: () => get().activeControl?.stop(),
 
-  addCredential: (credential) => {
-    const withId = { ...credential, id: randomId() } as Credential;
+  addCredential: (credential, id) => {
+    const withId = { ...credential, id: id ?? randomId() } as Credential;
     set((state) => ({ credentials: [...state.credentials, withId] }));
   },
 

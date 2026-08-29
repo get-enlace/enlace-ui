@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CREDENTIAL_TYPE_LABELS, emptyDraft, isDraftComplete, maskTail, maskedPreview, toDraft } from './credentialDraft.js';
+import { CREDENTIAL_TYPE_LABELS, emptyDraft, isDraftComplete, maskedPreview, toDraft } from './credentialDraft.js';
 import type { Credential } from '../types.js';
 
 describe('emptyDraft', () => {
@@ -145,29 +145,83 @@ describe('isDraftComplete', () => {
   });
 });
 
-describe('maskTail', () => {
-  it('shows only the last 4 characters, prefixed with dots', () => {
-    expect(maskTail('super-secret-token')).toBe('••••oken');
-  });
-
-  it('returns an empty string for an empty value', () => {
-    expect(maskTail('')).toBe('');
-  });
-});
-
 describe('maskedPreview', () => {
-  it('never includes the raw secret value, for every credential type', () => {
+  it('never includes any raw secret value, for every credential type', () => {
     const credentials: Credential[] = [
       { id: '1', name: 'n', type: 'bearer', token: 'super-secret-token' },
       { id: '2', name: 'n', type: 'basic', username: 'alice', password: 'hunter2-super-secret' },
       { id: '3', name: 'n', type: 'apiKey', paramName: 'X-API-Key', in: 'header', key: 'super-secret-key' },
-      { id: '4', name: 'n', type: 'oauth2_clientCredentials', tokenUrl: 'x', clientId: 'id', clientSecret: 'super-secret-cs', clientAuthMethod: 'basic' },
-      { id: '5', name: 'n', type: 'oauth2_password', tokenUrl: 'x', username: 'alice', password: 'super-secret-pw', clientAuthMethod: 'basic' },
+      {
+        id: '4',
+        name: 'n',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: 'x',
+        clientId: 'id',
+        clientSecret: 'super-secret-cs',
+        clientAuthMethod: 'basic',
+      },
+      {
+        id: '5',
+        name: 'n',
+        type: 'oauth2_password',
+        tokenUrl: 'x',
+        username: 'alice',
+        password: 'super-secret-pw',
+        clientAuthMethod: 'basic',
+      },
     ];
 
     for (const credential of credentials) {
       expect(maskedPreview(credential)).not.toContain('super-secret');
     }
+  });
+
+  it('bearer and oauth2_clientCredentials have no non-secret detail worth showing, so preview is empty', () => {
+    expect(maskedPreview({ id: '1', name: 'n', type: 'bearer', token: 'super-secret-token' })).toBe('');
+    expect(
+      maskedPreview({
+        id: '4',
+        name: 'n',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: 'x',
+        clientId: 'id',
+        clientSecret: 'secret',
+        clientAuthMethod: 'basic',
+      })
+    ).toBe('');
+  });
+
+  it("basic shows the username plainly, with the password fully redacted (no characters revealed)", () => {
+    const preview = maskedPreview({ id: '2', name: 'n', type: 'basic', username: 'alice', password: 'hunter2' });
+    expect(preview).toBe('alice');
+    expect(preview).not.toContain('hunter2');
+  });
+
+  it('apiKey shows the header/query param name plainly, with the key fully redacted', () => {
+    const preview = maskedPreview({
+      id: '3',
+      name: 'n',
+      type: 'apiKey',
+      paramName: 'X-API-Key',
+      in: 'header',
+      key: 'super-secret-key',
+    });
+    expect(preview).toContain('X-API-Key (header)');
+    expect(preview).not.toContain('super-secret-key');
+  });
+
+  it("oauth2_password shows the resource owner's username plainly, with the password fully redacted", () => {
+    const preview = maskedPreview({
+      id: '5',
+      name: 'n',
+      type: 'oauth2_password',
+      tokenUrl: 'x',
+      username: 'alice',
+      password: 'hunter2',
+      clientAuthMethod: 'basic',
+    });
+    expect(preview).toContain('alice');
+    expect(preview).not.toContain('hunter2');
   });
 
   it('popup_login has no secret at all and says so', () => {

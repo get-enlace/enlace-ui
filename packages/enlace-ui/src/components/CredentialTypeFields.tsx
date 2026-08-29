@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { openLoginPopup } from '../utils/credentialDraft.js';
 import type { NewCredential } from '../types.js';
 
@@ -6,19 +7,85 @@ interface FieldsProps<T> {
   setDraft: (draft: NewCredential) => void;
 }
 
+// Plain stroked-outline icons, not emoji — matches the rest of the app's
+// chrome (✕ for close, › for expand, ! for failed), which never uses
+// pictographic/colorful glyphs. `currentColor` means each follows
+// whatever text color the reveal button already has, so no separate
+// dark/light handling is needed.
+function EyeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  );
+}
+
+/**
+ * A masked-by-default text input with a show/hide toggle — every secret
+ * field (token, password, api key, client secret) uses this instead of a
+ * bare `<input type="password">`. Complements the saved card's own
+ * REDACTED-only preview (see credentialDraft.ts's maskedPreview): the card
+ * never reveals any of the value, so this is the one place a user *can*
+ * double-check exactly what they typed — on demand, in the form they
+ * themselves are filling in, not leaked passively elsewhere.
+ */
+function SecretField({
+  label,
+  placeholder,
+  value,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <label className="credentials-panel__field">
+      {label}
+      <span className="credentials-panel__secret-input">
+        <input
+          placeholder={placeholder}
+          type={revealed ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button
+          type="button"
+          className="credentials-panel__reveal-btn"
+          onClick={() => setRevealed((r) => !r)}
+          aria-label={revealed ? `Hide ${label}` : `Show ${label}`}
+          title={revealed ? 'Hide value' : 'Show value'}
+        >
+          {revealed ? <EyeOffIcon /> : <EyeIcon />}
+        </button>
+      </span>
+    </label>
+  );
+}
+
 type BearerDraft = Extract<NewCredential, { type: 'bearer' }>;
 
 export function BearerFields({ draft, setDraft }: FieldsProps<BearerDraft>) {
   return (
-    <label className="credentials-panel__field">
-      Token
-      <input
-        placeholder="bearer token"
-        type="password"
-        value={draft.token}
-        onChange={(e) => setDraft({ ...draft, token: e.target.value })}
-      />
-    </label>
+    <SecretField
+      label="Token"
+      placeholder="bearer token"
+      value={draft.token}
+      onChange={(token) => setDraft({ ...draft, token })}
+    />
   );
 }
 
@@ -35,15 +102,12 @@ export function BasicFields({ draft, setDraft }: FieldsProps<BasicDraft>) {
           onChange={(e) => setDraft({ ...draft, username: e.target.value })}
         />
       </label>
-      <label className="credentials-panel__field">
-        Password
-        <input
-          placeholder="password"
-          type="password"
-          value={draft.password}
-          onChange={(e) => setDraft({ ...draft, password: e.target.value })}
-        />
-      </label>
+      <SecretField
+        label="Password"
+        placeholder="password"
+        value={draft.password}
+        onChange={(password) => setDraft({ ...draft, password })}
+      />
     </>
   );
 }
@@ -68,15 +132,12 @@ export function ApiKeyFields({ draft, setDraft }: FieldsProps<ApiKeyDraft>) {
           <option value="query">Query param</option>
         </select>
       </label>
-      <label className="credentials-panel__field">
-        Key value
-        <input
-          placeholder="key value"
-          type="password"
-          value={draft.key}
-          onChange={(e) => setDraft({ ...draft, key: e.target.value })}
-        />
-      </label>
+      <SecretField
+        label="Key value"
+        placeholder="key value"
+        value={draft.key}
+        onChange={(key) => setDraft({ ...draft, key })}
+      />
     </>
   );
 }
@@ -107,15 +168,12 @@ export function OAuth2ClientCredentialsFields({ draft, setDraft }: FieldsProps<O
           onChange={(e) => setDraft({ ...draft, clientId: e.target.value })}
         />
       </label>
-      <label className="credentials-panel__field">
-        Client secret
-        <input
-          placeholder="client secret"
-          type="password"
-          value={draft.clientSecret}
-          onChange={(e) => setDraft({ ...draft, clientSecret: e.target.value })}
-        />
-      </label>
+      <SecretField
+        label="Client secret"
+        placeholder="client secret"
+        value={draft.clientSecret}
+        onChange={(clientSecret) => setDraft({ ...draft, clientSecret })}
+      />
       <label className="credentials-panel__field">
         Client auth method
         <select
@@ -168,15 +226,12 @@ export function OAuth2PasswordFields({ draft, setDraft }: FieldsProps<OAuth2Pass
           onChange={(e) => setDraft({ ...draft, username: e.target.value })}
         />
       </label>
-      <label className="credentials-panel__field">
-        Password
-        <input
-          placeholder="resource owner password"
-          type="password"
-          value={draft.password}
-          onChange={(e) => setDraft({ ...draft, password: e.target.value })}
-        />
-      </label>
+      <SecretField
+        label="Password"
+        placeholder="resource owner password"
+        value={draft.password}
+        onChange={(password) => setDraft({ ...draft, password })}
+      />
       <label className="credentials-panel__field">
         Client ID (optional)
         <input
@@ -185,15 +240,12 @@ export function OAuth2PasswordFields({ draft, setDraft }: FieldsProps<OAuth2Pass
           onChange={(e) => setDraft({ ...draft, clientId: e.target.value })}
         />
       </label>
-      <label className="credentials-panel__field">
-        Client secret (optional)
-        <input
-          placeholder="client secret"
-          type="password"
-          value={draft.clientSecret ?? ''}
-          onChange={(e) => setDraft({ ...draft, clientSecret: e.target.value })}
-        />
-      </label>
+      <SecretField
+        label="Client secret (optional)"
+        placeholder="client secret"
+        value={draft.clientSecret ?? ''}
+        onChange={(clientSecret) => setDraft({ ...draft, clientSecret })}
+      />
       <label className="credentials-panel__field">
         Client auth method
         <select
