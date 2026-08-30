@@ -3,6 +3,7 @@ import { fetchSpec } from '../api/client.js';
 import { parseOperations } from '../engine/specParser.js';
 import { connectionKey, executeChain } from '../engine/chainExecutor.js';
 import { extractDeclaredCredentials, type DeclaredCredential } from '../engine/securitySchemes.js';
+import { findOpenPosition } from '../utils/nodePlacement.js';
 import { randomId } from '../utils/randomId.js';
 import { hydrateCollection, referencedIncompleteCredentials } from '../utils/workflowDocument.js';
 import type {
@@ -144,7 +145,13 @@ interface WorkflowState {
    * shares this guard.
    */
   addNode: (operationId: string, position?: Position) => string;
-  updateNodePosition: (nodeId: string, position: Position) => void;
+  /**
+   * Moves a node on the canvas. Purely visual — exempt from `isLocked`.
+   * Pass `avoidOverlap: true` when the gesture has settled (drop / drag-end)
+   * so the card nudges clear of neighbors; leave it off while dragging so the
+   * card tracks the pointer without fighting collision snaps mid-gesture.
+   */
+  updateNodePosition: (nodeId: string, position: Position, options?: { avoidOverlap?: boolean }) => void;
   /**
    * Removes a node and everything that referenced it: its connections
    * (either direction), and any other node's field mapped from it (reset
@@ -260,16 +267,31 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     if (isLocked(get())) return '';
     const id = randomId();
     const node: WorkflowNode = { id, operationId, credentialId: null, fieldValues: {} };
-    set((state) => ({
-      nodes: [...state.nodes, node],
-      nodePositions: { ...state.nodePositions, [id]: position ?? defaultPosition(state.nodes.length) },
-      selectedNodeId: id,
-    }));
+    set((state) => {
+      const desired = position ?? defaultPosition(state.nodes.length);
+      const obstacles = Object.values(state.nodePositions);
+      return {
+        nodes: [...state.nodes, node],
+        nodePositions: { ...state.nodePositions, [id]: findOpenPosition(desired, obstacles) },
+        selectedNodeId: id,
+      };
+    });
     return id;
   },
 
-  updateNodePosition: (nodeId, position) =>
-    set((state) => ({ nodePositions: { ...state.nodePositions, [nodeId]: position } })),
+  updateNodePosition: (nodeId, position, options) =>
+    set((state) => {
+      const next =
+        options?.avoidOverlap === true
+          ? findOpenPosition(
+              position,
+              Object.entries(state.nodePositions)
+                .filter(([id]) => id !== nodeId)
+                .map(([, pos]) => pos)
+            )
+          : position;
+      return { nodePositions: { ...state.nodePositions, [nodeId]: next } };
+    }),
 
   removeNode: (nodeId) =>
     set((state) => {

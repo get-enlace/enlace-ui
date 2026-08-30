@@ -728,8 +728,14 @@ body {
 /* .workflow-node is a <fieldset> now (see WorkflowNodeCard.tsx) — reset the
    UA defaults (border/padding/margin, min-width: min-content) same as
    .operation-list__item. */
+.workflow-node-shell {
+  position: relative;
+  isolation: isolate;
+}
+
 .workflow-node {
   position: relative;
+  z-index: 0;
   margin: 0;
   padding: 10px 14px;
   border: 1px solid var(--color-border);
@@ -749,26 +755,26 @@ body {
 
 .workflow-node__remove-btn {
   position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 18px;
-  height: 18px;
+  top: 8px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 1px solid var(--color-border);
-  background: var(--color-topbar-bg);
+  border: none;
+  background: var(--color-panel-bg);
   color: var(--color-text-muted);
   font-size: 13px;
   cursor: pointer;
   padding: 0;
+  z-index: 1;
 }
 
 .workflow-node__remove-btn:hover {
   background: var(--color-delete);
-  border-color: var(--color-delete);
   color: #fff;
 }
 
@@ -778,31 +784,13 @@ body {
 }
 
 .workflow-node__remove-btn:disabled:hover {
-  background: var(--color-topbar-bg);
-  border-color: var(--color-border);
+  background: var(--color-panel-bg);
   color: var(--color-text-muted);
 }
 
-.workflow-node--get {
-  background: linear-gradient(var(--color-get-bg), var(--color-get-bg)), var(--color-panel-bg);
-  border-color: rgba(97, 175, 254, 0.4);
-}
-.workflow-node--post {
-  background: linear-gradient(var(--color-post-bg), var(--color-post-bg)), var(--color-panel-bg);
-  border-color: rgba(73, 204, 144, 0.4);
-}
-.workflow-node--put {
-  background: linear-gradient(var(--color-put-bg), var(--color-put-bg)), var(--color-panel-bg);
-  border-color: rgba(252, 161, 48, 0.4);
-}
-.workflow-node--patch {
-  background: linear-gradient(var(--color-patch-bg), var(--color-patch-bg)), var(--color-panel-bg);
-  border-color: rgba(80, 227, 194, 0.4);
-}
-.workflow-node--delete {
-  background: linear-gradient(var(--color-delete-bg), var(--color-delete-bg)), var(--color-panel-bg);
-  border-color: rgba(249, 62, 62, 0.4);
-}
+/* Method tint used to live on the whole card; color now stays on the verb
+   badge only (`.method-badge--*`). Idle cards share one neutral chrome —
+   status borders below are the only place color returns to the outline. */
 
 /* border-width, not box-shadow — same reason as .operation-list__item:hover
    above: box-shadow ignores the legend gap and draws straight through the
@@ -823,7 +811,7 @@ body {
     border-color: var(--color-get);
   }
   50% {
-    border-color: var(--color-border);
+    border-color: rgba(97, 175, 254, 0.25);
   }
 }
 
@@ -845,10 +833,18 @@ body {
   border-width: 2px;
 }
 
-/* Top-left corner badge — the remove button already owns top-right (see
-   .workflow-node__remove-btn). Only rendered for the statuses worth
-   flagging at a glance across a busy canvas without opening the Debugger
-   tab (see WorkflowNodeCard.tsx's STATUS_BADGE_GLYPH). */
+/* Pass: keep the idle neutral border — success is the green ✓ badge only,
+   not a green outline competing with selection/status chrome. */
+.workflow-node--completed {
+  border-width: 1px;
+  border-color: var(--color-border);
+}
+
+/* Top-left corner badge — sits on the border so it stays visible against
+   the card chrome. The remove button is inset inside the card (top-right).
+   Only rendered for the statuses worth flagging at a glance across a busy
+   canvas without opening the Debugger tab (see WorkflowNodeCard.tsx's
+   STATUS_BADGE_GLYPH). */
 .workflow-node__status-badge {
   position: absolute;
   top: -8px;
@@ -904,6 +900,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Room for the in-card × so path text doesn't run under it. */
+  padding-right: 22px;
 }
 
 .workflow-node__path {

@@ -110,7 +110,7 @@ describe('WorkflowNodeCard', () => {
   it('falls back to "Unknown operation" when the operation can\'t be found (e.g. spec changed since the node was added)', () => {
     renderCard({ node: makeNode(), operation: undefined, selected: false });
     expect(screen.getByText('Unknown operation')).toBeInTheDocument();
-    // No operation means no known method either — defaults to GET's styling rather than crashing.
+    // No operation means no known method either — badge still renders a GET default.
     expect(screen.getByText('GET')).toBeInTheDocument();
   });
 
@@ -132,10 +132,17 @@ describe('WorkflowNodeCard', () => {
     expect(screen.getByText('⏸ Paused here')).toBeInTheDocument();
   });
 
-  it('applies a completed status badge once the node settles successfully, without a paused label', () => {
+  it('applies a completed status badge once the node settles successfully, without a status border or paused label', () => {
     renderCard({ node: makeNode(), operation: makeOperation(), selected: false, status: 'completed' });
+    expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--completed');
     expect(document.querySelector('.workflow-node__status-badge--completed')).toBeInTheDocument();
     expect(screen.queryByText('⏸ Paused here')).not.toBeInTheDocument();
+  });
+
+  it('keeps method color on the verb badge only — the card itself is not method-tinted', () => {
+    renderCard({ node: makeNode(), operation: makeOperation({ method: 'post' }), selected: false });
+    expect(document.querySelector('.workflow-node')).not.toHaveClass('workflow-node--post');
+    expect(document.querySelector('.method-badge')).toHaveClass('method-badge--post');
   });
 
   it('omits any status modifier/badge before a node has ever run', () => {

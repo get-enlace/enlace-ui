@@ -53,6 +53,20 @@ describe('Canvas', () => {
     expect(useWorkflowStore.getState().nodes).toHaveLength(0);
   });
 
+  it('marks the store-selected node as selected on the React Flow node so Delete/Backspace can remove it', () => {
+    useWorkflowStore.setState({
+      nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodePositions: { n1: { x: 0, y: 0 } },
+      selectedNodeId: 'n1',
+      operations: [petOperation],
+    });
+    const { container } = render(<Canvas />);
+    // RF applies `.selected` from the top-level Node.selected flag — the same
+    // flag Delete/Backspace reads. Card CSS separately uses data.selected.
+    expect(container.querySelector('.react-flow__node')).toHaveClass('selected');
+    expect(container.querySelector('.workflow-node')).toHaveClass('workflow-node--selected');
+  });
+
   it("highlights a node's card while its step status is in-flight", () => {
     useWorkflowStore.setState({
       nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],

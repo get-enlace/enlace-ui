@@ -55,29 +55,58 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
   const badgeGlyph = status && STATUS_BADGE_GLYPH[status];
 
   return (
-    // A real <fieldset>/<legend> — same as OperationList's cards — so the
-    // browser cuts the operationId's gap in the top border itself, rather
-    // than us hand-positioning a label over it.
-    <fieldset
-      className={`workflow-node workflow-node--${method}${selected ? ' workflow-node--selected' : ''}${status ? ` workflow-node--${status}` : ''}`}
-    >
-      {showLegend && <legend className="workflow-node__operation-id">{label}</legend>}
-      {badgeGlyph && (
-        <span className={`workflow-node__status-badge workflow-node__status-badge--${status}`} aria-hidden="true">
-          {badgeGlyph}
-        </span>
-      )}
-      {/* Drag from one box's right handle to another's left handle to
-          establish execution ORDER (a WorkflowConnection) — separate from
-          field mapping (data source), which stays in the Node Inspector's
-          "map from..." picker. onConnect is wired up in Canvas.tsx. */}
-      <Handle type="target" position={Position.Left} title="Drop here to connect — sets run order, not data" />
+    // Shell wraps the fieldset so the × can pin to the true top-right of the
+    // card. Absolute children of a <fieldset> (especially with a <legend>)
+    // sit below the legend/padding in some engines, which left a gap under
+    // the top border — see the remove-btn rule in styles.css.
+    <div className="workflow-node-shell">
+      {/* A real <fieldset>/<legend> — same as OperationList's cards — so the
+          browser cuts the operationId's gap in the top border itself, rather
+          than us hand-positioning a label over it. Method color lives only on
+          the verb badge; the card chrome is neutral until a run status paints
+          a border (see styles.css's workflow-node--{in-flight,paused,failed}). */}
+      <fieldset
+        className={`workflow-node${selected ? ' workflow-node--selected' : ''}${status ? ` workflow-node--${status}` : ''}`}
+      >
+        {showLegend && <legend className="workflow-node__operation-id">{label}</legend>}
+        {badgeGlyph && (
+          <span className={`workflow-node__status-badge workflow-node__status-badge--${status}`} aria-hidden="true">
+            {badgeGlyph}
+          </span>
+        )}
+        {/* Drag from one box's right handle to another's left handle to
+            establish execution ORDER (a WorkflowConnection) — separate from
+            field mapping (data source), which stays in the Node Inspector's
+            "map from..." picker. onConnect is wired up in Canvas.tsx. */}
+        <Handle type="target" position={Position.Left} title="Drop here to connect — sets run order, not data" />
+        <div className="workflow-node__header">
+          <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
+          <span className="workflow-node__path">{operation?.path ?? 'Unknown operation'}</span>
+        </div>
+        {operation?.summary && (
+          <div className="workflow-node__summary" title={operation.summary}>
+            {operation.summary}
+          </div>
+        )}
+        {/* Point-of-truth for "why hasn't this fired" without needing the
+            Debugger tab open — the corner badge alone reads as "something's
+            up" at a glance across a busy canvas, this line says what. */}
+        {status === 'paused' && <div className="workflow-node__paused-label">⏸ Paused here</div>}
+        <Handle type="source" position={Position.Right} title="Drag to connect — sets run order, not data" />
+      </fieldset>
+      {/* After the fieldset so it paints above the card border — a sibling
+          underneath let the fieldset's top/right edges cut through the × and
+          look like a half-ring when the button itself had no border.
+          `nodrag`/`nopan`: React Flow's convention for interactive chrome
+          inside a node (same as BreakpointConnectionEdge). Without them, a
+          mousedown on × starts a node-drag via RF's native listeners —
+          React's stopPropagation alone doesn't reach those — and the click
+          that should call removeNode never lands, especially right after
+          selecting a previously-deselected node. */}
       <button
         type="button"
-        className="workflow-node__remove-btn"
+        className="nodrag nopan workflow-node__remove-btn"
         disabled={isRunning}
-        // Stop both so this doesn't also select the node or start a
-        // React-Flow drag gesture before the click registers.
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
@@ -88,20 +117,6 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
       >
         ×
       </button>
-      <div className="workflow-node__header">
-        <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
-        <span className="workflow-node__path">{operation?.path ?? 'Unknown operation'}</span>
-      </div>
-      {operation?.summary && (
-        <div className="workflow-node__summary" title={operation.summary}>
-          {operation.summary}
-        </div>
-      )}
-      {/* Point-of-truth for "why hasn't this fired" without needing the
-          Debugger tab open — the corner badge alone reads as "something's
-          up" at a glance across a busy canvas, this line says what. */}
-      {status === 'paused' && <div className="workflow-node__paused-label">⏸ Paused here</div>}
-      <Handle type="source" position={Position.Right} title="Drag to connect — sets run order, not data" />
-    </fieldset>
+    </div>
   );
 }

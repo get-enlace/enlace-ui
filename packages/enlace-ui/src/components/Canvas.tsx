@@ -93,6 +93,11 @@ function CanvasInner() {
         id: n.id,
         type: 'workflowNode',
         position: nodePositions[n.id] ?? { x: 80, y: 80 },
+        // Top-level `selected` is what React Flow uses for keyboard Delete/
+        // Backspace (and its own selection chrome). `data.selected` is only
+        // for our card CSS — without the top-level flag, the node looks
+        // selected (blue border) but Delete does nothing.
+        selected: n.id === selectedNodeId,
         data: {
           node: n,
           operation: operations.find((o) => o.id === n.operationId),
@@ -197,6 +202,11 @@ function CanvasInner() {
   // but without this handler our store never drops it, so it would just
   // reappear on the next render. The node card's own × button is the more
   // discoverable way to remove a node; this is a bonus for keyboard users.
+  //
+  // Collision settle lives in `onNodeDragStop` below, not here: React Flow's
+  // drag-end `position` change sets `dragging: false` but intentionally omits
+  // `position` (`updateNodePositions(..., positionChanged=false)`), so an
+  // `avoidOverlap` gated on that event never saw a place to snap to.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const change of changes) {
@@ -258,6 +268,19 @@ function CanvasInner() {
     if (outOfView) fitView({ padding: 0.2, duration: 300 });
   }, [nodes.length, fitView]);
 
+  // Settle collisions here — not in onNodesChange. React Flow's drag-end
+  // `position` change sets `dragging: false` but omits `position`
+  // (`updateNodePositions(..., positionChanged=false)`), so an avoidOverlap
+  // gated on that event never saw where to snap. After settling, re-frame
+  // if the nearest free slot landed outside the current viewport.
+  const onNodeDragStop = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      updateNodePosition(node.id, node.position, { avoidOverlap: true });
+      requestAnimationFrame(() => refitIfNeeded());
+    },
+    [updateNodePosition, refitIfNeeded]
+  );
+
   useEffect(() => {
     if (prevNodeCountRef.current === nodes.length) return;
     prevNodeCountRef.current = nodes.length;
@@ -299,6 +322,7 @@ function CanvasInner() {
         }}
         onConnect={onConnect}
         onNodesChange={onNodesChange}
+        onNodeDragStop={onNodeDragStop}
         onEdgesChange={onEdgesChange}
         // Double-click a connector to arm a breakpoint (double-click again
         // to disarm). Only connection edges carry `data.fromNodeId` — a
