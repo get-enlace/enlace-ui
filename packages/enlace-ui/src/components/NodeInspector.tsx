@@ -21,11 +21,7 @@ function LockIcon() {
   );
 }
 
-export interface NodeInspectorProps {
-  onCollapse: () => void;
-}
-
-export function NodeInspector({ onCollapse }: NodeInspectorProps) {
+export function NodeInspector() {
   const {
     nodes,
     connections,
@@ -93,26 +89,10 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
     setCredPickerOpen(false);
   }, [selectedNodeId]);
 
-  const collapseButton = (
-    <button
-      type="button"
-      className="pane-collapse-btn"
-      onClick={onCollapse}
-      title="Hide inspector"
-      aria-label="Hide inspector"
-    >
-      ›
-    </button>
-  );
-
   if (!node || !operation) {
     return (
       <aside className="node-inspector node-inspector--empty">
-        <div className="node-inspector__topbar">
-          <span>Inspector</span>
-          {collapseButton}
-        </div>
-        <p>Select a node to configure it.</p>
+        <p className="node-inspector__empty-msg">Select a node to configure it.</p>
       </aside>
     );
   }
@@ -341,25 +321,13 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
 
   return (
     <aside className="node-inspector">
-      <div className="node-inspector__topbar">
-        <span>Inspector</span>
-        {collapseButton}
-      </div>
-
-      {/* A native <fieldset disabled> is what actually locks every plain
-          input/select/button below in one place — the store-level guards
-          on setFieldValue/setCredential/etc. (workflowStore.ts's isLocked)
-          are the real correctness fix (nothing here can bypass them even
-          if this ever got out of sync), this is just making the "why
-          didn't that do anything" question never come up. RawBodyEditor
-          gets its own readOnly prop instead, since it isn't a native form
-          control this wrapper reaches — see that component's own comment
-          on why. */}
+      {/* Operation verb+path is the pane header (no separate "Inspector" title).
+          Credential lock stays here — it's about this operation, not chrome. */}
       {isRunning && (
         <p className="node-inspector__banner">Workflow is running — editing is locked until it finishes.</p>
       )}
       <fieldset className="node-inspector__fieldset" disabled={isRunning}>
-      <div className="node-inspector__op-heading" ref={credPickerRef}>
+      <div className="node-inspector__header" ref={credPickerRef}>
         <div className="node-inspector__op-title">
           <button
             type="button"
@@ -372,7 +340,8 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
           >
             <LockIcon />
           </button>
-          <h2>{operation.id}</h2>
+          <span className={`method-badge method-badge--${operation.method}`}>{operation.method.toUpperCase()}</span>
+          <h2 className="node-inspector__path">{operation.path}</h2>
         </div>
         {credPickerOpen && (
           <ul className="node-inspector__cred-menu" role="listbox" aria-label="Available credentials">

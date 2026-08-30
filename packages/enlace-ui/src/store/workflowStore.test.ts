@@ -16,6 +16,7 @@ beforeEach(() => {
     operations: [],
     baseUrl: null,
     specInfo: null,
+    workflowName: 'Untitled',
     runResult: null,
     stepStatusByNodeId: {},
     armedBreakpoints: new Set(),
@@ -476,6 +477,7 @@ describe('replaceWorkflow', () => {
     selectNode(oldId);
 
     const incoming = serializeCollection({
+      name: 'Orders sandbox',
       nodes: [{ id: 'n-new', operationId: 'POST /orders', credentialId: 'c-new', fieldValues: {} }],
       connections: [],
       nodePositions: { 'n-new': { x: 40, y: 80 } },
@@ -492,6 +494,7 @@ describe('replaceWorkflow', () => {
     expect(state.operations).toEqual([keepOp]);
     expect(state.baseUrl).toBe('http://example.test');
     expect(state.specInfo).toEqual({ title: 'Sample API' });
+    expect(state.workflowName).toBe('Orders sandbox');
   });
 });
 

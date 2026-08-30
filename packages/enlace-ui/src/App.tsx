@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useWorkflowStore } from './store/workflowStore.js';
 import { OperationList } from './components/OperationList.js';
 import { Canvas } from './components/Canvas.js';
@@ -7,6 +7,7 @@ import { DebugPane } from './components/DebugPane.js';
 import { ChromeSettingsMenu } from './components/ChromeSettingsMenu.js';
 import { WorkflowSwitcher } from './components/WorkflowSwitcher.js';
 import { RunControls } from './components/RunControls.js';
+import { InspectorShell, INSPECTOR_DEFAULT_WIDTH } from './components/InspectorShell.js';
 
 export default function App() {
   const {
@@ -26,6 +27,8 @@ export default function App() {
   // what gets run, just how much canvas room the user gets to work with.
   const [showInspector, setShowInspector] = useState(true);
   const [showDebugPane, setShowDebugPane] = useState(true);
+  const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
+  const onInspectorWidthChange = useCallback((width: number) => setInspectorWidth(width), []);
 
   useEffect(() => {
     loadOperations();
@@ -68,11 +71,20 @@ export default function App() {
           <ChromeSettingsMenu />
         </div>
       </header>
-      <div className={`app__body${showInspector ? '' : ' app__body--inspector-collapsed'}`}>
+      <div
+        className={`app__body${showInspector ? '' : ' app__body--inspector-collapsed'}`}
+        style={
+          showInspector
+            ? { gridTemplateColumns: `240px minmax(240px, 1fr) ${inspectorWidth}px` }
+            : undefined
+        }
+      >
         <OperationList operations={operations} />
         <Canvas />
         {showInspector ? (
-          <NodeInspector onCollapse={() => setShowInspector(false)} />
+          <InspectorShell onCollapse={() => setShowInspector(false)} onWidthChange={onInspectorWidthChange}>
+            <NodeInspector />
+          </InspectorShell>
         ) : (
           <button
             type="button"

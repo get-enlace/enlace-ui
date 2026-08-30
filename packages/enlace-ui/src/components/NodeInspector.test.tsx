@@ -62,7 +62,7 @@ describe('NodeInspector', () => {
   });
 
   it('shows a placeholder when no node is selected', () => {
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
     expect(screen.getByText('Select a node to configure it.')).toBeInTheDocument();
   });
 
@@ -83,7 +83,7 @@ describe('NodeInspector', () => {
       operations: [op],
       selectedNodeId: 'node-1',
     });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     expect(screen.getByRole('heading', { name: 'Request' })).toBeInTheDocument();
     expect(screen.queryByText('Request fields')).not.toBeInTheDocument();
@@ -120,7 +120,7 @@ describe('NodeInspector', () => {
       operations: [op],
       selectedNodeId: 'node-1',
     });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     expect(screen.getByRole('checkbox', { name: /Switch to Raw view/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('checkbox', { name: /Switch to Raw view/ }));
@@ -145,7 +145,7 @@ describe('NodeInspector', () => {
       selectedNodeId: 'node-1',
       credentials: [{ id: 'cred-1', name: 'staging', type: 'bearer', token: 'x' }],
     });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     const lock = screen.getByRole('button', { name: 'Credential' });
     expect(lock).not.toHaveClass('node-inspector__cred-lock--set');
@@ -159,7 +159,7 @@ describe('NodeInspector', () => {
   it('coerces a static integer field to a real number in the store', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     const input = fieldRow('body.qty').getByRole('textbox');
     await user.type(input, '3');
@@ -170,7 +170,7 @@ describe('NodeInspector', () => {
   it('renders an enum field as a dropdown and stores the selected value', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     const row = fieldRow('body.status');
     // Two unlabelled comboboxes in this row: [source-kind, enum value].
@@ -185,7 +185,7 @@ describe('NodeInspector', () => {
 
   it('renders an array field as a JSON textarea, parsing valid JSON and falling back to raw text while invalid', () => {
     useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     const textarea = fieldRow('body.photoUrls').getByRole('textbox');
     expect(textarea).toHaveAttribute('placeholder', '["string","string"]');
@@ -208,7 +208,7 @@ describe('NodeInspector', () => {
 
   it('recurses into nested object properties as their own directly-editable fields', () => {
     useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     // category.id / category.name appear directly — no disabled "body.category" row.
     expect(fieldRow('body.category.id')).toBeTruthy();
@@ -218,7 +218,7 @@ describe('NodeInspector', () => {
 
   it('marks a genuinely unrecognized schema shape as unsupported and disables its controls', () => {
     useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     const row = fieldRow('body.weird');
     expect(row.getByText(/\(unsupported\)/)).toBeInTheDocument();
@@ -227,14 +227,14 @@ describe('NodeInspector', () => {
 
   it('shows the connect-a-node hint when there are no ancestors, hides it once connected', () => {
     useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
-    const { rerender } = render(<NodeInspector onCollapse={() => {}} />);
+    const { rerender } = render(<NodeInspector />);
     expect(screen.getByText(/Connect this node from another/)).toBeInTheDocument();
 
     useWorkflowStore.setState({
       nodes: [makeNode(), makeNode({ id: 'node-2', operationId: 'GET /pet/{petId}' })],
       connections: [{ fromNodeId: 'node-2', toNodeId: 'node-1' }],
     });
-    rerender(<NodeInspector onCollapse={() => {}} />);
+    rerender(<NodeInspector />);
     expect(screen.queryByText(/Connect this node from another/)).not.toBeInTheDocument();
   });
 
@@ -245,7 +245,7 @@ describe('NodeInspector', () => {
       connections: [{ fromNodeId: 'node-2', toNodeId: 'node-1' }],
       selectedNodeId: 'node-1',
     });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     const row = fieldRow('body.name');
     const [sourceKindSelect] = row.getAllByRole('combobox');
@@ -268,7 +268,7 @@ describe('NodeInspector', () => {
       connections: [{ fromNodeId: 'node-2', toNodeId: 'node-1' }],
       selectedNodeId: 'node-1',
     });
-    render(<NodeInspector onCollapse={() => {}} />);
+    render(<NodeInspector />);
 
     // body.name is a string — GET /pet/{petId}'s response `tags` is an array.
     const row = fieldRow('body.name');
@@ -292,7 +292,7 @@ describe('NodeInspector', () => {
     it('suggests Raw JSON via a banner when the body has a shape the form can\'t fully represent', () => {
       // petOperation's `weird` field is a oneOf — see the fixture above.
       useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
-      render(<NodeInspector onCollapse={() => {}} />);
+      render(<NodeInspector />);
       expect(screen.getByText(/shape the form can't fully represent/)).toBeInTheDocument();
     });
 
@@ -310,7 +310,7 @@ describe('NodeInspector', () => {
         operations: [petOperation, getPetOperation, plainOperation],
         selectedNodeId: 'node-1',
       });
-      render(<NodeInspector onCollapse={() => {}} />);
+      render(<NodeInspector />);
       expect(screen.queryByText(/shape the form can't fully represent/)).not.toBeInTheDocument();
     });
 
@@ -333,7 +333,7 @@ describe('NodeInspector', () => {
         operations: [petOperation, getPetOperation, plainOperation],
         selectedNodeId: 'node-1',
       });
-      render(<NodeInspector onCollapse={() => {}} />);
+      render(<NodeInspector />);
 
       const modeSwitch = screen.getByRole('checkbox');
       fireEvent.click(modeSwitch);
@@ -369,7 +369,7 @@ describe('NodeInspector', () => {
         operations: [petOperation, getPetOperation, plainOperation],
         selectedNodeId: 'node-1',
       });
-      render(<NodeInspector onCollapse={() => {}} />);
+      render(<NodeInspector />);
       const modeSwitch = screen.getByRole('checkbox');
 
       // Form -> Raw: seeded with "fido".
@@ -398,7 +398,7 @@ describe('NodeInspector', () => {
 
     it('warns before converting back to Form when the Raw JSON has structure the form would lose, and only converts on confirm', async () => {
       useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
-      render(<NodeInspector onCollapse={() => {}} />);
+      render(<NodeInspector />);
 
       const modeSwitch = screen.getByRole('checkbox');
       fireEvent.click(modeSwitch);
@@ -423,7 +423,7 @@ describe('NodeInspector', () => {
   describe('locked while a run is in progress', () => {
     it('shows a banner and disables every field/credential control via the fieldset', () => {
       useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1', isRunning: true });
-      render(<NodeInspector onCollapse={() => {}} />);
+      render(<NodeInspector />);
 
       expect(screen.getByText('Workflow is running — editing is locked until it finishes.')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Credential' })).toBeDisabled();
@@ -432,7 +432,7 @@ describe('NodeInspector', () => {
 
     it("doesn't show the banner or disable anything when not running", () => {
       useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1', isRunning: false });
-      render(<NodeInspector onCollapse={() => {}} />);
+      render(<NodeInspector />);
 
       expect(screen.queryByText(/editing is locked/)).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Credential' })).not.toBeDisabled();

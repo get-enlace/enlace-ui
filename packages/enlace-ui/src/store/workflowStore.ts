@@ -87,6 +87,12 @@ interface WorkflowState {
   baseUrl: string | null;
   /** `info.title` / `info.version` from the loaded spec — used only as a hint on exported workflow files. */
   specInfo: { title?: string; version?: string } | null;
+  /**
+   * Display name for the current canvas workflow — independent of the loaded
+   * OpenAPI `info.title`. Starts as `Untitled`; import/export set it from the
+   * collection / chosen export name.
+   */
+  workflowName: string;
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
   /** Canvas layout only — not part of the executed Workflow. */
@@ -217,6 +223,8 @@ interface WorkflowState {
    * they belong to the discarded graph. A no-op while `isRunning`.
    */
   replaceWorkflow: (collection: EnlaceCollection) => void;
+  /** Renames the current workflow (chrome switcher / export default). Empty → Untitled. */
+  setWorkflowName: (name: string) => void;
   /** `null` dismisses the drawer's review banner — called when the drawer closes. */
   setCredentialReview: (review: CredentialReview | null) => void;
   /**
@@ -234,6 +242,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   operations: [],
   baseUrl: null,
   specInfo: null,
+  workflowName: 'Untitled',
   nodes: [],
   connections: [],
   nodePositions: {},
@@ -447,11 +456,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   replaceWorkflow: (collection) => {
     if (isLocked(get())) return;
     const next = hydrateCollection(collection);
+    const workflowName =
+      collection.workflows[0]?.name?.trim() || collection.name?.trim() || 'Untitled';
     set({
       nodes: next.nodes,
       connections: next.connections,
       nodePositions: next.nodePositions,
       credentials: next.credentials,
+      workflowName,
       selectedNodeId: null,
       runResult: null,
       stepStatusByNodeId: {},
@@ -463,6 +475,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       credentialReview: null,
     });
   },
+
+  setWorkflowName: (name) => set({ workflowName: name.trim() || 'Untitled' }),
 
   setCredentialReview: (review) => set({ credentialReview: review }),
 

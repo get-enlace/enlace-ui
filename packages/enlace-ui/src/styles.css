@@ -95,35 +95,35 @@ body {
   flex-shrink: 0;
 }
 
-/* Centered document name — future multi-workflow picker opens from here. */
+/* Centered document name — click to rename; chevron stubs multi-workflow later. */
 .workflow-switcher {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: min(280px, 40vw);
+  gap: 2px;
+  max-width: min(320px, 44vw);
+  min-width: 0;
+}
+
+.workflow-switcher__name-btn {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
-  padding: 6px 10px;
+  padding: 6px 8px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--color-text);
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
-  cursor: default;
+  cursor: text;
 }
 
-.workflow-switcher:not(:disabled) {
-  cursor: pointer;
-}
-
-.workflow-switcher:not(:disabled):hover {
+.workflow-switcher__name-btn:hover {
   border-color: var(--color-border);
   background: var(--color-panel-bg);
-}
-
-.workflow-switcher:disabled {
-  opacity: 1;
-  color: var(--color-text);
 }
 
 .workflow-switcher__name {
@@ -132,9 +132,41 @@ body {
   white-space: nowrap;
 }
 
+.workflow-switcher__input {
+  width: min(240px, 36vw);
+  min-width: 8rem;
+  margin: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--color-focus);
+  border-radius: 6px;
+  background: var(--color-panel-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+}
+
 .workflow-switcher__chevron {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
   font-size: 10px;
+  line-height: 1;
+  cursor: default;
+}
+
+.workflow-switcher__chevron:disabled {
+  opacity: 1;
   color: var(--color-text-muted);
 }
 
@@ -408,18 +440,88 @@ body {
   overflow-x: hidden;
 }
 
-.node-inspector__topbar {
+/* Right column: resize + mid-seam collapse around NodeInspector. */
+.inspector-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-panel-bg);
+  border-left: 1px solid var(--color-border);
+}
+
+.inspector-shell__resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: ew-resize;
+  z-index: 4;
+}
+
+.inspector-shell__collapse {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 36px;
+  padding: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-panel-bg);
   color: var(--color-text-muted);
-  margin: 0 0 12px;
-  padding-bottom: 10px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.inspector-shell__collapse:hover {
+  color: var(--color-text);
+  border-color: var(--color-focus);
+}
+
+.inspector-shell .node-inspector {
+  flex: 1;
+  min-height: 0;
+  border-left: none;
+}
+
+.node-inspector__header {
+  position: sticky;
+  top: -14px;
+  z-index: 1;
+  margin: -14px -14px 14px;
+  padding: 12px 14px;
+  background: var(--color-panel-bg);
   border-bottom: 1px solid var(--color-border);
+  /* relative so the credential dropdown anchors to this bar */
+}
+
+.node-inspector__path {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--font-mono);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.node-inspector__empty-msg {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
 }
 
 .pane-collapse-btn {
@@ -513,22 +615,11 @@ body {
   margin: 0;
 }
 
-.node-inspector__op-heading {
-  position: relative;
-  margin: 0 0 14px;
-}
-
 .node-inspector__op-title {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.node-inspector__op-title h2 {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .node-inspector__cred-lock {
