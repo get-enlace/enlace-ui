@@ -44,7 +44,7 @@ function applyFieldValueToTarget(
 ): void {
   if (fieldValue.source === 'static') {
     setByPath(target, key, fieldValue.value);
-  } else {
+  } else if (fieldValue.source === 'mapped') {
     const tagId = randomId();
     tags[tagId] = {
       id: tagId,
@@ -54,6 +54,8 @@ function applyFieldValueToTarget(
     };
     setByPath(target, key, sentinelFor(tagId));
   }
+  // `file` fields can't round-trip through Raw JSON — skipped (multipart ops
+  // hide the Form/Raw toggle entirely).
 }
 
 /**

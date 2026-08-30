@@ -43,13 +43,73 @@ describe('parseOperations', () => {
     // "A, then B+C, then D (needs A and C)" demo meaningful.
     const createOrder = operations.find((o) => o.id === 'POST /orders')!;
     expect(createOrder.requestBodySchema?.required).toEqual(['customerId', 'productId', 'qty']);
+    expect(createOrder.requestBodyContentType).toBe('application/json');
     expect(createOrder.responseSchema?.properties).toHaveProperty('id');
 
     const createCustomer = operations.find((o) => o.id === 'POST /customers')!;
     expect(createCustomer.requestBodySchema?.required).toEqual(['name', 'email']);
 
     const createProduct = operations.find((o) => o.id === 'POST /products')!;
+    expect(createProduct.requestBodyContentType).toBe('multipart/form-data');
     expect(createProduct.requestBodySchema?.required).toEqual(['name', 'price']);
+    expect(createProduct.requestBodySchema?.properties.image).toEqual({
+      type: 'string',
+      format: 'binary',
+      description: expect.any(String),
+    });
+  });
+
+  it('prefers application/json when an operation offers both json and multipart', () => {
+    const spec = {
+      paths: {
+        '/mixed': {
+          post: {
+            requestBody: {
+              content: {
+                'multipart/form-data': {
+                  schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } },
+                },
+                'application/json': {
+                  schema: { type: 'object', properties: { name: { type: 'string' } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const [mixed] = parseOperations(spec);
+    expect(mixed.requestBodyContentType).toBe('application/json');
+    expect(mixed.requestBodySchema?.properties).toHaveProperty('name');
+  });
+
+  it('parses multipart/form-data when json is absent', () => {
+    const spec = {
+      paths: {
+        '/upload': {
+          post: {
+            requestBody: {
+              content: {
+                'multipart/form-data': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      file: { type: 'string', format: 'binary' },
+                      note: { type: 'string' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const [upload] = parseOperations(spec);
+    expect(upload.requestBodyContentType).toBe('multipart/form-data');
+    expect(upload.requestBodySchema?.properties.file.format).toBe('binary');
   });
 
   // Regression test: examples/sample-api's spec always inlines schemas, so

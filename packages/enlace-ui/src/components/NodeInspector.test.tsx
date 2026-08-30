@@ -438,4 +438,58 @@ describe('NodeInspector', () => {
       expect(screen.getByRole('button', { name: 'Credential' })).not.toBeDisabled();
     });
   });
+
+  describe('multipart file upload', () => {
+    const productOp: Operation = {
+      id: 'POST /products',
+      method: 'post',
+      path: '/products',
+      parameters: [],
+      requestBodySchema: {
+        type: 'object',
+        required: ['name', 'price'],
+        properties: {
+          name: { type: 'string' },
+          price: { type: 'number' },
+          image: { type: 'string', format: 'binary' },
+        },
+      },
+      requestBodyContentType: 'multipart/form-data',
+      responseSchema: null,
+    };
+
+    it('renders a file picker for format: binary and hides the Form/Raw toggle', async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        nodes: [makeNode({ operationId: productOp.id })],
+        operations: [productOp],
+        selectedNodeId: 'node-1',
+        uploadedFiles: {},
+      });
+      render(<NodeInspector />);
+
+      expect(screen.queryByRole('checkbox', { name: /Switch to Raw view/ })).not.toBeInTheDocument();
+      expect(screen.getByText(/body\.image.*\(file\)/)).toBeInTheDocument();
+      expect(fieldRow('body.image').getByLabelText('body.image')).toHaveAttribute('type', 'file');
+      expect(fieldRow('body.name').getByRole('textbox')).toBeInTheDocument();
+
+      const file = new File(['hello'], 'gadget.png', { type: 'image/png' });
+      await user.upload(fieldRow('body.image').getByLabelText('body.image'), file);
+
+      expect(useWorkflowStore.getState().nodes[0].fieldValues['body.image']).toEqual({
+        source: 'file',
+        fileName: 'gadget.png',
+      });
+      expect(useWorkflowStore.getState().uploadedFiles['node-1::body.image']).toBe(file);
+      expect(screen.getByText('gadget.png')).toBeInTheDocument();
+      // Native choose-file chrome is gone; clear is an icon button in the drop.
+      expect(screen.queryByText('Clear')).not.toBeInTheDocument();
+      expect(fieldRow('body.image').getByRole('button', { name: 'Clear body.image' })).toBeInTheDocument();
+
+      await user.click(fieldRow('body.image').getByRole('button', { name: 'Clear body.image' }));
+      expect(useWorkflowStore.getState().nodes[0].fieldValues['body.image']).toBeUndefined();
+      expect(screen.queryByText('gadget.png')).not.toBeInTheDocument();
+      expect(fieldRow('body.image').getByLabelText('body.image')).toHaveAttribute('type', 'file');
+    });
+  });
 });

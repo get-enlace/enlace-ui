@@ -164,6 +164,28 @@ describe('flattenRequestFields', () => {
     expect(value.supported).toBe(false);
     expect(value.reason).toBeTruthy();
   });
+
+  it('carries format: binary through so the inspector can render a file picker', () => {
+    const operation = makeOperation({
+      requestBodySchema: {
+        type: 'object',
+        required: ['file'],
+        properties: {
+          file: { type: 'string', format: 'binary' },
+          description: { type: 'string' },
+        },
+      },
+    });
+
+    const fields = flattenRequestFields(operation);
+    const file = fields.find((f) => f.path === 'body.file')!;
+    const description = fields.find((f) => f.path === 'body.description')!;
+
+    expect(file.format).toBe('binary');
+    expect(file.type).toBe('string');
+    expect(file.required).toBe(true);
+    expect(description.format).toBeUndefined();
+  });
 });
 
 describe('areFieldTypesCompatible', () => {

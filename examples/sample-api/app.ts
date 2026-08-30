@@ -24,6 +24,9 @@ export const spec = JSON.parse(readFileSync(specPath, 'utf-8'));
  * connect-then-create a product (C) — both scheduled after A but not
  * dependent on each other — then create an order (D) that maps fields from
  * both A and C. See README's "Try the parallel execution demo".
+ *
+ * POST /products is multipart/form-data (optional image) so the canvas can
+ * exercise real FormData file uploads on a first-class resource.
  */
 const sampleApiRouter = Router();
 sampleApiRouter.use(customersRouter);

@@ -1318,6 +1318,93 @@ body {
   align-items: flex-start;
 }
 
+/* Custom file drop — hide the native "Choose file" chrome; empty = centered
+   upload icon, filled = filename + inline trash. Same padding/height as
+   sibling text inputs (6px 8px + 13px type). */
+.node-inspector__file-drop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-topbar-bg);
+  color: var(--color-text-muted);
+  overflow: hidden;
+}
+
+.node-inspector__file-drop--filled {
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.node-inspector__file-drop--disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.node-inspector__file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+
+.node-inspector__file-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  color: var(--color-text-muted);
+}
+
+.node-inspector__file-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-inspector__file-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2em;
+  height: 1.2em;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.node-inspector__file-clear:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+
+.node-inspector__file-clear:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .node-inspector__source-select {
   flex: 0 0 auto;
   width: auto;

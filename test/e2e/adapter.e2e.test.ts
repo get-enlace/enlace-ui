@@ -25,6 +25,7 @@ describe('GET /enlace/api/spec', () => {
     expect(spec.paths).toHaveProperty('/customers');
     expect(spec.paths).toHaveProperty('/products');
     expect(spec.paths).toHaveProperty('/orders');
+    expect(spec.paths['/products'].post.requestBody.content).toHaveProperty('multipart/form-data');
   });
 });
 

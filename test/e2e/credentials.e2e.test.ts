@@ -91,32 +91,37 @@ describe('POST /orders — requires an X-API-Key header', () => {
 
 describe('POST /products — requires a real OAuth2 password-grant token ("only an admin can manage the catalog")', () => {
   it('401s with no credential', async () => {
-    const res = await fetch(`${E2E_BASE_URL}/products`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Widget', price: 9.99 }),
-    });
+    const form = new FormData();
+    form.append('name', 'Widget');
+    form.append('price', '9.99');
+    const res = await fetch(`${E2E_BASE_URL}/products`, { method: 'POST', body: form });
     expect(res.status).toBe(401);
   });
 
   it('401s with a bearer token that was not signed by the mock issuer', async () => {
+    const form = new FormData();
+    form.append('name', 'Widget');
+    form.append('price', '9.99');
     const res = await fetch(`${E2E_BASE_URL}/products`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer not-a-real-token' },
-      body: JSON.stringify({ name: 'Widget', price: 9.99 }),
+      headers: { Authorization: 'Bearer not-a-real-token' },
+      body: form,
     });
     expect(res.status).toBe(401);
   });
 
   it('succeeds with a real token fetched via the password grant — any username/password accepted at the token endpoint', async () => {
     const token = await fetchOAuth2Token({ grant_type: 'password', username: 'admin', password: 'anything' });
+    const form = new FormData();
+    form.append('name', 'Widget');
+    form.append('price', '9.99');
     const res = await fetch(`${E2E_BASE_URL}/products`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ name: 'Widget', price: 9.99 }),
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
     });
     expect(res.status).toBe(201);
-    await expect(res.json()).resolves.toMatchObject({ name: 'Widget', price: 9.99 });
+    await expect(res.json()).resolves.toMatchObject({ name: 'Widget', price: 9.99, imageLocation: null });
   });
 });
 

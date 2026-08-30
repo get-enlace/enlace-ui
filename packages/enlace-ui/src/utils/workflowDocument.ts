@@ -456,11 +456,16 @@ function parseFieldValues(raw: unknown, nodeId: string): Record<string, FieldVal
     if (isUnsafeKey(path)) {
       return `Enlace collection node "${nodeId}" has an invalid field path "${path}".`;
     }
-    if (!isRecord(value) || (value.source !== 'static' && value.source !== 'mapped')) {
+    if (!isRecord(value) || (value.source !== 'static' && value.source !== 'mapped' && value.source !== 'file')) {
       return `Enlace collection node "${nodeId}" has an invalid field value at "${path}".`;
     }
     if (value.source === 'static') {
       out[path] = { source: 'static', value: value.value };
+    } else if (value.source === 'file') {
+      if (typeof value.fileName !== 'string') {
+        return `Enlace collection node "${nodeId}" has an invalid file field at "${path}".`;
+      }
+      out[path] = { source: 'file', fileName: value.fileName };
     } else if (typeof value.fromNodeId === 'string' && typeof value.fromResponseFieldPath === 'string') {
       out[path] = {
         source: 'mapped',
