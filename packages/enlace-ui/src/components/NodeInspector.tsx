@@ -233,7 +233,7 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
           >
             <option value="static">Static</option>
             <option value="mapped" disabled={ancestorNodes.length === 0}>
-              Map
+              Mapped
             </option>
           </select>
 

@@ -456,7 +456,7 @@ describe('replaceWorkflow', () => {
         steps: [
           {
             nodeId: 'old',
-            request: { method: 'GET', url: 'http://example.test/old', headers: {} },
+            request: { method: 'GET', url: 'http://example.test/old', headers: {}, credentials: 'omit',},
             timestampStart: '',
             timestampEnd: '',
           },
@@ -569,6 +569,29 @@ describe('locked while a run is in progress', () => {
     updateNodePosition(a, { x: 250, y: 250 });
 
     expect(useWorkflowStore.getState().nodePositions[a]).toEqual({ x: 250, y: 250 });
+  });
+
+  it('nudges a newly dropped node clear of an existing card', () => {
+    const { addNode } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 40, y: 40 });
+    const b = addNode('GET /b', { x: 40, y: 40 });
+    const positions = useWorkflowStore.getState().nodePositions;
+    expect(positions[a]).toEqual({ x: 40, y: 40 });
+    expect(positions[b]).not.toEqual({ x: 40, y: 40 });
+  });
+
+  it('nudges on drag-end when avoidOverlap is set, but not while dragging freely', () => {
+    const { addNode, updateNodePosition } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 400, y: 0 });
+    updateNodePosition(b, { x: 10, y: 10 }); // mid-drag style — raw
+    expect(useWorkflowStore.getState().nodePositions[b]).toEqual({ x: 10, y: 10 });
+    updateNodePosition(b, { x: 10, y: 10 }, { avoidOverlap: true });
+    const settled = useWorkflowStore.getState().nodePositions[b];
+    expect(settled).not.toEqual({ x: 10, y: 10 });
+    // Nearest free slot — not a far spiral jump off-canvas.
+    expect(Math.hypot(settled.x - 10, settled.y - 10)).toBeLessThan(300);
+    expect(useWorkflowStore.getState().nodePositions[a]).toEqual({ x: 0, y: 0 });
   });
 
   it('disconnectNodes locked while running does NOT disarm a breakpoint either — the whole action is a no-op, not just the connection removal', () => {
