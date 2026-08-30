@@ -135,6 +135,9 @@ export function parseCollection(
 
   const nodePositions: Record<string, { x: number; y: number }> = {};
   for (const [id, pos] of Object.entries(workflowValue.nodePositions)) {
+    if (isUnsafeKey(id)) {
+      return { ok: false, error: `Collection workflow has an invalid node id "${id}".` };
+    }
     if (!isRecord(pos) || typeof pos.x !== 'number' || typeof pos.y !== 'number') {
       return { ok: false, error: `Collection workflow has an invalid position for node "${id}".` };
     }
@@ -223,23 +226,18 @@ export function hydrateCollection(collection: EnlaceCollection): {
   };
 }
 
-export function formatCollectionNotice(warnings: CollectionWarnings): string | null {
-  const parts: string[] = [];
-  if (warnings.unknownOperationIds.length > 0) {
-    parts.push(`Unknown operations: ${warnings.unknownOperationIds.join(', ')}.`);
-  }
-  if (warnings.credentialsNeedingSecrets.length > 0) {
-    const names = warnings.credentialsNeedingSecrets.map((c) => c.name).join(', ');
-    parts.push(
-      warnings.credentialsNeedingSecrets.length === 1
-        ? `Credential needing a value: ${names}.`
-        : `Credentials needing a value: ${names}.`
-    );
-  }
-  if (warnings.unexpectedSecretsDiscarded) {
-    parts.push('Unexpected credential secrets in a stripped collection were discarded.');
-  }
-  return parts.length > 0 ? parts.join(' ') : null;
+/**
+ * Unknown operation ids as a run-blocking message, or null when every node
+ * resolved. Credential warnings deliberately don't go through here — those
+ * are handled by the credentials drawer's own review banner, since the
+ * fix (filling values in) lives there.
+ */
+export function formatUnknownOperationsError(warnings: CollectionWarnings): string | null {
+  if (warnings.unknownOperationIds.length === 0) return null;
+  const ids = warnings.unknownOperationIds.join(', ');
+  return warnings.unknownOperationIds.length === 1
+    ? `Operation ${ids} isn't in the loaded spec — load the matching spec before running.`
+    : `Operations ${ids} aren't in the loaded spec — load the matching spec before running.`;
 }
 
 export function collectionFilename(collection: EnlaceCollection): string {
@@ -448,6 +446,9 @@ function parseFieldValues(raw: unknown, nodeId: string): Record<string, FieldVal
   if (!isRecord(raw)) return `Enlace collection node "${nodeId}" has invalid fieldValues.`;
   const out: Record<string, FieldValue> = {};
   for (const [path, value] of Object.entries(raw)) {
+    if (isUnsafeKey(path)) {
+      return `Enlace collection node "${nodeId}" has an invalid field path "${path}".`;
+    }
     if (!isRecord(value) || (value.source !== 'static' && value.source !== 'mapped')) {
       return `Enlace collection node "${nodeId}" has an invalid field value at "${path}".`;
     }
@@ -472,6 +473,9 @@ function parseRawBody(raw: unknown, nodeId: string): RawBody | string {
   }
   const tags: Record<string, BodyTag> = {};
   for (const [id, tag] of Object.entries(raw.tags)) {
+    if (isUnsafeKey(id)) {
+      return `Enlace collection node "${nodeId}" has an invalid raw-body tag id "${id}".`;
+    }
     if (
       !isRecord(tag) ||
       typeof tag.id !== 'string' ||
@@ -655,6 +659,22 @@ function cloneRawBody(rawBody: RawBody): RawBody {
     template: rawBody.template,
     tags: Object.fromEntries(Object.entries(rawBody.tags).map(([id, tag]) => [id, { ...tag }])),
   };
+}
+
+/**
+ * `nodePositions`, `fieldValues`, and raw-body `tags` are all built by
+ * bracket-assigning an imported file's own keys (node ids / field paths /
+ * tag ids) into a plain `{}`. Assigning the literal key `"__proto__"` that
+ * way doesn't add an entry — `Object.prototype`'s `__proto__` is an
+ * accessor (Annex B), so `obj['__proto__'] = x` reassigns `obj`'s own
+ * prototype to `x` instead, silently dropping the entry and corrupting the
+ * object's prototype chain for later property lookups. A `.enlace` file is
+ * meant to be shared between people, so a crafted key here is a plausible
+ * input, not just a theoretical one — reject it up front alongside the
+ * rest of this module's "invalid" checks.
+ */
+function isUnsafeKey(key: string): boolean {
+  return key === '__proto__';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

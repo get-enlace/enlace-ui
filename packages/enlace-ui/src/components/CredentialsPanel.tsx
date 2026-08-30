@@ -3,13 +3,21 @@ import { useWorkflowStore } from '../store/workflowStore.js';
 import { CredentialCard } from './CredentialCard.js';
 import { CredentialForm } from './CredentialForm.js';
 import { DeclaredCredentialsList } from './DeclaredCredentialsList.js';
-import { emptyDraft, toDraft } from '../utils/credentialDraft.js';
+import { emptyDraft, isDraftComplete, toDraft } from '../utils/credentialDraft.js';
 import type { DeclaredCredential } from '../engine/securitySchemes.js';
 import type { Credential, NewCredential } from '../types.js';
 
 export function CredentialsPanel() {
-  const { credentials, declaredCredentials, nodes, addCredential, updateCredential, removeCredential } =
-    useWorkflowStore();
+  const {
+    credentials,
+    declaredCredentials,
+    nodes,
+    credentialReview,
+    addCredential,
+    updateCredential,
+    removeCredential,
+    setCredentialReview,
+  } = useWorkflowStore();
   const [isOpen, setIsOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   // Non-null while editing an existing credential rather than adding a new
@@ -28,6 +36,10 @@ export function CredentialsPanel() {
   const closeDrawer = () => {
     setIsOpen(false);
     resetDraft();
+    // Closing is the acknowledgement — the per-card "Needs a value" marks
+    // stay regardless, so nothing is lost by dropping the banner here, and
+    // it won't re-open the drawer on the next unrelated render.
+    setCredentialReview(null);
   };
 
   const startConfiguring = (entry: DeclaredCredential) => {
@@ -54,6 +66,31 @@ export function CredentialsPanel() {
     }
     resetDraft();
   };
+
+  // An import that needs credential review opens the drawer itself, rather
+  // than naming the credentials in the header toolbar where there's no room
+  // for them and no way to act on them.
+  useEffect(() => {
+    if (credentialReview) setIsOpen(true);
+  }, [credentialReview]);
+
+  // Recomputed from live credentials rather than trusting the import-time
+  // list, so the banner shrinks (and eventually goes) as values get filled
+  // in without the drawer having to be closed and re-opened.
+  const stillNeedingValue = credentialReview
+    ? credentials.filter((c) => credentialReview.needsValueIds.includes(c.id) && !isDraftComplete(toDraft(c)))
+    : [];
+  const reviewParts: string[] = [];
+  if (stillNeedingValue.length > 0) {
+    reviewParts.push(
+      stillNeedingValue.length === 1
+        ? '1 imported credential needs a value before this chain can run — it’s marked below.'
+        : `${stillNeedingValue.length} imported credentials need a value before this chain can run — they’re marked below.`
+    );
+  }
+  if (credentialReview?.secretsDiscarded) {
+    reviewParts.push('Unexpected secrets in a stripped collection were discarded on import.');
+  }
 
   // Escape closes the drawer, same as a backdrop click — standard for any
   // overlay, and the only keyboard way out since the drawer isn't a <dialog>.
@@ -101,6 +138,12 @@ export function CredentialsPanel() {
             </div>
 
             <div className="credentials-drawer__body">
+              {reviewParts.length > 0 && (
+                <p className="credentials-drawer__review" role="status">
+                  {reviewParts.join(' ')}
+                </p>
+              )}
+
               {credentials.length === 0 && !isAdding && (
                 <p className="credentials-drawer__empty">
                   No credentials yet. Add one, then attach it to a node from the inspector's "Credential" dropdown.

@@ -103,7 +103,7 @@ export interface WorkflowConnection {
 /**
  * In-memory execution shape — `nodes` + `connections` only. Layout,
  * credential records, and spec hints live in an `EnlaceCollection`, the
- * shareable file format (see utils/collectionDocument.ts).
+ * shareable file format (see utils/workflowDocument.ts).
  */
 export interface Workflow {
   nodes: WorkflowNode[];
@@ -124,7 +124,7 @@ export interface CollectionSpecHint {
  * A credential as written to a stripped `EnlaceCollection` — same `id` as the
  * in-memory credential so `node.credentialId` still points at it, but
  * without any value that authenticates. Hydrated back to a `Credential`
- * with empty secret fields on import (see utils/collectionDocument.ts).
+ * with empty secret fields on import (see utils/workflowDocument.ts).
  */
 export type CredentialStub =
   | { id: string; name: string; fromSecurityScheme?: string; type: 'bearer' }

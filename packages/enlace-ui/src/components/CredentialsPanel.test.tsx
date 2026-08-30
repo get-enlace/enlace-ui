@@ -12,7 +12,7 @@ import { useWorkflowStore } from '../store/workflowStore.js';
 // credentials + declaredCredentials.
 describe('CredentialsPanel', () => {
   beforeEach(() => {
-    useWorkflowStore.setState({ credentials: [], nodes: [], declaredCredentials: [] });
+    useWorkflowStore.setState({ credentials: [], nodes: [], declaredCredentials: [], credentialReview: null });
   });
 
   it('shows a singular/plural credential count on the trigger', () => {
@@ -168,6 +168,48 @@ describe('CredentialsPanel', () => {
     const credentials = useWorkflowStore.getState().credentials;
     expect(credentials).toHaveLength(1);
     expect(credentials[0]).toMatchObject({ id: 'c1', name: 'staging-renamed' });
+  });
+
+  it('opens itself with a review banner when an import leaves credentials without values', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      credentials: [
+        { id: 'c1', name: 'staging', type: 'bearer', token: '' },
+        { id: 'c2', name: 'kiosk-key', type: 'apiKey', paramName: 'X-API-Key', in: 'header', key: '' },
+      ],
+      credentialReview: { needsValueIds: ['c1', 'c2'], secretsDiscarded: false },
+    });
+    render(<CredentialsPanel />);
+
+    expect(screen.getByText('Credentials')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('2 imported credentials need a value');
+    expect(screen.getAllByText('Needs a value')).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: 'Close credentials' }));
+    expect(useWorkflowStore.getState().credentialReview).toBeNull();
+  });
+
+  it('drops the review banner once every flagged credential has a value', () => {
+    useWorkflowStore.setState({
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'filled-in' }],
+      credentialReview: { needsValueIds: ['c1'], secretsDiscarded: false },
+    });
+    render(<CredentialsPanel />);
+
+    expect(screen.getByText('Credentials')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('reports discarded secrets from a stripped collection in the same banner', () => {
+    useWorkflowStore.setState({
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: '' }],
+      credentialReview: { needsValueIds: ['c1'], secretsDiscarded: true },
+    });
+    render(<CredentialsPanel />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 imported credential needs a value before this chain can run — it’s marked below. Unexpected secrets in a stripped collection were discarded on import.'
+    );
   });
 
   it('clicking Delete on a card removes the credential from the store', async () => {

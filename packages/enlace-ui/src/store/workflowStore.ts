@@ -25,6 +25,14 @@ export interface Position {
   y: number;
 }
 
+/** What an import left for the user to fix in the credentials drawer. */
+export interface CredentialReview {
+  /** Imported credentials whose secret came through empty. */
+  needsValueIds: string[];
+  /** A "stripped" collection still carried secret keys, which were dropped on read. */
+  secretsDiscarded: boolean;
+}
+
 /** Grid fallback for a node with no explicit position — matches the old default layout. */
 function defaultPosition(index: number): Position {
   return { x: 80 + (index % 4) * 220, y: 80 + Math.floor(index / 4) * 140 };
@@ -120,6 +128,13 @@ interface WorkflowState {
   activeControl: RunControl | null;
   isRunning: boolean;
   error: string | null;
+  /**
+   * Set by an import that left credentials unusable — non-null pops the
+   * credentials drawer open so the affected cards (each marked "Needs a
+   * value") are right where the fix happens, instead of listing their names
+   * in the header where there's no room and nothing to act on.
+   */
+  credentialReview: CredentialReview | null;
 
   loadOperations: () => Promise<void>;
   /**
@@ -182,6 +197,8 @@ interface WorkflowState {
    * they belong to the discarded graph. A no-op while `isRunning`.
    */
   replaceWorkflow: (collection: EnlaceCollection) => void;
+  /** `null` dismisses the drawer's review banner — called when the drawer closes. */
+  setCredentialReview: (review: CredentialReview | null) => void;
   /**
    * `useBreakpoints: true` (the "Debug" button) honors whatever's currently
    * in `armedBreakpoints`, snapshotting it into this run and setting
@@ -211,6 +228,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   activeControl: null,
   isRunning: false,
   error: null,
+  credentialReview: null,
 
   loadOperations: async () => {
     try {
@@ -384,8 +402,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       previewRequestByNodeId: {},
       activeControl: null,
       error: null,
+      credentialReview: null,
     });
   },
+
+  setCredentialReview: (review) => set({ credentialReview: review }),
 
   run: async (options) => {
     const useBreakpoints = options?.useBreakpoints ?? false;
