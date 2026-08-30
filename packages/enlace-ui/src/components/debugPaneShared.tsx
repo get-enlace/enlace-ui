@@ -26,11 +26,20 @@ export function redactRequest(request: RunStepRequest): RunStepRequest {
   };
 }
 
-/** `body` is `unknown` — could be a parsed JSON value, a plain string, or absent entirely. Pretty-print
- * objects/arrays; show strings as-is; anything else falls back to String() rather than risking a throw. */
+/** `body` is `unknown` — could be a parsed JSON value, a plain string, FormData
+ * (multipart upload), or absent entirely. Pretty-print objects/arrays; show
+ * strings as-is; summarize FormData entries (files by name); anything else
+ * falls back to String() rather than risking a throw. */
 function formatBody(body: unknown): string | null {
   if (body === undefined || body === null) return null;
   if (typeof body === 'string') return body;
+  if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    const entries: Record<string, string> = {};
+    body.forEach((value, key) => {
+      entries[key] = value instanceof File ? `(file) ${value.name}` : String(value);
+    });
+    return JSON.stringify(entries, null, 2);
+  }
   try {
     return JSON.stringify(body, null, 2);
   } catch {

@@ -310,4 +310,35 @@ describe('hydrateCollection / helpers', () => {
       expect(legacy.collection.workflows[0].nodes[0].rawBody).toEqual({ template: '{}', tags: {} });
     }
   });
+
+  it('round-trips a file FieldValue marker (fileName only — no bytes)', () => {
+    const withFile: WorkflowNode = {
+      id: 'n-product',
+      operationId: 'POST /products',
+      credentialId: null,
+      fieldValues: {
+        'body.image': { source: 'file', fileName: 'gadget.png' },
+        'body.name': { source: 'static', value: 'Gadget' },
+      },
+    };
+    const collection = serializeCollection({
+      name: 'Product',
+      nodes: [withFile],
+      connections: [],
+      nodePositions: { 'n-product': { x: 0, y: 0 } },
+      credentials: [],
+    });
+    const serialized = JSON.stringify(collection);
+    expect(serialized).toContain('"source":"file"');
+    expect(serialized).toContain('gadget.png');
+    expect(serialized).not.toContain('Blob');
+
+    const result = parseCollection(collection);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.collection.workflows[0].nodes[0].fieldValues['body.image']).toEqual({
+      source: 'file',
+      fileName: 'gadget.png',
+    });
+  });
 });

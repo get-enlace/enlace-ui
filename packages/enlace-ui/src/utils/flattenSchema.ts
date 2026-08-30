@@ -9,6 +9,8 @@ export interface SchemaField {
   reason?: string;
   /** JSON-schema `type` of a scalar/array field (e.g. "integer", "boolean", "array") — used to coerce static input values. */
   type?: string;
+  /** JSON-schema `format` (e.g. "binary") — used to distinguish a file picker from a plain string input. */
+  format?: string;
   /** JSON-schema `enum` values, when the field's schema declares one (inlined or resolved from a $ref by specParser.ts) — renders as a dropdown instead of free text. */
   enum?: unknown[];
 }
@@ -98,7 +100,14 @@ function flattenObjectSchema(schema: Record<string, any> | null | undefined, pre
     const knownScalar = SCALAR_TYPES.has(propSchema?.type) || Boolean(propSchema?.enum);
     fields.push(
       knownScalar
-        ? { path, required: isRequired, supported: true, type: propSchema?.type, enum: propSchema?.enum }
+        ? {
+            path,
+            required: isRequired,
+            supported: true,
+            type: propSchema?.type,
+            format: typeof propSchema?.format === 'string' ? propSchema.format : undefined,
+            enum: propSchema?.enum,
+          }
         : { path, required: isRequired, supported: false, reason: UNKNOWN_SHAPE_REASON }
     );
   }
@@ -111,7 +120,14 @@ export function flattenRequestFields(operation: Operation): SchemaField[] {
   const paramFields: SchemaField[] = operation.parameters.map((p) => {
     const path = `${p.in}.${p.name}`;
     if (isArraySchema(p.schema)) return arrayField(path, p.required, p.schema);
-    return { path, required: p.required, supported: true, type: p.schema?.type, enum: p.schema?.enum };
+    return {
+      path,
+      required: p.required,
+      supported: true,
+      type: p.schema?.type,
+      format: typeof p.schema?.format === 'string' ? p.schema.format : undefined,
+      enum: p.schema?.enum,
+    };
   });
 
   return [...paramFields, ...flattenObjectSchema(operation.requestBodySchema, 'body')];

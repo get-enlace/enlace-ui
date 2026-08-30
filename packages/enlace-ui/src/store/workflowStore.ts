@@ -81,6 +81,11 @@ function isLocked(state: WorkflowState): boolean {
   return state.isRunning;
 }
 
+/** Key for the in-memory `uploadedFiles` map — never serialized. */
+export function uploadedFileKey(nodeId: string, fieldPath: string): string {
+  return `${nodeId}::${fieldPath}`;
+}
+
 interface WorkflowState {
   operations: Operation[];
   /** Derived from the loaded spec's `servers[0].url` — null until loadOperations() resolves. */
@@ -98,6 +103,13 @@ interface WorkflowState {
   /** Canvas layout only — not part of the executed Workflow. */
   nodePositions: Record<string, Position>;
   credentials: Credential[];
+  /**
+   * In-memory File blobs for `FieldValue` entries with `source: 'file'`.
+   * Keyed by `uploadedFileKey(nodeId, fieldPath)`. Never part of an
+   * EnlaceCollection — reload/import keeps the fileName marker but the
+   * user must re-pick the file (same tradeoff as stripped credentials).
+   */
+  uploadedFiles: Record<string, File>;
   /** Pre-fill templates read from the loaded spec's own `components.securitySchemes` — see engine/securitySchemes.ts. Empty until loadOperations() resolves; never gates manually creating any credential type regardless of what's in here. */
   declaredCredentials: DeclaredCredential[];
   selectedNodeId: string | null;
@@ -176,6 +188,11 @@ interface WorkflowState {
   setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
   /** Batch version of setFieldValue — sets several field paths in one `set()`, so a Raw->Form conversion (which can touch many leaves at once, see utils/bodyTemplate.ts) doesn't trigger a render per leaf. */
   mergeFieldValues: (nodeId: string, values: Record<string, FieldValue>) => void;
+  /**
+   * Sets or clears a file field: updates `fieldValues` with a `file` marker
+   * (or removes it) and keeps the real `File` only in `uploadedFiles`.
+   */
+  setUploadedFile: (nodeId: string, fieldPath: string, file: File | null) => void;
   /** Toggles a node's request editor between the flat form and Raw JSON — see NodeInspector.tsx for the Form<->Raw conversion this surrounds. */
   setRequestMode: (nodeId: string, mode: 'form' | 'raw') => void;
   setRawPath: (nodeId: string, rawPath: RawBody | null) => void;
@@ -247,6 +264,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   connections: [],
   nodePositions: {},
   credentials: [],
+  uploadedFiles: {},
   declaredCredentials: [],
   selectedNodeId: null,
   runResult: null,
@@ -319,6 +337,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       const nodePositions = { ...state.nodePositions };
       delete nodePositions[nodeId];
 
+      const uploadedFiles = { ...state.uploadedFiles };
+      const prefix = `${nodeId}::`;
+      for (const key of Object.keys(uploadedFiles)) {
+        if (key.startsWith(prefix)) delete uploadedFiles[key];
+      }
+
       const nodes = state.nodes
         .filter((n) => n.id !== nodeId)
         .map((n) => {
@@ -336,6 +360,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       return {
         nodes,
         nodePositions,
+        uploadedFiles,
         connections: state.connections.filter((c) => c.fromNodeId !== nodeId && c.toNodeId !== nodeId),
         selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
       };
@@ -352,7 +377,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   setFieldValue: (nodeId, fieldPath, value) =>
     set((state) => {
       if (isLocked(state)) return state;
+      const uploadedFiles = { ...state.uploadedFiles };
+      const key = uploadedFileKey(nodeId, fieldPath);
+      if (value.source !== 'file') delete uploadedFiles[key];
       return {
+        uploadedFiles,
         nodes: state.nodes.map((n) =>
           n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, [fieldPath]: value } } : n
         ),
@@ -362,8 +391,33 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   mergeFieldValues: (nodeId, values) =>
     set((state) => {
       if (isLocked(state)) return state;
+      const uploadedFiles = { ...state.uploadedFiles };
+      for (const [fieldPath, value] of Object.entries(values)) {
+        if (value.source !== 'file') delete uploadedFiles[uploadedFileKey(nodeId, fieldPath)];
+      }
       return {
+        uploadedFiles,
         nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, ...values } } : n)),
+      };
+    }),
+
+  setUploadedFile: (nodeId, fieldPath, file) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      const key = uploadedFileKey(nodeId, fieldPath);
+      const uploadedFiles = { ...state.uploadedFiles };
+      if (file) uploadedFiles[key] = file;
+      else delete uploadedFiles[key];
+
+      return {
+        uploadedFiles,
+        nodes: state.nodes.map((n) => {
+          if (n.id !== nodeId) return n;
+          const fieldValues = { ...n.fieldValues };
+          if (file) fieldValues[fieldPath] = { source: 'file', fileName: file.name };
+          else delete fieldValues[fieldPath];
+          return { ...n, fieldValues };
+        }),
       };
     }),
 
@@ -463,6 +517,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       connections: next.connections,
       nodePositions: next.nodePositions,
       credentials: next.credentials,
+      uploadedFiles: {},
       workflowName,
       selectedNodeId: null,
       runResult: null,
@@ -515,7 +570,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       // executeChain's onControl fires, a moment after this.
     });
     try {
-      const { connections, operations, credentials, baseUrl } = get();
+      const { connections, operations, credentials, baseUrl, uploadedFiles } = get();
       if (!baseUrl) {
         throw new Error('Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.');
       }
@@ -523,6 +578,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       const credentialsById = new Map(credentials.map((c) => [c.id, c]));
       const result = await executeChain({ nodes, connections }, operationsById, credentialsById, {
         baseUrl,
+        uploadedFiles,
         // Streams progress into the store as each node settles, instead of
         // only setting `runResult` once at the very end — see
         // components/DebugPane.tsx, which renders `runResult.steps` live.

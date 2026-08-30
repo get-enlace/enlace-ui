@@ -147,13 +147,18 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
                 "type": "object",
                 "required": ["name", "price"],
                 "properties": {
                   "name": { "type": "string" },
-                  "price": { "type": "number", "minimum": 0 }
+                  "price": { "type": "number", "minimum": 0 },
+                  "image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Optional product image — written under the server temp dir; location returned on the product"
+                  }
                 }
               }
             }
@@ -170,7 +175,12 @@
                     "id": { "type": "string" },
                     "name": { "type": "string" },
                     "price": { "type": "number" },
-                    "inStock": { "type": "boolean" }
+                    "inStock": { "type": "boolean" },
+                    "imageLocation": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Absolute path under the server temp dir when an image was uploaded"
+                    }
                   }
                 }
               }
@@ -196,7 +206,8 @@
                     "id": { "type": "string" },
                     "name": { "type": "string" },
                     "price": { "type": "number" },
-                    "inStock": { "type": "boolean" }
+                    "inStock": { "type": "boolean" },
+                    "imageLocation": { "type": "string", "nullable": true }
                   }
                 }
               }
@@ -236,7 +247,8 @@
                     "id": { "type": "string" },
                     "name": { "type": "string" },
                     "price": { "type": "number" },
-                    "inStock": { "type": "boolean" }
+                    "inStock": { "type": "boolean" },
+                    "imageLocation": { "type": "string", "nullable": true }
                   }
                 }
               }

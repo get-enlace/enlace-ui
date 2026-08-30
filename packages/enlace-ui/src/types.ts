@@ -27,12 +27,22 @@ export interface Operation {
   tags?: string[];
   parameters: OperationParameter[];
   requestBodySchema: Record<string, any> | null;
+  /**
+   * Which requestBody content type `requestBodySchema` came from.
+   * Prefer `application/json` when the op offers both; `multipart/form-data`
+   * only when JSON is absent. Null when there is no request body. Optional
+   * so older test fixtures keep compiling — treat absent as JSON whenever a
+   * schema is present.
+   */
+  requestBodyContentType?: 'application/json' | 'multipart/form-data' | null;
   responseSchema: Record<string, any> | null;
 }
 
 export type FieldValue =
   | { source: 'static'; value: unknown }
-  | { source: 'mapped'; fromNodeId: string; fromResponseFieldPath: string };
+  | { source: 'mapped'; fromNodeId: string; fromResponseFieldPath: string }
+  /** Marker only — the real `File` lives in the store's `uploadedFiles` map and is never serialized. */
+  | { source: 'file'; fileName: string };
 
 /**
  * What a single inline "tag chip" in a Raw JSON body resolves against —

@@ -107,8 +107,23 @@ export function setByPath(target: Record<string, unknown>, path: string, value: 
   });
 }
 
-function resolveFieldValue(fieldValue: FieldValue, stepsByNodeId: Map<string, RunStep>): unknown {
+function resolveFieldValue(
+  fieldValue: FieldValue,
+  fieldPath: string,
+  nodeId: string,
+  stepsByNodeId: Map<string, RunStep>,
+  uploadedFiles: Record<string, File>
+): unknown {
   if (fieldValue.source === 'static') return fieldValue.value;
+  if (fieldValue.source === 'file') {
+    const file = uploadedFiles[`${nodeId}::${fieldPath}`];
+    if (!file) {
+      throw new Error(
+        `Re-select the file for "${fieldPath}"${fieldValue.fileName ? ` (${fieldValue.fileName})` : ''} — file contents are not persisted.`
+      );
+    }
+    return file;
+  }
   const priorStep = stepsByNodeId.get(fieldValue.fromNodeId);
   return getByPath(priorStep?.response?.body, fieldValue.fromResponseFieldPath);
 }
@@ -127,13 +142,15 @@ export async function buildRequest(
   stepsByNodeId: Map<string, RunStep>,
   credentialsById: Map<string, Credential>,
   baseUrl: string,
-  nodeLabels?: Map<string, string>
+  nodeLabels?: Map<string, string>,
+  uploadedFiles: Record<string, File> = {}
 ): Promise<RunStepRequest> {
   let requestPath = operation.path;
   const query = new URLSearchParams();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const isMultipart = operation.requestBodyContentType === 'multipart/form-data';
+  const headers: Record<string, string> = isMultipart ? {} : { 'Content-Type': 'application/json' };
   const bodyFields: Record<string, unknown> = {};
-  const requestMode = node.requestMode ?? 'form';
+  const requestMode = isMultipart ? 'form' : (node.requestMode ?? 'form');
 
   // A field's static value can itself contain a `{{enlace:<id>}}`
   // reference even in Form mode — not something the form UI lets you type
@@ -154,8 +171,8 @@ export async function buildRequest(
       continue;
     }
 
-    let value = resolveFieldValue(fieldValue, stepsByNodeId);
-    if (Object.keys(nodeTags).length > 0) {
+    let value = resolveFieldValue(fieldValue, fieldPath, node.id, stepsByNodeId, uploadedFiles);
+    if (fieldValue.source !== 'file' && Object.keys(nodeTags).length > 0) {
       value = resolveTagsInValue(value, nodeTags, stepsByNodeId, nodeLabels);
     }
     const key = rest.join('.');
@@ -227,12 +244,14 @@ export async function buildRequest(
   // source response, missing header) is caught by runNode's existing
   // try/catch around buildRequest, same as any other request-building
   // failure — no separate error path needed.
-  const body =
-    requestMode === 'raw' && node.rawBody
-      ? resolveRawBody(node.rawBody, stepsByNodeId, nodeLabels)
-      : Object.keys(bodyFields).length > 0
-        ? bodyFields
-        : undefined;
+  let body: unknown;
+  if (isMultipart) {
+    body = Object.keys(bodyFields).length > 0 ? appendFormData(bodyFields) : undefined;
+  } else if (requestMode === 'raw' && node.rawBody) {
+    body = resolveRawBody(node.rawBody, stepsByNodeId, nodeLabels);
+  } else {
+    body = Object.keys(bodyFields).length > 0 ? bodyFields : undefined;
+  }
   const hasBody = Boolean(operation.requestBodySchema) && body !== undefined;
 
   return {
@@ -245,13 +264,29 @@ export async function buildRequest(
   };
 }
 
+/** Flatten a body object into FormData entries (nested keys as dotted paths). */
+function appendFormData(fields: Record<string, unknown>, form = new FormData(), prefix = ''): FormData {
+  for (const [key, value] of Object.entries(fields)) {
+    const name = prefix ? `${prefix}.${key}` : key;
+    if (value instanceof File) {
+      form.append(name, value, value.name);
+    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      appendFormData(value as Record<string, unknown>, form, name);
+    } else if (value !== undefined && value !== null) {
+      form.append(name, typeof value === 'string' ? value : String(value));
+    }
+  }
+  return form;
+}
+
 async function runNode(
   node: WorkflowNode,
   operation: Operation,
   stepsByNodeId: Map<string, RunStep>,
   credentialsById: Map<string, Credential>,
   baseUrl: string,
-  nodeLabels: Map<string, string>
+  nodeLabels: Map<string, string>,
+  uploadedFiles: Record<string, File>
 ): Promise<RunStep> {
   // Built before the request fires — every field this node could need
   // comes from an earlier level, already in stepsByNodeId, so there's no
@@ -264,7 +299,7 @@ async function runNode(
   const timestampStart = new Date().toISOString();
   let request: RunStepRequest;
   try {
-    request = await buildRequest(node, operation, stepsByNodeId, credentialsById, baseUrl, nodeLabels);
+    request = await buildRequest(node, operation, stepsByNodeId, credentialsById, baseUrl, nodeLabels, uploadedFiles);
   } catch (err) {
     return {
       nodeId: node.id,
@@ -290,10 +325,20 @@ async function runNode(
     // fetch()'s own 'same-origin' default to decide — 'include' has real
     // consequences (the target's CORS response must explicitly allow
     // credentialed requests from this origin, not just any).
+    //
+    // Multipart: pass FormData through and do NOT JSON.stringify — and
+    // Content-Type must already have been omitted in buildRequest so fetch
+    // can set multipart/form-data; boundary=...
+    const body =
+      request.body === undefined
+        ? undefined
+        : request.body instanceof FormData
+          ? request.body
+          : JSON.stringify(request.body);
     const res = await fetch(request.url, {
       method: request.method,
       headers: request.headers,
-      body: request.body !== undefined ? JSON.stringify(request.body) : undefined,
+      body,
       credentials: request.credentials,
     });
 
@@ -320,6 +365,12 @@ async function runNode(
 export interface ChainExecutorOptions {
   /** e.g. "http://localhost:4000" — prepended to each Operation.path. Derived from the spec's `servers[0].url` by the caller (see store/workflowStore.ts). */
   baseUrl: string;
+  /**
+   * In-memory File blobs for `source: 'file'` field values — see
+   * store/workflowStore.ts's `uploadedFiles`. Optional so unit tests that
+   * never touch file fields can omit it.
+   */
+  uploadedFiles?: Record<string, File>;
   /**
    * Fired once per node status transition (at minimum `pending ->
    * in-flight`, then once more on settling) as the run progresses, so a
@@ -396,6 +447,7 @@ export async function executeChain(
   // must name steps the way people see them, never by internal node id.
   const nodeLabels = buildNodeLabels(nodes, operationsById);
   const armedBreakpoints = options.armedBreakpoints ?? new Set<string>();
+  const uploadedFiles = options.uploadedFiles ?? {};
   // Node ids a breakpoint gated but Continue/Step has since released — a
   // node only ever gets evaluated for gating once (it moves straight from
   // 'paused' to 'pending' to 'in-flight' on release, never back), so
@@ -456,7 +508,7 @@ export async function executeChain(
     inFlightCount++;
     emit(node.id, 'in-flight');
 
-    runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl, nodeLabels).then((step) => {
+    runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl, nodeLabels, uploadedFiles).then((step) => {
       steps.push(step);
       stepsByNodeId.set(step.nodeId, step);
       const finalStatus = step.error ? 'failed' : 'completed';
@@ -495,7 +547,7 @@ export async function executeChain(
         // itself does, which can take a real round-trip (an oauth2 token
         // fetch). A failure here isn't fatal to the pause itself: the row
         // just shows no preview, same as if this were never attempted.
-        buildRequest(node, operation, stepsByNodeId, credentialsById, options.baseUrl, nodeLabels)
+        buildRequest(node, operation, stepsByNodeId, credentialsById, options.baseUrl, nodeLabels, uploadedFiles)
           .then((request) => {
             // Guard against a race: Continue/Step may have already fired
             // this node for real by the time the preview finishes building

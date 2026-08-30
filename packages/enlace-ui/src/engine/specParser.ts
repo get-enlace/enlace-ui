@@ -29,10 +29,10 @@ export function parseOperations(spec: Record<string, any>): Operation[] {
         })
       );
 
-      const requestBodySchema = resolveSchemaRefs(
-        spec,
-        op.requestBody?.content?.['application/json']?.schema ?? null
+      const { schema: rawBodySchema, contentType: requestBodyContentType } = pickRequestBody(
+        op.requestBody?.content
       );
+      const requestBodySchema = resolveSchemaRefs(spec, rawBodySchema);
       const responseSchema = resolveSchemaRefs(spec, extractSuccessResponseSchema(op.responses));
 
       operations.push({
@@ -44,12 +44,31 @@ export function parseOperations(spec: Record<string, any>): Operation[] {
         tags: Array.isArray(op.tags) ? op.tags : undefined,
         parameters,
         requestBodySchema,
+        requestBodyContentType,
         responseSchema,
       });
     }
   }
 
   return operations;
+}
+
+/**
+ * Prefer application/json when both are offered (richer default for most
+ * dual-content APIs); otherwise take multipart/form-data so file-upload
+ * ops aren't silently dropped. Other content types are ignored for v1.
+ */
+function pickRequestBody(
+  content: Record<string, any> | undefined
+): { schema: any; contentType: 'application/json' | 'multipart/form-data' | null } {
+  if (!content) return { schema: null, contentType: null };
+  if (content['application/json']?.schema) {
+    return { schema: content['application/json'].schema, contentType: 'application/json' };
+  }
+  if (content['multipart/form-data']?.schema) {
+    return { schema: content['multipart/form-data'].schema, contentType: 'multipart/form-data' };
+  }
+  return { schema: null, contentType: null };
 }
 
 function extractSuccessResponseSchema(responses: Record<string, any> | undefined) {

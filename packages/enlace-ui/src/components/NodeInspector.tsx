@@ -21,6 +21,27 @@ function LockIcon() {
   );
 }
 
+function UploadIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
 export function NodeInspector() {
   const {
     nodes,
@@ -32,6 +53,7 @@ export function NodeInspector() {
     setCredential,
     setFieldValue,
     mergeFieldValues,
+    setUploadedFile,
     setRequestMode,
     setRawPath,
     setRawQuery,
@@ -97,8 +119,12 @@ export function NodeInspector() {
     );
   }
 
-  const bodyMode = node.requestMode ?? 'form';
-  const hasRequestToggle = pathFields.length > 0 || queryFields.length > 0 || Boolean(operation.requestBodySchema);
+  const isMultipart = operation.requestBodyContentType === 'multipart/form-data';
+  // Multipart bodies can't be represented as Raw JSON (a File isn't text), so
+  // force Form mode and hide the toggle for these operations.
+  const bodyMode = isMultipart ? 'form' : (node.requestMode ?? 'form');
+  const hasRequestToggle =
+    !isMultipart && (pathFields.length > 0 || queryFields.length > 0 || Boolean(operation.requestBodySchema));
   const selectedCredential = credentials.find((c) => c.id === node.credentialId) ?? null;
 
   function switchToRaw() {
@@ -171,7 +197,8 @@ export function NodeInspector() {
 
   function renderField(field: SchemaField) {
     const fieldValue = node!.fieldValues[field.path];
-    const isMapped = fieldValue?.source === 'mapped';
+    const isFileField = field.format === 'binary';
+    const isMapped = !isFileField && fieldValue?.source === 'mapped';
     const disabled = !field.supported;
 
     // Nested/array fields are still shown, just disabled — a missing
@@ -179,6 +206,62 @@ export function NodeInspector() {
     const sourceNode = isMapped ? ancestorNodes.find((n) => n.id === fieldValue.fromNodeId) : undefined;
     const sourceOperation = sourceNode ? operations.find((o) => o.id === sourceNode.operationId) : undefined;
     const responseFields = sourceOperation ? flattenResponseFields(sourceOperation) : [];
+
+    if (isFileField) {
+      const fileName = fieldValue?.source === 'file' ? fieldValue.fileName : '';
+      return (
+        <div
+          key={field.path}
+          className={`node-inspector__field${disabled ? ' node-inspector__field--disabled' : ''}`}
+          title={field.reason}
+        >
+          <label>
+            {field.path}
+            {field.required ? ' *' : ''}
+            {' (file)'}
+            {disabled ? ' (unsupported)' : ''}
+          </label>
+          <div
+            className={`node-inspector__file-drop${fileName ? ' node-inspector__file-drop--filled' : ''}${disabled ? ' node-inspector__file-drop--disabled' : ''}`}
+          >
+            {fileName ? (
+              <>
+                <span className="node-inspector__file-name" title={fileName}>
+                  {fileName}
+                </span>
+                <button
+                  type="button"
+                  className="node-inspector__file-clear"
+                  disabled={disabled}
+                  aria-label={`Clear ${field.path}`}
+                  onClick={() => setUploadedFile(node!.id, field.path, null)}
+                >
+                  <TrashIcon />
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Remount on clear so the same file can be re-picked. */}
+                <input
+                  key="empty"
+                  type="file"
+                  className="node-inspector__file-input"
+                  disabled={disabled}
+                  aria-label={field.path}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    setUploadedFile(node!.id, field.path, file);
+                  }}
+                />
+                <span className="node-inspector__file-prompt" aria-hidden="true">
+                  <UploadIcon />
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div
