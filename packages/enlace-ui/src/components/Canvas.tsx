@@ -339,6 +339,7 @@ function CanvasInner() {
         onMove={(_, viewport) => setZoomVar(viewport)}
         fitView
         fitViewOptions={{ padding: 0.2 }}
+        proOptions={{ hideAttribution: true }}
       >
         <Background color="#3a3d42" gap={16} />
         <Controls />

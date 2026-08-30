@@ -79,12 +79,16 @@ export function RequestPanel({ request }: { request: RunStepRequest }) {
     <div className="debug-step__panel">
       <div className="debug-step__panel-title">
         Request
+        <span className="debug-step__request-url">
+          {redactUrl(request.url, request.redactQueryParams)}
+        </span>
         {/* Not a secret — see RunStepRequest.credentials — but shown so it's visible *why* a
             cookie-based call succeeded or failed, since nothing else about the request reveals
             that a cookie was expected at all. */}
-        {request.credentials === 'include' && <span className="debug-step__credentials-chip">credentials: include</span>}
+        {request.credentials === 'include' && (
+          <span className="debug-step__credentials-chip">credentials: include</span>
+        )}
       </div>
-      <div className="debug-step__request-url">{redactUrl(request.url, request.redactQueryParams)}</div>
       <HeadersList headers={request.headers} />
       <BodyBlock value={request.body} />
     </div>
@@ -100,12 +104,10 @@ export function ResponsePanel({ response, error }: { response: RunStepResponse |
       </div>
     );
   }
+  // Status lives on the row summary only — repeating it here next to "Response" was noise.
   return (
     <div className="debug-step__panel">
-      <div className="debug-step__panel-title">
-        Response
-        <span className={`status-badge ${response.status < 400 ? 'status-badge--ok' : 'status-badge--error'}`}>{response.status}</span>
-      </div>
+      <div className="debug-step__panel-title">Response</div>
       <HeadersList headers={response.headers} />
       <BodyBlock value={response.body} />
     </div>
