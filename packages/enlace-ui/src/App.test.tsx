@@ -16,6 +16,7 @@ describe('App', () => {
       isRunning: false,
       stepStatusByNodeId: {},
       activeControl: null,
+      isDebugRun: false,
     });
     // App loads the spec on mount (loadOperations -> fetchSpec) — stub it
     // out so tests don't depend on a real server, and can assert it's
@@ -31,10 +32,21 @@ describe('App', () => {
     expect(fetch).toHaveBeenCalledWith('api/spec');
   });
 
-  it('disables the Run button while a run is in progress', () => {
-    useWorkflowStore.setState({ isRunning: true });
+  it('shows the workflow name in chrome and folds setup actions behind Settings', () => {
     render(<App />);
-    expect(screen.getByRole('button', { name: 'Running…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Workflow: Untitled' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Export' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /credentials/i })).not.toBeInTheDocument();
+  });
+
+  it('disables nothing on idle Run; while running, Run/Debug are replaced by spinner + Stop', () => {
+    useWorkflowStore.setState({ isRunning: true, isDebugRun: false });
+    render(<App />);
+    expect(screen.queryByRole('button', { name: 'Run' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Debug' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Run in progress' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
   });
 
   it('Run and Debug are two separate buttons — Run ignores breakpoints, Debug honors them', async () => {
@@ -50,10 +62,10 @@ describe('App', () => {
     expect(run).toHaveBeenLastCalledWith({ useBreakpoints: true });
   });
 
-  it('also disables Debug while a run is in progress', () => {
-    useWorkflowStore.setState({ isRunning: true });
+  it('also hides Debug while a plain run is in progress', () => {
+    useWorkflowStore.setState({ isRunning: true, isDebugRun: false });
     render(<App />);
-    expect(screen.getByRole('button', { name: 'Debug' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Debug' })).not.toBeInTheDocument();
   });
 
   it('collapses the inspector to a strip and can reopen it', async () => {
@@ -78,9 +90,10 @@ describe('App', () => {
       expect(screen.queryByRole('button', { name: /Stop/ })).not.toBeInTheDocument();
     });
 
-    it('hides Run/Debug (not just disables them) once activeControl is set, so it never looks like a plain run is also happening', () => {
+    it('hides Run/Debug (not just disables them) once a debug run is active, so it never looks like a plain run is also happening', () => {
       useWorkflowStore.setState({
         isRunning: true,
+        isDebugRun: true,
         nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
         stepStatusByNodeId: { a: 'paused' },
         activeControl: { continue: vi.fn(), step: vi.fn(), stop: vi.fn() },
@@ -88,13 +101,14 @@ describe('App', () => {
       render(<App />);
 
       expect(screen.queryByRole('button', { name: 'Run' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Running…' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Debug' })).not.toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Debug controls' })).toBeInTheDocument();
     });
 
     it('shows one global set of controls once a run is controllable, not one per paused node', () => {
       useWorkflowStore.setState({
         isRunning: true,
+        isDebugRun: true,
         nodes: [
           { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
           { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
@@ -114,6 +128,7 @@ describe('App', () => {
       const control = { continue: vi.fn(), step: vi.fn(), stop: vi.fn() };
       useWorkflowStore.setState({
         isRunning: true,
+        isDebugRun: true,
         nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
         stepStatusByNodeId: { a: 'paused' },
         activeControl: control,
@@ -132,6 +147,7 @@ describe('App', () => {
       const control = { continue: vi.fn(), step: vi.fn(), stop: vi.fn() };
       useWorkflowStore.setState({
         isRunning: true,
+        isDebugRun: true,
         nodes: [
           { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
           { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
@@ -151,6 +167,7 @@ describe('App', () => {
       const control = { continue: vi.fn(), step: vi.fn(), stop: vi.fn() };
       useWorkflowStore.setState({
         isRunning: true,
+        isDebugRun: true,
         nodes: [
           { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
           { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
@@ -168,6 +185,7 @@ describe('App', () => {
     it('disables Continue and Step (but not Stop) once nothing is actually paused, e.g. mid-flight with no breakpoint hit yet', () => {
       useWorkflowStore.setState({
         isRunning: true,
+        isDebugRun: true,
         nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
         stepStatusByNodeId: { a: 'in-flight' },
         activeControl: { continue: vi.fn(), step: vi.fn(), stop: vi.fn() },

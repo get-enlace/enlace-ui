@@ -7,7 +7,15 @@ import { emptyDraft, isDraftComplete, toDraft } from '../utils/credentialDraft.j
 import type { DeclaredCredential } from '../engine/securitySchemes.js';
 import type { Credential, NewCredential } from '../types.js';
 
-export function CredentialsPanel() {
+export interface CredentialsPanelProps {
+  /** When false, the panel is drawer-only — a parent (settings menu) opens it. */
+  showTrigger?: boolean;
+  /** Controlled open state. Omit for internal (trigger-driven) state. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function CredentialsPanel({ showTrigger = true, open, onOpenChange }: CredentialsPanelProps = {}) {
   const {
     credentials,
     declaredCredentials,
@@ -18,7 +26,13 @@ export function CredentialsPanel() {
     removeCredential,
     setCredentialReview,
   } = useWorkflowStore();
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : internalOpen;
+  const setIsOpen = (next: boolean) => {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const [isAdding, setIsAdding] = useState(false);
   // Non-null while editing an existing credential rather than adding a new
   // one — same form, but Save calls updateCredential(editingId, draft)
@@ -115,10 +129,12 @@ export function CredentialsPanel() {
 
   return (
     <>
-      <button type="button" className="credentials-trigger" onClick={() => setIsOpen(true)}>
-        <span className="credentials-trigger__count">{credentials.length}</span>
-        credential{credentials.length === 1 ? '' : 's'}
-      </button>
+      {showTrigger && (
+        <button type="button" className="credentials-trigger" onClick={() => setIsOpen(true)}>
+          <span className="credentials-trigger__count">{credentials.length}</span>
+          credential{credentials.length === 1 ? '' : 's'}
+        </button>
+      )}
 
       {isOpen && (
         <>

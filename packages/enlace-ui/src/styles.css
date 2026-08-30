@@ -57,16 +57,25 @@ body {
   height: 100vh;
 }
 
-/* --- Topbar --- */
+/* --- Topbar (single row — canvas height wins over extra chrome) --- */
 
 .app__header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
-  padding: 10px 20px;
+  gap: 12px;
+  padding: 8px 16px;
   background: var(--color-topbar-bg);
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text);
+}
+
+.app__chrome-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 
 .app__title {
@@ -76,13 +85,120 @@ body {
   font-size: 18px;
   font-weight: 700;
   margin: 0;
-  flex: 1;
   letter-spacing: 0.2px;
+  min-width: 0;
 }
 
 .app__logo {
   width: 20px;
   height: 20px;
+  flex-shrink: 0;
+}
+
+/* Centered document name — future multi-workflow picker opens from here. */
+.workflow-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(280px, 40vw);
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.workflow-switcher:not(:disabled) {
+  cursor: pointer;
+}
+
+.workflow-switcher:not(:disabled):hover {
+  border-color: var(--color-border);
+  background: var(--color-panel-bg);
+}
+
+.workflow-switcher:disabled {
+  opacity: 1;
+  color: var(--color-text);
+}
+
+.workflow-switcher__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-switcher__chevron {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.chrome-settings {
+  position: relative;
+}
+
+.chrome-settings__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chrome-settings__icon {
+  display: block;
+}
+
+.chrome-settings__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.chrome-settings__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chrome-settings__item-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.chrome-settings__item:hover:not(:disabled) {
+  background: rgba(97, 175, 254, 0.1);
+  color: var(--color-text);
+}
+
+.chrome-settings__item:hover:not(:disabled) .chrome-settings__item-icon {
+  opacity: 1;
+}
+
+.chrome-settings__item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .btn {
@@ -132,6 +248,119 @@ body {
 .app__run-controls {
   display: flex;
   gap: 8px;
+}
+
+/* Segmented execution cluster — Run|Debug idle, Continue|Step|Stop while
+   debugging. Fixed width so the chrome doesn't jump between modes (or when
+   Run becomes Running…). */
+.run-segment {
+  display: inline-flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  width: 12.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-panel-bg);
+}
+
+.run-segment__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+.run-segment__btn:last-child {
+  border-right: none;
+}
+
+.run-segment__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.run-segment__btn--primary {
+  background: var(--color-post);
+  color: #fff;
+}
+
+.run-segment__btn--primary:not(:disabled):hover {
+  filter: brightness(1.06);
+}
+
+.run-segment__btn--ghost:not(:disabled):hover {
+  background: rgba(97, 175, 254, 0.1);
+  color: var(--color-text);
+}
+
+/* Amber peer to Run — soft fill + orange label (not a solid block that
+   fights the green primary). */
+.run-segment__btn--debug {
+  background: var(--color-put-bg);
+  color: var(--color-put);
+}
+
+.run-segment__btn--debug:not(:disabled):hover {
+  filter: brightness(1.15);
+  color: #ffb14a;
+}
+
+.run-segment__btn--stop {
+  color: var(--color-delete);
+}
+
+.run-segment__btn--stop:not(:disabled):hover {
+  background: var(--color-delete-bg);
+}
+
+/* Non-interactive half of the plain-run transport (spinner side). */
+.run-segment__btn--status {
+  position: relative;
+  cursor: default;
+  pointer-events: none;
+}
+
+.run-segment__spinner {
+  animation: run-segment-spin 0.7s linear infinite;
+}
+
+@keyframes run-segment-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.run-segment__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.run-segment__icon {
+  display: block;
+  flex-shrink: 0;
 }
 
 /* Symbol-only variant — a hover title is the accessible name, no visible
