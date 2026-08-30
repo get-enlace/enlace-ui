@@ -32,9 +32,7 @@ export default function App() {
   }, [loadOperations]);
 
   // One global set of controls for the whole run, not one per paused node
-  // (see DebuggerTab.tsx — it used to repeat these per row; a single place
-  // is both less noisy and matches "there's one run happening", even
-  // though several nodes can be paused at once).
+  // (Results pane pause bar also offers Continue/Step for the focused node).
   const pausedNodeIds = nodes.filter((n) => stepStatusByNodeId[n.id] === 'paused').map((n) => n.id);
   // Step needs one specific target: the selected node if it's actually
   // paused right now, otherwise whichever paused node comes first — so the
