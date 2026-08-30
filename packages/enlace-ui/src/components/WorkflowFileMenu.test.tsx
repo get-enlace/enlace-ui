@@ -14,6 +14,7 @@ function resetStore() {
     credentials: [],
     operations: [],
     specInfo: null,
+    workflowName: 'Untitled',
     selectedNodeId: null,
     runResult: null,
     error: null,

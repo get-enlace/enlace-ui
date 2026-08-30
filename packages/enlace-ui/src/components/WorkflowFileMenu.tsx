@@ -59,9 +59,11 @@ export const WorkflowFileMenu = forwardRef<WorkflowFileMenuHandle, WorkflowFileM
     const nodePositions = useWorkflowStore((s) => s.nodePositions);
     const credentials = useWorkflowStore((s) => s.credentials);
     const specInfo = useWorkflowStore((s) => s.specInfo);
+    const workflowName = useWorkflowStore((s) => s.workflowName);
     const operations = useWorkflowStore((s) => s.operations);
     const isRunning = useWorkflowStore((s) => s.isRunning);
     const replaceWorkflow = useWorkflowStore((s) => s.replaceWorkflow);
+    const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
     const setCredentialReview = useWorkflowStore((s) => s.setCredentialReview);
     const setError = (error: string | null) => useWorkflowStore.setState({ error });
 
@@ -73,7 +75,10 @@ export const WorkflowFileMenu = forwardRef<WorkflowFileMenuHandle, WorkflowFileM
     const [secretsAcknowledged, setSecretsAcknowledged] = useState(false);
 
     const openExport = () => {
-      setExportName(specInfo?.title?.trim() || 'Untitled');
+      // Prefer the canvas workflow name; fall back to the OpenAPI title only
+      // when the user hasn't named anything yet (still "Untitled").
+      const named = workflowName.trim() && workflowName !== 'Untitled' ? workflowName : null;
+      setExportName(named || specInfo?.title?.trim() || 'Untitled');
       setIncludeSecrets(false);
       setSecretsAcknowledged(false);
       setShowExport(true);
@@ -96,6 +101,7 @@ export const WorkflowFileMenu = forwardRef<WorkflowFileMenuHandle, WorkflowFileM
         specInfo,
       });
       downloadCollection(collection);
+      setWorkflowName(exportName);
       setShowExport(false);
     };
 
