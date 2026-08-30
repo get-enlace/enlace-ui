@@ -112,28 +112,22 @@ function CanvasInner() {
   //     picker. A mapping always implies its own order dependency too
   //     (see src/types.ts's WorkflowConnection doc), so it's fine for both
   //     kinds to exist between the same two nodes at once.
+  //
+  // When both kinds exist for the same pair, they're geometrically
+  // identical curves (same source/target, no distinct handles), stacked
+  // exactly on top of each other. Mapping edges MUST be pushed into the
+  // array before connection edges, not after: React Flow (like plain SVG)
+  // paints later array entries on top, and only the topmost edge receives
+  // pointer events, so whichever kind renders last wins every hover/click/
+  // double-click. Connection edges are the ones carrying the interactive
+  // breakpoint gesture (BreakpointConnectionEdge's double-click handler in
+  // Canvas.tsx's onEdgeDoubleClick below); if a mapping edge ends up on top
+  // instead, that double-click lands on the plain, non-interactive mapping
+  // edge and silently no-ops — arming a breakpoint becomes impossible on
+  // any node pair that's connected by both an order connector and a field
+  // mapping.
   const flowEdges: Edge[] = useMemo(() => {
-    const edges: Edge[] = connections.map((c) => ({
-      id: `conn-${c.fromNodeId}->${c.toNodeId}`,
-      source: c.fromNodeId,
-      target: c.toNodeId,
-      // 'connection' (registered in edgeTypes above) — never applied to a
-      // mapping edge below, which is what makes "a breakpoint can only
-      // ever arm on a connector" true at the rendering level, not just a
-      // runtime check.
-      type: 'connection',
-      className: 'edge-connection',
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#9aa0a6' },
-      // Carried through to onEdgesChange below, so a 'remove' change (select
-      // the edge, press Backspace/Delete) can call disconnectNodes with the
-      // right pair without parsing it back out of the id string. `armed`
-      // drives BreakpointConnectionEdge's marker — see its own doc comment.
-      data: {
-        fromNodeId: c.fromNodeId,
-        toNodeId: c.toNodeId,
-        armed: armedBreakpoints.has(connectionKey(c.fromNodeId, c.toNodeId)),
-      },
-    }));
+    const edges: Edge[] = [];
 
     for (const node of nodes) {
       for (const fieldValue of Object.values(node.fieldValues)) {
@@ -148,6 +142,31 @@ function CanvasInner() {
         }
       }
     }
+
+    for (const c of connections) {
+      edges.push({
+        id: `conn-${c.fromNodeId}->${c.toNodeId}`,
+        source: c.fromNodeId,
+        target: c.toNodeId,
+        // 'connection' (registered in edgeTypes above) — never applied to a
+        // mapping edge above, which is what makes "a breakpoint can only
+        // ever arm on a connector" true at the rendering level, not just a
+        // runtime check.
+        type: 'connection',
+        className: 'edge-connection',
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#9aa0a6' },
+        // Carried through to onEdgesChange below, so a 'remove' change (select
+        // the edge, press Backspace/Delete) can call disconnectNodes with the
+        // right pair without parsing it back out of the id string. `armed`
+        // drives BreakpointConnectionEdge's marker — see its own doc comment.
+        data: {
+          fromNodeId: c.fromNodeId,
+          toNodeId: c.toNodeId,
+          armed: armedBreakpoints.has(connectionKey(c.fromNodeId, c.toNodeId)),
+        },
+      });
+    }
+
     return edges.map((e) => ({ ...e, selected: e.id === selectedEdgeId }));
   }, [nodes, connections, selectedEdgeId, armedBreakpoints]);
 
