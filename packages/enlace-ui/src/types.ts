@@ -77,10 +77,16 @@ export interface WorkflowNode {
    * Optional (not required) so every pre-existing `WorkflowNode` literal
    * (fixtures, older in-memory state) keeps compiling/behaving unchanged —
    * treat an absent value as `'form'`. Orthogonal to `fieldValues`: raw
-   * mode simply stops reading/writing the `body.*` keys within it; path/
-   * query/header keys are unaffected either way.
+   * mode stops reading/writing `path.*` / `query.*` / `body.*` keys from
+   * `fieldValues` and uses `rawPath` / `rawQuery` / `rawBody` instead.
+   * Header fields always stay on the form.
+   *
+   * Older collections may still serialize this as `bodyMode` — import
+   * accepts either key (see utils/workflowDocument.ts).
    */
-  bodyMode?: 'form' | 'raw';
+  requestMode?: 'form' | 'raw';
+  rawPath?: RawBody | null;
+  rawQuery?: RawBody | null;
   rawBody?: RawBody | null;
 }
 

@@ -28,7 +28,7 @@ const node: WorkflowNode = {
     'body.qty': { source: 'static', value: 2 },
     'body.customerId': { source: 'mapped', fromNodeId: 'n0', fromResponseFieldPath: 'id' },
   },
-  bodyMode: 'raw',
+  requestMode: 'raw',
   rawBody: {
     template: '{"id":"{{enlace:tag-1}}"}',
     tags: { 'tag-1': { id: 'tag-1', type: 'response_body', sourceNodeId: 'n0', jsonPath: 'id' } },
@@ -255,5 +255,59 @@ describe('hydrateCollection / helpers', () => {
     expect(
       formatUnknownOperationsError({ ...warnings, unknownOperationIds: ['POST /missing', 'GET /gone'] })
     ).toBe("Operations POST /missing, GET /gone aren't in the loaded spec — load the matching spec before running.");
+  });
+
+  it('accepts legacy bodyMode on import as requestMode, and round-trips rawPath/rawQuery', () => {
+    const withParams: WorkflowNode = {
+      id: 'n-patch',
+      operationId: 'PATCH /customers/{id}',
+      credentialId: null,
+      fieldValues: {},
+      requestMode: 'raw',
+      rawPath: { template: '{"id":"c1"}', tags: {} },
+      rawQuery: { template: '{"dryRun":true}', tags: {} },
+    };
+    const doc = serializeCollection({
+      nodes: [withParams],
+      connections: [],
+      nodePositions: {},
+      credentials: [],
+    });
+    expect(doc.workflows[0].nodes[0].requestMode).toBe('raw');
+    expect(doc.workflows[0].nodes[0].rawPath).toEqual({ template: '{"id":"c1"}', tags: {} });
+    expect(doc.workflows[0].nodes[0].rawQuery).toEqual({ template: '{"dryRun":true}', tags: {} });
+
+    const legacy = parseCollection({
+      format: ENLACE_COLLECTION_FORMAT,
+      version: ENLACE_COLLECTION_VERSION,
+      name: 'Legacy',
+      exportedAt: '',
+      secrets: 'stripped',
+      credentials: [],
+      workflows: [
+        {
+          id: 'workflow-1',
+          name: 'Legacy',
+          specHint: { operationIds: [] },
+          nodes: [
+            {
+              id: 'n1',
+              operationId: 'POST /x',
+              credentialId: null,
+              fieldValues: {},
+              bodyMode: 'raw',
+              rawBody: { template: '{}', tags: {} },
+            },
+          ],
+          connections: [],
+          nodePositions: {},
+        },
+      ],
+    });
+    expect(legacy.ok).toBe(true);
+    if (legacy.ok) {
+      expect(legacy.collection.workflows[0].nodes[0].requestMode).toBe('raw');
+      expect(legacy.collection.workflows[0].nodes[0].rawBody).toEqual({ template: '{}', tags: {} });
+    }
   });
 });

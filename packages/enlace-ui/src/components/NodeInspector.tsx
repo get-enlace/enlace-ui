@@ -1,15 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import { coerceStaticValue } from '../utils/coerceValue.js';
 import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from '../utils/flattenSchema.js';
 import { computeAncestors } from '../engine/dependencyGraph.js';
 import { hasUnrepresentableShape } from '../utils/schemaExample.js';
-import { buildRawBodyFromForm, convertRawBodyToFieldValues } from '../utils/bodyTemplate.js';
+import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from '../utils/bodyTemplate.js';
 import { buildNodeLabels } from '../utils/nodeLabel.js';
 import { RawBodyEditor } from './RawBodyEditor.js';
 import { Modal } from './Modal.js';
 import type { SchemaField } from '../utils/flattenSchema.js';
 import type { FieldValue } from '../types.js';
+
+/** Stroked lock — same outline style as CredentialTypeFields eye icons. */
+function LockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
 
 export interface NodeInspectorProps {
   onCollapse: () => void;
@@ -26,7 +36,9 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
     setCredential,
     setFieldValue,
     mergeFieldValues,
-    setBodyMode,
+    setRequestMode,
+    setRawPath,
+    setRawQuery,
     setRawBody,
   } = useWorkflowStore();
 
@@ -34,11 +46,15 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
   const operation = operations.find((o) => o.id === node?.operationId);
   const operationsById = useMemo(() => new Map(operations.map((o) => [o.id, o])), [operations]);
   const fields = useMemo(() => (operation ? flattenRequestFields(operation) : []), [operation]);
-  const nonBodyFields = useMemo(() => fields.filter((f) => !f.path.startsWith('body.')), [fields]);
+  const pathFields = useMemo(() => fields.filter((f) => f.path.startsWith('path.')), [fields]);
+  const queryFields = useMemo(() => fields.filter((f) => f.path.startsWith('query.')), [fields]);
+  const headerFields = useMemo(() => fields.filter((f) => f.path.startsWith('header.')), [fields]);
   const bodyFields = useMemo(() => fields.filter((f) => f.path.startsWith('body.')), [fields]);
 
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [pendingFormSwitch, setPendingFormSwitch] = useState<Record<string, FieldValue> | null>(null);
+  const [credPickerOpen, setCredPickerOpen] = useState(false);
+  const credPickerRef = useRef<HTMLDivElement>(null);
 
   // "map from" may reach any ancestor in the connection graph, not just the
   // node directly before it — e.g. A -> B -> C where B carries no data, C
@@ -52,6 +68,30 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
   // always matches its canvas card and every other picker, regardless of which node is selected
   // (see Canvas.tsx and utils/nodeLabel.ts's buildNodeLabels doc).
   const nodeLabels = useMemo(() => buildNodeLabels(nodes, operationsById), [nodes, operationsById]);
+
+  useEffect(() => {
+    if (!credPickerOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (credPickerRef.current && !credPickerRef.current.contains(e.target as Node)) {
+        setCredPickerOpen(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setCredPickerOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [credPickerOpen]);
+
+  // Close the picker when the selected node changes so a leftover menu
+  // doesn't sit open under a different operation's title.
+  useEffect(() => {
+    setCredPickerOpen(false);
+  }, [selectedNodeId]);
 
   const collapseButton = (
     <button
@@ -77,46 +117,75 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
     );
   }
 
-  const bodyMode = node.bodyMode ?? 'form';
+  const bodyMode = node.requestMode ?? 'form';
+  const hasRequestToggle = pathFields.length > 0 || queryFields.length > 0 || Boolean(operation.requestBodySchema);
+  const selectedCredential = credentials.find((c) => c.id === node.credentialId) ?? null;
 
   function switchToRaw() {
     if (!node || !operation) return;
     setSwitchError(null);
     // Always rebuild from the current form fields — Form is the mode being
-    // left, so it's the authoritative source. A stale `node.rawBody` left
-    // over from an earlier raw-mode session (e.g. from before the last
-    // Raw -> Form switch) must not win over field edits made since; see
-    // switchToForm below, which is already unconditional in the other
-    // direction (always re-derives from rawBody.template on every switch).
-    setRawBody(node.id, buildRawBodyFromForm(operation, node.fieldValues));
-    setBodyMode(node.id, 'raw');
+    // left, so it's the authoritative source. Stale raw* left over from an
+    // earlier raw-mode session must not win over field edits made since.
+    if (pathFields.length > 0) {
+      setRawPath(node.id, buildRawParamsFromForm('path', operation, node.fieldValues));
+    }
+    if (queryFields.length > 0) {
+      setRawQuery(node.id, buildRawParamsFromForm('query', operation, node.fieldValues));
+    }
+    if (operation.requestBodySchema) {
+      setRawBody(node.id, buildRawBodyFromForm(operation, node.fieldValues));
+    }
+    setRequestMode(node.id, 'raw');
   }
 
   function switchToForm() {
     if (!node || !operation) return;
     setSwitchError(null);
-    if (!node.rawBody) {
-      setBodyMode(node.id, 'form');
-      return;
+
+    const merged: Record<string, FieldValue> = {};
+    let lossy = false;
+
+    if (node.rawPath && pathFields.length > 0) {
+      const result = convertRawParamsToFieldValues('path', node.rawPath, operation);
+      if (result.parseError) {
+        setSwitchError(`Can't switch to Form view — path Raw JSON isn't valid: ${result.parseError}`);
+        return;
+      }
+      Object.assign(merged, result.fieldValues);
+      lossy = lossy || result.lossy;
+    }
+    if (node.rawQuery && queryFields.length > 0) {
+      const result = convertRawParamsToFieldValues('query', node.rawQuery, operation);
+      if (result.parseError) {
+        setSwitchError(`Can't switch to Form view — query Raw JSON isn't valid: ${result.parseError}`);
+        return;
+      }
+      Object.assign(merged, result.fieldValues);
+      lossy = lossy || result.lossy;
+    }
+    if (node.rawBody && operation.requestBodySchema) {
+      const result = convertRawBodyToFieldValues(node.rawBody, operation);
+      if (result.parseError) {
+        setSwitchError(`Can't switch to Form view — body Raw JSON isn't valid: ${result.parseError}`);
+        return;
+      }
+      Object.assign(merged, result.fieldValues);
+      lossy = lossy || result.lossy;
     }
 
-    const result = convertRawBodyToFieldValues(node.rawBody, operation);
-    if (result.parseError) {
-      setSwitchError(`Can't switch to Form view — the Raw JSON isn't valid: ${result.parseError}`);
+    if (lossy) {
+      setPendingFormSwitch(merged);
       return;
     }
-    if (result.lossy) {
-      setPendingFormSwitch(result.fieldValues);
-      return;
-    }
-    mergeFieldValues(node.id, result.fieldValues);
-    setBodyMode(node.id, 'form');
+    mergeFieldValues(node.id, merged);
+    setRequestMode(node.id, 'form');
   }
 
   function confirmLossyFormSwitch() {
     if (!node || !pendingFormSwitch) return;
     mergeFieldValues(node.id, pendingFormSwitch);
-    setBodyMode(node.id, 'form');
+    setRequestMode(node.id, 'form');
     setPendingFormSwitch(null);
   }
 
@@ -144,10 +213,12 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
           {disabled ? ' (unsupported)' : ''}
         </label>
 
-        <div className="node-inspector__field-row">
+        <div className={`node-inspector__field-row${isMapped ? ' node-inspector__field-row--mapped' : ''}`}>
           <select
+            className="node-inspector__source-select"
             disabled={disabled}
             value={isMapped ? 'mapped' : 'static'}
+            aria-label={`Source for ${field.path}`}
             onChange={(e) => {
               if (e.target.value === 'static') {
                 setFieldValue(node!.id, field.path, { source: 'static', value: '' });
@@ -160,21 +231,20 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
               }
             }}
           >
-            <option value="static">Static value</option>
+            <option value="static">Static</option>
             <option value="mapped" disabled={ancestorNodes.length === 0}>
-              Map from...
+              Map
             </option>
           </select>
-        </div>
 
-        {!isMapped && (
-          <div className="node-inspector__field-row">
-            {field.type === 'array' ? (
+          {!isMapped &&
+            (field.type === 'array' ? (
               <textarea
                 rows={3}
                 disabled={disabled}
                 placeholder={field.reason}
                 title={field.reason}
+                aria-label={field.path}
                 value={
                   fieldValue?.source === 'static'
                     ? typeof fieldValue.value === 'string'
@@ -192,6 +262,7 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
             ) : field.enum ? (
               <select
                 disabled={disabled}
+                aria-label={field.path}
                 value={fieldValue?.source === 'static' ? String(fieldValue.value ?? '') : ''}
                 onChange={(e) =>
                   setFieldValue(node!.id, field.path, {
@@ -211,6 +282,7 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
               <input
                 type="text"
                 disabled={disabled}
+                aria-label={field.path}
                 value={fieldValue?.source === 'static' ? String(fieldValue.value ?? '') : ''}
                 onChange={(e) =>
                   setFieldValue(node!.id, field.path, {
@@ -219,49 +291,50 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
                   })
                 }
               />
-            )}
-          </div>
-        )}
+            ))}
 
-        {isMapped && (
-          <div className="node-inspector__field-row node-inspector__field-row--mapped">
-            <select
-              disabled={disabled}
-              value={fieldValue.fromNodeId}
-              onChange={(e) => setFieldValue(node!.id, field.path, { ...fieldValue, fromNodeId: e.target.value })}
-            >
-              {ancestorNodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {nodeLabels.get(n.id)}
-                </option>
-              ))}
-            </select>
-            <select
-              disabled={disabled}
-              value={fieldValue.fromResponseFieldPath}
-              onChange={(e) =>
-                setFieldValue(node!.id, field.path, { ...fieldValue, fromResponseFieldPath: e.target.value })
-              }
-            >
-              <option value="">Select field...</option>
-              {responseFields.map((rf) => {
-                const typeMismatch = rf.supported && !areFieldTypesCompatible(field.type, rf.type);
-                const optionDisabled = !rf.supported || typeMismatch;
-                const reason = !rf.supported
-                  ? rf.reason
-                  : typeMismatch
-                    ? `Type mismatch: "${field.path}" expects ${field.type}, this field is ${rf.type}.`
-                    : undefined;
-                return (
-                  <option key={rf.path} value={rf.path} disabled={optionDisabled} title={reason}>
-                    {rf.path}
-                    {!rf.supported ? ' (unsupported)' : typeMismatch ? ' (type mismatch)' : ''}
+          {isMapped && (
+            <>
+              <select
+                disabled={disabled}
+                aria-label={`Map ${field.path} from node`}
+                value={fieldValue.fromNodeId}
+                onChange={(e) => setFieldValue(node!.id, field.path, { ...fieldValue, fromNodeId: e.target.value })}
+              >
+                {ancestorNodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {nodeLabels.get(n.id)}
                   </option>
-                );
-              })}
-            </select>
-          </div>
-        )}
+                ))}
+              </select>
+              <select
+                disabled={disabled}
+                aria-label={`Map ${field.path} from response field`}
+                value={fieldValue.fromResponseFieldPath}
+                onChange={(e) =>
+                  setFieldValue(node!.id, field.path, { ...fieldValue, fromResponseFieldPath: e.target.value })
+                }
+              >
+                <option value="">Select field...</option>
+                {responseFields.map((rf) => {
+                  const typeMismatch = rf.supported && !areFieldTypesCompatible(field.type, rf.type);
+                  const optionDisabled = !rf.supported || typeMismatch;
+                  const reason = !rf.supported
+                    ? rf.reason
+                    : typeMismatch
+                      ? `Type mismatch: "${field.path}" expects ${field.type}, this field is ${rf.type}.`
+                      : undefined;
+                  return (
+                    <option key={rf.path} value={rf.path} disabled={optionDisabled} title={reason}>
+                      {rf.path}
+                      {!rf.supported ? ' (unsupported)' : typeMismatch ? ' (type mismatch)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -286,65 +359,148 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
         <p className="node-inspector__banner">Workflow is running — editing is locked until it finishes.</p>
       )}
       <fieldset className="node-inspector__fieldset" disabled={isRunning}>
-      <h2>{operation.id}</h2>
+      <div className="node-inspector__op-heading" ref={credPickerRef}>
+        <div className="node-inspector__op-title">
+          <button
+            type="button"
+            className={`node-inspector__cred-lock${selectedCredential ? ' node-inspector__cred-lock--set' : ''}`}
+            aria-label="Credential"
+            aria-expanded={credPickerOpen}
+            aria-haspopup="listbox"
+            title={selectedCredential ? `Credential: ${selectedCredential.name}` : 'No credential'}
+            onClick={() => setCredPickerOpen((open) => !open)}
+          >
+            <LockIcon />
+          </button>
+          <h2>{operation.id}</h2>
+        </div>
+        {credPickerOpen && (
+          <ul className="node-inspector__cred-menu" role="listbox" aria-label="Available credentials">
+            <li role="presentation">
+              <button
+                type="button"
+                role="option"
+                aria-selected={!selectedCredential}
+                className={`node-inspector__cred-option${!selectedCredential ? ' node-inspector__cred-option--active' : ''}`}
+                onClick={() => {
+                  setCredential(node.id, null);
+                  setCredPickerOpen(false);
+                }}
+              >
+                None
+              </button>
+            </li>
+            {credentials.map((c) => (
+              <li key={c.id} role="presentation">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selectedCredential?.id === c.id}
+                  className={`node-inspector__cred-option${selectedCredential?.id === c.id ? ' node-inspector__cred-option--active' : ''}`}
+                  onClick={() => {
+                    setCredential(node.id, c.id);
+                    setCredPickerOpen(false);
+                  }}
+                >
+                  {c.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
-      <label className="node-inspector__field">
-        Credential
-        <select value={node.credentialId ?? ''} onChange={(e) => setCredential(node.id, e.target.value || null)}>
-          <option value="">None</option>
-          {credentials.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <h3>Request fields</h3>
-      {/* Path/query/header fields keep their own "Map from..." picker regardless of body mode — only skip this
-          hint in Raw JSON mode when there's nothing else on the page it'd apply to; the tag config popup shows
-          its own "no upstream nodes" message when you actually need it there (see TagConfigModal.tsx). */}
-      {ancestorNodes.length === 0 && (nonBodyFields.length > 0 || bodyMode === 'form') && (
+      <div className="node-inspector__request-header">
+        <h3>Request</h3>
+        {hasRequestToggle && (
+          <label
+            className="body-mode-switch"
+            title="Switch to Raw to edit path, query, and body as JSON and map values with tag chips."
+          >
+            <span className="body-mode-switch__label">{bodyMode === 'raw' ? 'Raw' : 'Form'}</span>
+            <input
+              type="checkbox"
+              checked={bodyMode === 'raw'}
+              onChange={(e) => (e.target.checked ? switchToRaw() : switchToForm())}
+              aria-label={bodyMode === 'raw' ? 'Switch to Form view' : 'Switch to Raw view'}
+            />
+            <span className="body-mode-switch__track">
+              <span className="body-mode-switch__thumb" />
+            </span>
+          </label>
+        )}
+      </div>
+      {/* Form mode: path/query/header "Map from..." needs an upstream node.
+          Raw mode: tag chips in the editors have their own empty-state messaging. */}
+      {ancestorNodes.length === 0 && bodyMode === 'form' && fields.length > 0 && (
         <p className="node-inspector__hint">
           Connect this node from another on the canvas (drag box to box) to enable "Map from...".
         </p>
       )}
-      {nonBodyFields.map(renderField)}
+
+      {switchError && <p className="node-inspector__error">{switchError}</p>}
+
+      {bodyMode === 'raw' && (
+        <p className="node-inspector__hint">
+          Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
+        </p>
+      )}
+
+      {pathFields.length > 0 && (
+        <section className="node-inspector__section">
+          <h4 className="node-inspector__section-title">Path variables</h4>
+          {bodyMode === 'form' ? (
+            pathFields.map(renderField)
+          ) : node.rawPath ? (
+            <RawBodyEditor
+              rawBody={node.rawPath}
+              onChange={(rawPath) => setRawPath(node.id, rawPath)}
+              ancestorNodes={ancestorNodes}
+              nodeLabels={nodeLabels}
+              readOnly={isRunning}
+              showHint={false}
+            />
+          ) : null}
+        </section>
+      )}
+
+      {queryFields.length > 0 && (
+        <section className="node-inspector__section">
+          <h4 className="node-inspector__section-title">Query params</h4>
+          {bodyMode === 'form' ? (
+            queryFields.map(renderField)
+          ) : node.rawQuery ? (
+            <RawBodyEditor
+              rawBody={node.rawQuery}
+              onChange={(rawQuery) => setRawQuery(node.id, rawQuery)}
+              ancestorNodes={ancestorNodes}
+              nodeLabels={nodeLabels}
+              readOnly={isRunning}
+              showHint={false}
+            />
+          ) : null}
+        </section>
+      )}
+
+      {headerFields.length > 0 && (
+        <section className="node-inspector__section">
+          <h4 className="node-inspector__section-title">Headers</h4>
+          {headerFields.map(renderField)}
+        </section>
+      )}
 
       {operation.requestBodySchema && (
-        <div className="node-inspector__body">
-          <div className="node-inspector__body-header">
-            <span className="node-inspector__body-title">Body</span>
-            <label className="body-mode-switch">
-              <span className="body-mode-switch__label">{bodyMode === 'raw' ? 'Raw JSON' : 'Form'}</span>
-              <input
-                type="checkbox"
-                checked={bodyMode === 'raw'}
-                onChange={(e) => (e.target.checked ? switchToRaw() : switchToForm())}
-                aria-label={bodyMode === 'raw' ? 'Switch to Form view' : 'Switch to Raw JSON view'}
-              />
-              <span className="body-mode-switch__track">
-                <span className="body-mode-switch__thumb" />
-              </span>
-            </label>
-          </div>
+        <section className="node-inspector__section node-inspector__body">
+          <h4 className="node-inspector__section-title">Body</h4>
 
           {bodyMode === 'form' && hasUnrepresentableShape(operation.requestBodySchema) ? (
             <p className="node-inspector__banner">
               This body has a shape the form can't fully represent (arrays of objects or polymorphic fields).{' '}
               <button type="button" onClick={switchToRaw}>
-                Switch to Raw JSON
+                Switch to Raw
               </button>
             </p>
-          ) : (
-            bodyMode === 'form' && (
-              <p className="node-inspector__hint">
-                Switch to Raw JSON to write the body directly and map values into any nested field.
-              </p>
-            )
-          )}
-
-          {switchError && <p className="node-inspector__error">{switchError}</p>}
+          ) : null}
 
           {bodyMode === 'form' ? (
             bodyFields.map(renderField)
@@ -355,9 +511,10 @@ export function NodeInspector({ onCollapse }: NodeInspectorProps) {
               ancestorNodes={ancestorNodes}
               nodeLabels={nodeLabels}
               readOnly={isRunning}
+              showHint={false}
             />
           ) : null}
-        </div>
+        </section>
       )}
       </fieldset>
 

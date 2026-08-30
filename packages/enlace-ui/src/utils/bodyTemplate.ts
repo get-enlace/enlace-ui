@@ -13,10 +13,74 @@ import { randomId } from './randomId.js';
 const SENTINEL_PATTERN = /"__ENLACE_RAW_TAG__([a-zA-Z0-9_-]+)__"/g;
 const sentinelFor = (tagId: string) => `__ENLACE_RAW_TAG__${tagId}__`;
 
+export type ParamSection = 'path' | 'query';
+
 function bodyFieldPaths(operation: Operation): string[] {
   return flattenRequestFields(operation)
     .filter((f) => f.supported && f.path.startsWith('body.'))
     .map((f) => f.path.slice('body.'.length));
+}
+
+function paramNames(operation: Operation, section: ParamSection): string[] {
+  const prefix = `${section}.`;
+  return flattenRequestFields(operation)
+    .filter((f) => f.supported && f.path.startsWith(prefix))
+    .map((f) => f.path.slice(prefix.length));
+}
+
+function finalizeTemplate(target: Record<string, unknown>, tags: Record<string, BodyTag>): RawBody {
+  const template = JSON.stringify(target, null, 2).replace(
+    SENTINEL_PATTERN,
+    (_match, tagId: string) => `"${makeTagPlaceholder(tagId)}"`
+  );
+  return { template, tags };
+}
+
+function applyFieldValueToTarget(
+  target: Record<string, unknown>,
+  tags: Record<string, BodyTag>,
+  key: string,
+  fieldValue: FieldValue
+): void {
+  if (fieldValue.source === 'static') {
+    setByPath(target, key, fieldValue.value);
+  } else {
+    const tagId = randomId();
+    tags[tagId] = {
+      id: tagId,
+      type: 'response_body',
+      sourceNodeId: fieldValue.fromNodeId,
+      jsonPath: fieldValue.fromResponseFieldPath || undefined,
+    };
+    setByPath(target, key, sentinelFor(tagId));
+  }
+}
+
+/**
+ * Form -> Raw for path or query. Flat JSON object keyed by param name;
+ * static values written in place, mapped values become tag chips.
+ */
+export function buildRawParamsFromForm(
+  section: ParamSection,
+  operation: Operation,
+  fieldValues: Record<string, FieldValue>
+): RawBody {
+  const target: Record<string, unknown> = {};
+  const tags: Record<string, BodyTag> = {};
+  const prefix = `${section}.`;
+
+  for (const key of paramNames(operation, section)) {
+    const fieldValue = fieldValues[`${prefix}${key}`];
+    if (fieldValue) {
+      applyFieldValueToTarget(target, tags, key, fieldValue);
+    } else {
+      // Always include every declared param key so Raw mode starts with a
+      // filled-in skeleton rather than `{}` the user has to reconstruct.
+      target[key] = '';
+    }
+  }
+
+  return finalizeTemplate(target, tags);
 }
 
 /**
@@ -33,27 +97,10 @@ export function buildRawBodyFromForm(operation: Operation, fieldValues: Record<s
   for (const key of bodyFieldPaths(operation)) {
     const fieldValue = fieldValues[`body.${key}`];
     if (!fieldValue) continue;
-
-    if (fieldValue.source === 'static') {
-      setByPath(target, key, fieldValue.value);
-    } else {
-      const tagId = randomId();
-      tags[tagId] = {
-        id: tagId,
-        type: 'response_body',
-        sourceNodeId: fieldValue.fromNodeId,
-        jsonPath: fieldValue.fromResponseFieldPath || undefined,
-      };
-      setByPath(target, key, sentinelFor(tagId));
-    }
+    applyFieldValueToTarget(target, tags, key, fieldValue);
   }
 
-  const template = JSON.stringify(target, null, 2).replace(
-    SENTINEL_PATTERN,
-    (_match, tagId: string) => `"${makeTagPlaceholder(tagId)}"`
-  );
-
-  return { template, tags };
+  return finalizeTemplate(target, tags);
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -76,31 +123,20 @@ export interface RawToFormResult {
   fieldValues: Record<string, FieldValue>;
   /** True when switching to Form would lose something Raw mode can represent — extra/polymorphic structure, or a tag chip the flat form has nowhere to put. Doesn't block the switch, just warrants a confirmation. */
   lossy: boolean;
-  /** Set (and `fieldValues`/`lossy` left empty/false) when `rawBody.template` isn't valid JSON at all — this blocks switching outright rather than just warning. */
+  /** Set (and `fieldValues`/`lossy` left empty/false) when the template isn't valid JSON at all — this blocks switching outright rather than just warning. */
   parseError?: string;
 }
 
-/**
- * Raw -> Form, best-effort. Reads each schema-known body leaf out of the
- * parsed template; a leaf whose value is *exactly* a whole tag placeholder
- * (see bodyTags.ts's isWholeStringMatch — checked implicitly here since we
- * compare the leaf's entire string value, not a substring) becomes a
- * `mapped` FieldValue, everything else becomes `static`.
- *
- * `lossy` is computed structurally rather than by enumerating shapes:
- * reconstruct a body from the derived fieldValues the same way
- * chainExecutor.ts's buildRequest does, and diff it against the parsed
- * template. Anything the flat leaf set can't reproduce exactly — extra
- * keys, oneOf/anyOf branches, unsupported fields — shows up as a
- * mismatch. A tag chip referenced anywhere in the template that didn't
- * end up consumed as a whole-leaf mapping (e.g. embedded in a larger
- * string, or sitting inside an array item) also forces `lossy: true`,
- * since form mode has no way to resolve `{{enlace:...}}` text at all.
- */
-export function convertRawBodyToFieldValues(rawBody: RawBody, operation: Operation): RawToFormResult {
+function convertRawObjectToFieldValues(
+  raw: RawBody,
+  keys: string[],
+  fieldPrefix: string,
+  /** Body always materializes every schema leaf (even if absent); path/query only materialize keys present in the JSON. */
+  includeMissing: boolean
+): RawToFormResult {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(rawBody.template);
+    parsed = JSON.parse(raw.template);
   } catch (err) {
     return { fieldValues: {}, lossy: false, parseError: err instanceof Error ? err.message : String(err) };
   }
@@ -109,25 +145,55 @@ export function convertRawBodyToFieldValues(rawBody: RawBody, operation: Operati
   const reconstructed: Record<string, unknown> = {};
   const consumedTagIds = new Set<string>();
 
-  for (const key of bodyFieldPaths(operation)) {
+  for (const key of keys) {
     const value = getByPath(parsed, key);
+    if (value === undefined && !includeMissing) continue;
+
     const wholeTagMatch = typeof value === 'string' ? value.match(/^\{\{enlace:([a-zA-Z0-9_-]+)\}\}$/) : null;
-    const tag = wholeTagMatch ? rawBody.tags[wholeTagMatch[1]] : undefined;
+    const tag = wholeTagMatch ? raw.tags[wholeTagMatch[1]] : undefined;
 
     if (tag && tag.type === 'response_body') {
-      fieldValues[`body.${key}`] = { source: 'mapped', fromNodeId: tag.sourceNodeId, fromResponseFieldPath: tag.jsonPath ?? '' };
+      fieldValues[`${fieldPrefix}${key}`] = {
+        source: 'mapped',
+        fromNodeId: tag.sourceNodeId,
+        fromResponseFieldPath: tag.jsonPath ?? '',
+      };
       consumedTagIds.add(tag.id);
       setByPath(reconstructed, key, value);
     } else {
-      fieldValues[`body.${key}`] = { source: 'static', value };
+      fieldValues[`${fieldPrefix}${key}`] = { source: 'static', value };
       setByPath(reconstructed, key, value);
     }
   }
 
-  const allTagIdsInTemplate = new Set([...rawBody.template.matchAll(tagPattern())].map((m) => m[1]));
+  const allTagIdsInTemplate = new Set([...raw.template.matchAll(tagPattern())].map((m) => m[1]));
   const hasUnconsumedTag = [...allTagIdsInTemplate].some((id) => !consumedTagIds.has(id));
-
   const lossy = hasUnconsumedTag || !deepEqual(reconstructed, parsed);
 
   return { fieldValues, lossy };
+}
+
+/**
+ * Raw -> Form for path or query JSON objects. Known param keys become
+ * fieldValues; extra keys or unconsumed tags mark the conversion lossy.
+ */
+export function convertRawParamsToFieldValues(
+  section: ParamSection,
+  raw: RawBody,
+  operation: Operation
+): RawToFormResult {
+  return convertRawObjectToFieldValues(raw, paramNames(operation, section), `${section}.`, false);
+}
+
+/**
+ * Raw -> Form, best-effort. Reads each schema-known body leaf out of the
+ * parsed template; a leaf whose value is *exactly* a whole tag placeholder
+ * becomes a `mapped` FieldValue, everything else becomes `static`.
+ *
+ * `lossy` is computed structurally: reconstruct from derived fieldValues
+ * and diff against the parsed template. Unconsumed tag chips also force
+ * `lossy: true`.
+ */
+export function convertRawBodyToFieldValues(rawBody: RawBody, operation: Operation): RawToFormResult {
+  return convertRawObjectToFieldValues(rawBody, bodyFieldPaths(operation), 'body.', true);
 }

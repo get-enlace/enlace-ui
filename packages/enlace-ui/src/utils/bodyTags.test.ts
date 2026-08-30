@@ -106,7 +106,26 @@ describe('resolveTagValue', () => {
   });
 
   it('throws a named error when the source node has no captured response yet', () => {
-    expect(() => resolveTagValue(tag, new Map())).toThrow(/node-a.*no captured response/);
+    expect(() => resolveTagValue(tag, new Map())).toThrow(/Can't map from "an upstream step"/);
+  });
+
+  it('names the source step from nodeLabels when provided', () => {
+    const labels = new Map([['node-a', 'listCustomers']]);
+    expect(() => resolveTagValue(tag, new Map(), labels)).toThrow(/Can't map from "listCustomers"/);
+  });
+
+  it('throws a meaningful error when a mapped header is missing', () => {
+    const headerTag: BodyTag = {
+      id: 'tag1',
+      type: 'response_header',
+      sourceNodeId: 'node-a',
+      headerName: 'apu',
+    };
+    const stepsByNodeId = new Map([['node-a', step('node-a', { status: 200, headers: {}, body: null })]]);
+    const labels = new Map([['node-a', 'GET /customers']]);
+    expect(() => resolveTagValue(headerTag, stepsByNodeId, labels)).toThrow(
+      /Can't map header "apu" from "GET \/customers" — that response has no such header/
+    );
   });
 });
 

@@ -75,7 +75,23 @@
         "summary": "Update a customer",
         "operationId": "updateCustomer",
         "security": [{ "bearerAuth": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "required": false,
+            "description": "When true, validate the update but do not persist it.",
+            "schema": { "type": "boolean" }
+          },
+          {
+            "name": "notify",
+            "in": "query",
+            "required": false,
+            "description": "Send a notification about the update.",
+            "schema": { "type": "boolean", "default": false }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

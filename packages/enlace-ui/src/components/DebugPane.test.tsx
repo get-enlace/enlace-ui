@@ -69,7 +69,7 @@ describe('DebugPane', () => {
     expect(dump).toContain('application/json'); // non-auth headers pass through untouched
   });
 
-  it('redacts an apiKey-in-query credential value in both the summary URL and the request panel', () => {
+  it('redacts an apiKey-in-query credential value in the request panel URL', () => {
     useWorkflowStore.setState({
       runResult: {
         steps: [
@@ -92,6 +92,32 @@ describe('DebugPane', () => {
     const dump = document.querySelector('.debug-step')!.textContent!;
     expect(dump).not.toContain('super-secret-key');
     expect(dump).toContain('limit=10'); // non-secret query params pass through untouched
+  });
+
+  it('summarizes each step with the canvas node label, including #N when the same operation is used twice', () => {
+    useWorkflowStore.setState({
+      nodes: [
+        { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+        { id: 'node-2', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+      ],
+      operations: [
+        {
+          id: 'POST /pet',
+          method: 'post',
+          path: '/pet',
+          parameters: [],
+          requestBodySchema: null,
+          responseSchema: null,
+        },
+      ],
+      runResult: { steps: [makeStep(), makeStep({ nodeId: 'node-2' })] },
+    });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+
+    expect(screen.getByText('POST /pet #1')).toBeInTheDocument();
+    expect(screen.getByText('POST /pet #2')).toBeInTheDocument();
+    // Resolved URLs stay in the expanded request panel, not the summary.
+    expect(document.querySelector('.debug-step__summary')!.textContent).not.toContain('http://localhost:4000/pet');
   });
 
   it('shows the request and response bodies immediately, without needing to open a headers toggle', () => {
@@ -158,7 +184,7 @@ describe('DebugPane', () => {
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
     expect(screen.getByRole('tab', { name: 'Run output' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('POST')).toBeInTheDocument();
+    expect(document.querySelector('.debug-step')).toBeInTheDocument();
   });
 
   describe('Debugger tab', () => {
@@ -190,8 +216,8 @@ describe('DebugPane', () => {
       await user.click(screen.getByRole('tab', { name: 'Debugger' }));
 
       expect(screen.getByText('1 paused · 1 completed')).toBeInTheDocument();
-      expect(screen.getByText('/a')).toBeInTheDocument();
-      expect(screen.getByText('/b')).toBeInTheDocument();
+      expect(screen.getByText('GET /a')).toBeInTheDocument();
+      expect(screen.getByText('GET /b')).toBeInTheDocument();
     });
 
     it("expands a paused row into a unified 'preview' JSON block, distinct from Run Output's split panels", async () => {
@@ -215,7 +241,7 @@ describe('DebugPane', () => {
       });
       render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
       await user.click(screen.getByRole('tab', { name: 'Debugger' }));
-      await user.click(screen.getByText('/a'));
+      await user.click(screen.getByText('GET /a'));
 
       expect(screen.getByText('Preview — resolved, not yet sent')).toBeInTheDocument();
       // Not the Run Output tab's Request/Response side-by-side panels.

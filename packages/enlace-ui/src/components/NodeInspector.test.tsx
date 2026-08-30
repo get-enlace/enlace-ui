@@ -66,7 +66,79 @@ describe('NodeInspector', () => {
     expect(screen.getByText('Select a node to configure it.')).toBeInTheDocument();
   });
 
-  it('lists credentials and sets the selected one on the node', async () => {
+  it('groups request fields under Request with Path / Query / Body sections, toggle beside Request', () => {
+    const op: Operation = {
+      id: 'GET /items/{id}',
+      method: 'get',
+      path: '/items/{id}',
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
+      ],
+      requestBodySchema: { type: 'object', properties: { note: { type: 'string' } } },
+      responseSchema: null,
+    };
+    useWorkflowStore.setState({
+      nodes: [makeNode({ operationId: op.id })],
+      operations: [op],
+      selectedNodeId: 'node-1',
+    });
+    render(<NodeInspector onCollapse={() => {}} />);
+
+    expect(screen.getByRole('heading', { name: 'Request' })).toBeInTheDocument();
+    expect(screen.queryByText('Request fields')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Path variables' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Query params' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Body' })).toBeInTheDocument();
+    // Form/Raw toggle lives next to Request, not under Body.
+    expect(screen.getByRole('checkbox', { name: /Switch to Raw view/ })).toBeInTheDocument();
+  });
+
+  it('shows the Form/Raw toggle for path/query-only operations, and switches those sections to Raw editors', async () => {
+    const op: Operation = {
+      id: 'GET /items/{id}',
+      method: 'get',
+      path: '/items/{id}',
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
+        { name: 'offset', in: 'query', required: false, schema: { type: 'integer' } },
+      ],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    useWorkflowStore.setState({
+      nodes: [
+        makeNode({
+          operationId: op.id,
+          fieldValues: {
+            'path.id': { source: 'static', value: 'item-1' },
+            'query.limit': { source: 'static', value: 10 },
+          },
+        }),
+      ],
+      operations: [op],
+      selectedNodeId: 'node-1',
+    });
+    render(<NodeInspector onCollapse={() => {}} />);
+
+    expect(screen.getByRole('checkbox', { name: /Switch to Raw view/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Switch to Raw view/ }));
+
+    await waitFor(() => {
+      const state = useWorkflowStore.getState().nodes[0];
+      expect(state.requestMode).toBe('raw');
+      expect(JSON.parse(state.rawPath!.template)).toEqual({ id: 'item-1' });
+      // Unset query keys are still present as empty strings so Raw starts with a full skeleton.
+      expect(JSON.parse(state.rawQuery!.template)).toEqual({ limit: 10, offset: '' });
+    });
+    // Form field rows are gone; CodeMirror editors are present instead.
+    expect(screen.queryByLabelText('path.id')).not.toBeInTheDocument();
+    // Mapping tip appears once under Request, not once per Raw editor.
+    expect(screen.getAllByText(/inside a string to map a value/)).toHaveLength(1);
+  });
+
+  it('lists credentials on the lock picker and sets the selected one on the node', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
       nodes: [makeNode()],
@@ -75,9 +147,13 @@ describe('NodeInspector', () => {
     });
     render(<NodeInspector onCollapse={() => {}} />);
 
-    await user.selectOptions(screen.getByLabelText('Credential'), 'staging');
+    const lock = screen.getByRole('button', { name: 'Credential' });
+    expect(lock).not.toHaveClass('node-inspector__cred-lock--set');
+    await user.click(lock);
+    await user.click(screen.getByRole('option', { name: 'staging' }));
 
     expect(useWorkflowStore.getState().nodes[0].credentialId).toBe('cred-1');
+    expect(screen.getByRole('button', { name: 'Credential' })).toHaveClass('node-inspector__cred-lock--set');
   });
 
   it('coerces a static integer field to a real number in the store', async () => {
@@ -265,10 +341,10 @@ describe('NodeInspector', () => {
       const rawBody = () => useWorkflowStore.getState().nodes[0].rawBody;
       await waitFor(() => expect(rawBody()).toBeTruthy());
       expect(JSON.parse(rawBody()!.template).name).toBe('fido');
-      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('raw');
+      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('raw');
 
       fireEvent.click(modeSwitch);
-      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('form');
+      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('form');
       expect(useWorkflowStore.getState().nodes[0].fieldValues['body.name']).toEqual({ source: 'static', value: 'fido' });
     });
 
@@ -309,7 +385,7 @@ describe('NodeInspector', () => {
 
       // Raw -> Form: not lossy (an empty object round-trips through one static-undefined field), so no confirm needed.
       fireEvent.click(modeSwitch);
-      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('form');
+      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('form');
 
       // Edit the now-empty field in Form mode.
       fireEvent.change(fieldRow('body.name').getByRole('textbox'), { target: { value: 'rex' } });
@@ -337,10 +413,10 @@ describe('NodeInspector', () => {
 
       fireEvent.click(modeSwitch);
       expect(screen.getByText(/Switching to Form view may lose custom JSON structure/)).toBeInTheDocument();
-      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('raw'); // not switched yet
+      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('raw'); // not switched yet
 
       fireEvent.click(screen.getByText('Switch anyway'));
-      expect(useWorkflowStore.getState().nodes[0].bodyMode).toBe('form');
+      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('form');
     });
   });
 
@@ -350,7 +426,7 @@ describe('NodeInspector', () => {
       render(<NodeInspector onCollapse={() => {}} />);
 
       expect(screen.getByText('Workflow is running — editing is locked until it finishes.')).toBeInTheDocument();
-      expect(screen.getByLabelText('Credential')).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Credential' })).toBeDisabled();
       expect(fieldRow('body.qty').getByRole('textbox')).toBeDisabled();
     });
 
@@ -359,7 +435,7 @@ describe('NodeInspector', () => {
       render(<NodeInspector onCollapse={() => {}} />);
 
       expect(screen.queryByText(/editing is locked/)).not.toBeInTheDocument();
-      expect(screen.getByLabelText('Credential')).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Credential' })).not.toBeDisabled();
     });
   });
 });

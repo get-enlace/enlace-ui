@@ -84,6 +84,7 @@ export function RequestPanel({ request }: { request: RunStepRequest }) {
             that a cookie was expected at all. */}
         {request.credentials === 'include' && <span className="debug-step__credentials-chip">credentials: include</span>}
       </div>
+      <div className="debug-step__request-url">{redactUrl(request.url, request.redactQueryParams)}</div>
       <HeadersList headers={request.headers} />
       <BodyBlock value={request.body} />
     </div>

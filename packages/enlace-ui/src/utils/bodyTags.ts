@@ -72,11 +72,20 @@ export function getHeaderCaseInsensitive(headers: Record<string, string>, name: 
  * Raw->Form conversion — see utils/bodyTemplate.ts). Throws (never
  * silently substitutes a placeholder) if the source node hasn't produced
  * a response yet, or a referenced header is missing.
+ *
+ * `nodeLabels` (from utils/nodeLabel.ts's `buildNodeLabels`) turns internal
+ * node ids into the same names the canvas/chips show — error text is for
+ * people, so a UUID must never appear in it.
  */
-export function resolveTagValue(tag: BodyTag, stepsByNodeId: Map<string, RunStep>): unknown {
+export function resolveTagValue(
+  tag: BodyTag,
+  stepsByNodeId: Map<string, RunStep>,
+  nodeLabels?: Map<string, string>
+): unknown {
+  const sourceLabel = nodeLabels?.get(tag.sourceNodeId) ?? 'an upstream step';
   const step = stepsByNodeId.get(tag.sourceNodeId);
   if (!step || !step.response) {
-    throw new Error(`Body tag references node "${tag.sourceNodeId}", which has no captured response yet.`);
+    throw new Error(`Can't map from "${sourceLabel}" — that step has no captured response yet.`);
   }
 
   switch (tag.type) {
@@ -88,7 +97,9 @@ export function resolveTagValue(tag: BodyTag, stepsByNodeId: Map<string, RunStep
       const name = tag.headerName ?? '';
       const value = getHeaderCaseInsensitive(step.response.headers, name);
       if (value === undefined) {
-        throw new Error(`Body tag references header "${name}" on node "${tag.sourceNodeId}", but the response has no such header.`);
+        throw new Error(
+          `Can't map header "${name}" from "${sourceLabel}" — that response has no such header.`
+        );
       }
       return value;
     }
@@ -100,7 +111,12 @@ function mightContainTag(text: string): boolean {
   return text.includes('{{enlace:');
 }
 
-function resolveTagsInString(text: string, tags: Record<string, BodyTag>, stepsByNodeId: Map<string, RunStep>): unknown {
+function resolveTagsInString(
+  text: string,
+  tags: Record<string, BodyTag>,
+  stepsByNodeId: Map<string, RunStep>,
+  nodeLabels?: Map<string, string>
+): unknown {
   if (!mightContainTag(text)) return text;
 
   const matches = [...text.matchAll(tagPattern())];
@@ -115,14 +131,14 @@ function resolveTagsInString(text: string, tags: Record<string, BodyTag>, stepsB
   // rawBodyResolver.ts), just without any surrounding JSON quotes to
   // reason about since `text` here is already a plain, parsed JS string.
   if (matches.length === 1 && matches[0][0] === text) {
-    return resolveTagValue(tagFor(matches[0][1]), stepsByNodeId);
+    return resolveTagValue(tagFor(matches[0][1]), stepsByNodeId, nodeLabels);
   }
 
   let result = '';
   let lastIndex = 0;
   for (const match of matches) {
     const start = match.index ?? 0;
-    const value = resolveTagValue(tagFor(match[1]), stepsByNodeId);
+    const value = resolveTagValue(tagFor(match[1]), stepsByNodeId, nodeLabels);
     result += text.slice(lastIndex, start) + String(value);
     lastIndex = start + match[0].length;
   }
@@ -138,13 +154,20 @@ function resolveTagsInString(text: string, tags: Record<string, BodyTag>, stepsB
  * Form mode has no "Map from..." UI for that value anymore, but the
  * mapping itself isn't silently broken — it still resolves at request
  * time, from the same `tags` the node's `rawBody` still carries even
- * while `bodyMode` is `'form'` (switching modes never clears `rawBody`).
+ * while `requestMode` is `'form'` (switching modes never clears `rawBody`).
  */
-export function resolveTagsInValue(value: unknown, tags: Record<string, BodyTag>, stepsByNodeId: Map<string, RunStep>): unknown {
-  if (typeof value === 'string') return resolveTagsInString(value, tags, stepsByNodeId);
-  if (Array.isArray(value)) return value.map((item) => resolveTagsInValue(item, tags, stepsByNodeId));
+export function resolveTagsInValue(
+  value: unknown,
+  tags: Record<string, BodyTag>,
+  stepsByNodeId: Map<string, RunStep>,
+  nodeLabels?: Map<string, string>
+): unknown {
+  if (typeof value === 'string') return resolveTagsInString(value, tags, stepsByNodeId, nodeLabels);
+  if (Array.isArray(value)) return value.map((item) => resolveTagsInValue(item, tags, stepsByNodeId, nodeLabels));
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveTagsInValue(v, tags, stepsByNodeId)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, resolveTagsInValue(v, tags, stepsByNodeId, nodeLabels)])
+    );
   }
   return value;
 }

@@ -157,8 +157,10 @@ interface WorkflowState {
   setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
   /** Batch version of setFieldValue — sets several field paths in one `set()`, so a Raw->Form conversion (which can touch many leaves at once, see utils/bodyTemplate.ts) doesn't trigger a render per leaf. */
   mergeFieldValues: (nodeId: string, values: Record<string, FieldValue>) => void;
-  /** Toggles a node's body editor between the flat form and Raw JSON — see NodeInspector.tsx for the Form<->Raw conversion this surrounds. */
-  setBodyMode: (nodeId: string, mode: 'form' | 'raw') => void;
+  /** Toggles a node's request editor between the flat form and Raw JSON — see NodeInspector.tsx for the Form<->Raw conversion this surrounds. */
+  setRequestMode: (nodeId: string, mode: 'form' | 'raw') => void;
+  setRawPath: (nodeId: string, rawPath: RawBody | null) => void;
+  setRawQuery: (nodeId: string, rawQuery: RawBody | null) => void;
   setRawBody: (nodeId: string, rawBody: RawBody | null) => void;
   /** Establishes execution ORDER only — separate from field mapping (data source). */
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
@@ -323,10 +325,22 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       };
     }),
 
-  setBodyMode: (nodeId, mode) =>
+  setRequestMode: (nodeId, mode) =>
     set((state) => {
       if (isLocked(state)) return state;
-      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, bodyMode: mode } : n)) };
+      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, requestMode: mode } : n)) };
+    }),
+
+  setRawPath: (nodeId, rawPath) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, rawPath } : n)) };
+    }),
+
+  setRawQuery: (nodeId, rawQuery) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, rawQuery } : n)) };
     }),
 
   setRawBody: (nodeId, rawBody) =>

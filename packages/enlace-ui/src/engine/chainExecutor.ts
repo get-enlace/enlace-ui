@@ -2,6 +2,7 @@ import { resolveCredentialInjection } from './credentials.js';
 import { resolveRawBody } from './rawBodyResolver.js';
 import { buildDependencyGraph } from './dependencyGraph.js';
 import { resolveTagsInValue } from '../utils/bodyTags.js';
+import { buildNodeLabels } from '../utils/nodeLabel.js';
 import type {
   Credential,
   FieldValue,
@@ -125,12 +126,14 @@ export async function buildRequest(
   operation: Operation,
   stepsByNodeId: Map<string, RunStep>,
   credentialsById: Map<string, Credential>,
-  baseUrl: string
+  baseUrl: string,
+  nodeLabels?: Map<string, string>
 ): Promise<RunStepRequest> {
   let requestPath = operation.path;
   const query = new URLSearchParams();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const bodyFields: Record<string, unknown> = {};
+  const requestMode = node.requestMode ?? 'form';
 
   // A field's static value can itself contain a `{{enlace:<id>}}`
   // reference even in Form mode — not something the form UI lets you type
@@ -139,16 +142,22 @@ export async function buildRequest(
   // Form conversion as literal text in a static field (see
   // utils/bodyTemplate.ts): the "Map from..." UI for it is gone, but the
   // mapping itself shouldn't silently stop working, so it's resolved here
-  // too — against the same `tags` the node's `rawBody` still carries even
-  // once `bodyMode` is back to `'form'` (switching modes never clears it).
-  const nodeTags = node.rawBody?.tags;
+  // too — against tags any raw section still carries even once
+  // `requestMode` is back to `'form'` (switching modes never clears them).
+  const nodeTags = { ...node.rawPath?.tags, ...node.rawQuery?.tags, ...node.rawBody?.tags };
 
   for (const [fieldPath, fieldValue] of Object.entries(node.fieldValues)) {
-    let value = resolveFieldValue(fieldValue, stepsByNodeId);
-    if (nodeTags && Object.keys(nodeTags).length > 0) {
-      value = resolveTagsInValue(value, nodeTags, stepsByNodeId);
-    }
     const [section, ...rest] = fieldPath.split('.');
+    // Raw mode owns path/query/body from their templates; form fieldValues
+    // for those sections are ignored until the user switches back.
+    if (requestMode === 'raw' && (section === 'path' || section === 'query' || section === 'body')) {
+      continue;
+    }
+
+    let value = resolveFieldValue(fieldValue, stepsByNodeId);
+    if (Object.keys(nodeTags).length > 0) {
+      value = resolveTagsInValue(value, nodeTags, stepsByNodeId, nodeLabels);
+    }
     const key = rest.join('.');
 
     if (section === 'path') {
@@ -159,6 +168,27 @@ export async function buildRequest(
       if (value !== undefined) headers[key] = String(value);
     } else if (section === 'body') {
       setByPath(bodyFields, key, value);
+    }
+  }
+
+  if (requestMode === 'raw') {
+    if (node.rawPath) {
+      const pathObj = resolveRawBody(node.rawPath, stepsByNodeId, nodeLabels);
+      if (pathObj && typeof pathObj === 'object' && !Array.isArray(pathObj)) {
+        for (const [key, value] of Object.entries(pathObj as Record<string, unknown>)) {
+          if (value === undefined || value === null) continue;
+          requestPath = requestPath.replace(`{${key}}`, encodeURIComponent(String(value)));
+        }
+      }
+    }
+    if (node.rawQuery) {
+      const queryObj = resolveRawBody(node.rawQuery, stepsByNodeId, nodeLabels);
+      if (queryObj && typeof queryObj === 'object' && !Array.isArray(queryObj)) {
+        for (const [key, value] of Object.entries(queryObj as Record<string, unknown>)) {
+          if (value === undefined || value === null) continue;
+          query.set(key, typeof value === 'string' ? value : String(value));
+        }
+      }
     }
   }
 
@@ -198,8 +228,8 @@ export async function buildRequest(
   // try/catch around buildRequest, same as any other request-building
   // failure — no separate error path needed.
   const body =
-    node.bodyMode === 'raw' && node.rawBody
-      ? resolveRawBody(node.rawBody, stepsByNodeId)
+    requestMode === 'raw' && node.rawBody
+      ? resolveRawBody(node.rawBody, stepsByNodeId, nodeLabels)
       : Object.keys(bodyFields).length > 0
         ? bodyFields
         : undefined;
@@ -220,7 +250,8 @@ async function runNode(
   operation: Operation,
   stepsByNodeId: Map<string, RunStep>,
   credentialsById: Map<string, Credential>,
-  baseUrl: string
+  baseUrl: string,
+  nodeLabels: Map<string, string>
 ): Promise<RunStep> {
   // Built before the request fires — every field this node could need
   // comes from an earlier level, already in stepsByNodeId, so there's no
@@ -233,7 +264,7 @@ async function runNode(
   const timestampStart = new Date().toISOString();
   let request: RunStepRequest;
   try {
-    request = await buildRequest(node, operation, stepsByNodeId, credentialsById, baseUrl);
+    request = await buildRequest(node, operation, stepsByNodeId, credentialsById, baseUrl, nodeLabels);
   } catch (err) {
     return {
       nodeId: node.id,
@@ -361,6 +392,9 @@ export async function executeChain(
   const status = new Map<string, RunStepStatus>(nodes.map((n) => [n.id, 'pending']));
   const stepsByNodeId = new Map<string, RunStep>();
   const steps: RunStep[] = [];
+  // Same labels the canvas / inspector chips use — tag-resolution errors
+  // must name steps the way people see them, never by internal node id.
+  const nodeLabels = buildNodeLabels(nodes, operationsById);
   const armedBreakpoints = options.armedBreakpoints ?? new Set<string>();
   // Node ids a breakpoint gated but Continue/Step has since released — a
   // node only ever gets evaluated for gating once (it moves straight from
@@ -422,7 +456,7 @@ export async function executeChain(
     inFlightCount++;
     emit(node.id, 'in-flight');
 
-    runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl).then((step) => {
+    runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl, nodeLabels).then((step) => {
       steps.push(step);
       stepsByNodeId.set(step.nodeId, step);
       const finalStatus = step.error ? 'failed' : 'completed';
@@ -445,7 +479,9 @@ export async function executeChain(
 
       const operation = operationsById.get(node.operationId);
       if (!operation) {
-        unknownOperationError = new Error(`Unknown operation "${node.operationId}" referenced by node ${node.id}`);
+        unknownOperationError = new Error(
+          `Unknown operation "${node.operationId}" referenced by ${nodeLabels.get(node.id) ?? 'a step'}`
+        );
         progressed();
         return;
       }
@@ -459,7 +495,7 @@ export async function executeChain(
         // itself does, which can take a real round-trip (an oauth2 token
         // fetch). A failure here isn't fatal to the pause itself: the row
         // just shows no preview, same as if this were never attempted.
-        buildRequest(node, operation, stepsByNodeId, credentialsById, options.baseUrl)
+        buildRequest(node, operation, stepsByNodeId, credentialsById, options.baseUrl, nodeLabels)
           .then((request) => {
             // Guard against a race: Continue/Step may have already fired
             // this node for real by the time the preview finishes building

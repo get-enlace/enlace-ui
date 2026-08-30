@@ -39,6 +39,8 @@ export interface RawBodyEditorProps {
    * the only caller, for why this is ever true (a run in progress).
    */
   readOnly?: boolean;
+  /** When false, skip the per-editor "{{" tip — NodeInspector shows one shared hint under Request. */
+  showHint?: boolean;
 }
 
 // `json()` only supplies the parser/language — it applies no color on its
@@ -254,7 +256,14 @@ export function buildJsonAutocompleteExtensions(
   ];
 }
 
-export function RawBodyEditor({ rawBody, onChange, ancestorNodes, nodeLabels, readOnly = false }: RawBodyEditorProps) {
+export function RawBodyEditor({
+  rawBody,
+  onChange,
+  ancestorNodes,
+  nodeLabels,
+  readOnly = false,
+  showHint = true,
+}: RawBodyEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const configRef = useRef<ChipConfig>(null as unknown as ChipConfig);
@@ -398,9 +407,11 @@ export function RawBodyEditor({ rawBody, onChange, ancestorNodes, nodeLabels, re
 
   return (
     <div className="raw-body-editor">
-      <div className="raw-body-editor__hint">
-        Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
-      </div>
+      {showHint && (
+        <div className="raw-body-editor__hint">
+          Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
+        </div>
+      )}
       <div className={`raw-body-editor__codemirror${readOnly ? ' raw-body-editor__codemirror--readonly' : ''}`} ref={containerRef} />
 
       {pendingInsert && (

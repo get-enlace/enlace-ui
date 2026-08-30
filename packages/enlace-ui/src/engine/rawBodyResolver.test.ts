@@ -95,7 +95,7 @@ describe('resolveRawBody', () => {
       template: '{"id":"{{enlace:tag1}}"}',
       tags: { tag1: bodyTag({ type: 'response_body', sourceNodeId: 'node-a' }) },
     };
-    expect(() => resolveRawBody(rawBody, new Map())).toThrow(/node-a.*no captured response/);
+    expect(() => resolveRawBody(rawBody, new Map())).toThrow(/no captured response/);
   });
 
   it('throws a named error when the source node errored (no response)', () => {
@@ -113,7 +113,9 @@ describe('resolveRawBody', () => {
       template: '{"trace":"{{enlace:tag1}}"}',
       tags: { tag1: bodyTag({ type: 'response_header', sourceNodeId: 'node-a', headerName: 'x-trace-id' }) },
     };
-    expect(() => resolveRawBody(rawBody, stepsByNodeId)).toThrow(/x-trace-id.*no such header/);
+    expect(() => resolveRawBody(rawBody, stepsByNodeId, new Map([['node-a', 'createCustomer']]))).toThrow(
+      /Can't map header "x-trace-id" from "createCustomer"/
+    );
   });
 
   it('throws when the template references an unknown tag id', () => {

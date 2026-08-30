@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRawBodyFromForm, convertRawBodyToFieldValues } from './bodyTemplate.js';
+import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from './bodyTemplate.js';
 import type { FieldValue, Operation } from '../types.js';
 
 function op(requestBodySchema: Record<string, any> | null): Operation {
@@ -63,6 +63,56 @@ describe('buildRawBodyFromForm', () => {
     const parsed = JSON.parse(raw.template);
     const tagId = Object.keys(raw.tags)[0];
     expect(parsed.category.id).toBe(`{{enlace:${tagId}}}`);
+  });
+});
+
+describe('buildRawParamsFromForm / convertRawParamsToFieldValues', () => {
+  const patchOp: Operation = {
+    id: 'PATCH /customers/{id}',
+    method: 'patch',
+    path: '/customers/{id}',
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+      { name: 'dryRun', in: 'query', required: false, schema: { type: 'boolean' } },
+      { name: 'notify', in: 'query', required: false, schema: { type: 'boolean' } },
+    ],
+    requestBodySchema: null,
+    responseSchema: null,
+  };
+
+  it('builds a path JSON object from form fieldValues', () => {
+    const raw = buildRawParamsFromForm('path', patchOp, {
+      'path.id': { source: 'static', value: 'cust-1' },
+    });
+    expect(JSON.parse(raw.template)).toEqual({ id: 'cust-1' });
+  });
+
+  it('includes every declared param key even when unset (empty string skeleton)', () => {
+    const raw = buildRawParamsFromForm('query', patchOp, {
+      'query.dryRun': { source: 'static', value: true },
+    });
+    expect(JSON.parse(raw.template)).toEqual({ dryRun: true, notify: '' });
+  });
+
+  it('builds a query JSON object and round-trips losslessly', () => {
+    const fieldValues: Record<string, FieldValue> = {
+      'query.dryRun': { source: 'static', value: true },
+      'query.notify': { source: 'mapped', fromNodeId: 'node-a', fromResponseFieldPath: 'flag' },
+    };
+    const raw = buildRawParamsFromForm('query', patchOp, fieldValues);
+    const result = convertRawParamsToFieldValues('query', raw, patchOp);
+    expect(result.lossy).toBe(false);
+    expect(result.fieldValues).toEqual(fieldValues);
+  });
+
+  it('flags lossy when the query JSON has an unknown key', () => {
+    const result = convertRawParamsToFieldValues(
+      'query',
+      { template: JSON.stringify({ dryRun: true, extra: 1 }), tags: {} },
+      patchOp
+    );
+    expect(result.lossy).toBe(true);
+    expect(result.fieldValues['query.dryRun']).toEqual({ source: 'static', value: true });
   });
 });
 
