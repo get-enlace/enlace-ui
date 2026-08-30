@@ -128,6 +128,12 @@ interface WorkflowState {
    */
   activeControl: RunControl | null;
   isRunning: boolean;
+  /**
+   * True while a "Debug" run (breakpoints honored) is in progress. Distinguishes
+   * the transport chrome (Continue/Step/Stop) from a plain run's spinner+Stop —
+   * both keep `activeControl` so Stop works either way.
+   */
+  isDebugRun: boolean;
   error: string | null;
   /**
    * Set by an import that left credentials unusable — non-null pops the
@@ -211,11 +217,10 @@ interface WorkflowState {
   /**
    * `useBreakpoints: true` (the "Debug" button) honors whatever's currently
    * in `armedBreakpoints`, snapshotting it into this run and setting
-   * `activeControl` once `executeChain` hands one back. Omitted/false (the
-   * plain "Run" button) never gates on anything, regardless of what's
-   * armed — `activeControl` stays `null` for the whole run, which is also
-   * what App.tsx checks to decide whether to show Continue/Step/Stop at
-   * all: a plain run should never look like a debug session.
+   * `isDebugRun` so the chrome shows Continue/Step/Stop. Omitted/false
+   * (plain "Run") never gates on breakpoints — chrome shows a spinner +
+   * Stop instead. Both modes receive `activeControl` so Stop can halt
+   * admission of new nodes while in-flight requests still finish.
    */
   run: (options?: { useBreakpoints?: boolean }) => Promise<void>;
 }
@@ -236,6 +241,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   previewRequestByNodeId: {},
   activeControl: null,
   isRunning: false,
+  isDebugRun: false,
   error: null,
   credentialReview: null,
 
@@ -437,6 +443,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       armedBreakpoints: new Set(),
       previewRequestByNodeId: {},
       activeControl: null,
+      isDebugRun: false,
       error: null,
       credentialReview: null,
     });
@@ -461,6 +468,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     set({
       isRunning: true,
+      isDebugRun: useBreakpoints,
       error: null,
       runResult: { steps: [] },
       stepStatusByNodeId: nodes.reduce<Record<string, RunStepStatus>>((acc, n) => {
@@ -500,12 +508,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
               : state.previewRequestByNodeId,
           }));
         },
-        // Only wired up for a "Debug" run — a plain "Run" never gates on
-        // anything (regardless of what's armed) and never sets
-        // activeControl, which is exactly what App.tsx checks to decide
-        // whether to show Continue/Step/Stop at all: a plain run should
-        // never look like a debug session just because some breakpoint
-        // happens to be armed from an earlier debug session.
+        // Always capture RunControl so Stop works for plain Run and Debug.
+        // Breakpoints are only snapshotted for Debug — a plain Run never
+        // pauses, so Continue/Step stay unused (chrome uses isDebugRun to
+        // pick spinner+Stop vs Continue/Step/Stop).
+        onControl: (control) => set({ activeControl: control }),
         ...(useBreakpoints
           ? {
               // Snapshotted at the start of this run — arming/disarming a
@@ -513,7 +520,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
               // progress (see ChainExecutorOptions.armedBreakpoints's own
               // doc comment).
               armedBreakpoints: new Set(armedBreakpoints),
-              onControl: (control) => set({ activeControl: control }),
             }
           : {}),
       });
@@ -521,7 +527,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     } finally {
-      set({ isRunning: false, activeControl: null });
+      set({ isRunning: false, isDebugRun: false, activeControl: null });
     }
   },
 }));

@@ -22,6 +22,7 @@ beforeEach(() => {
     previewRequestByNodeId: {},
     activeControl: null,
     isRunning: false,
+    isDebugRun: false,
     error: null,
   });
 });
@@ -355,7 +356,7 @@ describe('run', () => {
     expect(final.activeControl).toBeNull();
   });
 
-  it('a plain run() ignores armed breakpoints entirely and never sets activeControl — "Run" is not "Debug"', async () => {
+  it('a plain run() ignores armed breakpoints entirely and never sets isDebugRun — "Run" is not "Debug"', async () => {
     const noop = {
       id: 'GET /noop',
       method: 'get' as const,
@@ -376,12 +377,17 @@ describe('run', () => {
       vi.fn().mockResolvedValue({ status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({}) })
     );
 
-    await run();
+    const runPromise = run();
+    // Mid-run: Stop is available via activeControl, but this is not a debug session.
+    expect(useWorkflowStore.getState().isDebugRun).toBe(false);
+    expect(useWorkflowStore.getState().activeControl).not.toBeNull();
+    await runPromise;
 
     const final = useWorkflowStore.getState();
     expect(final.stepStatusByNodeId[a]).toBe('completed');
     expect(final.stepStatusByNodeId[b]).toBe('completed'); // never paused, despite the armed breakpoint
     expect(final.activeControl).toBeNull();
+    expect(final.isDebugRun).toBe(false);
   });
 });
 
