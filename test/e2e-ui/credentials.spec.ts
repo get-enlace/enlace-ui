@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 // Real browser coverage of the Credentials drawer — deliberately scoped to
 // interactions that are plain clicks/fills, not canvas drag-and-drop (see
@@ -6,13 +6,22 @@ import { test, expect } from '@playwright/test';
 // drawer itself needs no node on the canvas to exercise, so this covers a
 // meaningful slice of the credentials feature without touching the flaky
 // part of the app.
+//
+// Credentials live under Settings → Credentials (the header no longer has a
+// standalone "N credentials" trigger).
+
+async function openCredentialsDrawer(page: Page) {
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('menuitem', { name: /Credentials \(\d+\)/ }).click();
+}
+
 test.describe('Credentials drawer', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/enlace/');
   });
 
   test('lists every scheme the sample spec declares, with none configured yet', async ({ page }) => {
-    await page.getByRole('button', { name: '0 credentials' }).click();
+    await openCredentialsDrawer(page);
 
     await expect(page.getByRole('heading', { name: 'Declared in spec' })).toBeVisible();
     for (const schemeName of [
@@ -31,7 +40,7 @@ test.describe('Credentials drawer', () => {
   test('configuring a declared credential pre-fills the form, saves it, and removes it from the declared list', async ({
     page,
   }) => {
-    await page.getByRole('button', { name: '0 credentials' }).click();
+    await openCredentialsDrawer(page);
 
     await page.locator('.declared-credential', { hasText: 'bearerAuth' }).getByRole('button', { name: 'Configure' }).click();
 
@@ -42,8 +51,6 @@ test.describe('Credentials drawer', () => {
     await page.getByPlaceholder('bearer token').fill('e2e-test-token');
     await page.getByRole('button', { name: 'Save' }).click();
 
-    await expect(page.getByRole('button', { name: '1 credential' })).toBeVisible();
-
     const card = page.locator('.credential-card', { hasText: 'bearerAuth' });
     await expect(card).toBeVisible();
     await expect(card.getByText('From spec:')).toBeVisible();
@@ -51,12 +58,17 @@ test.describe('Credentials drawer', () => {
     // bearerAuth is now configured — no longer offered in the declared list.
     await expect(page.locator('.declared-credential', { hasText: 'bearerAuth' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Configure' })).toHaveCount(5);
+
+    // Menu count reflects the saved credential.
+    await page.getByRole('button', { name: 'Close credentials' }).click();
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Credentials (1)' })).toBeVisible();
   });
 
   test('configuring the declared cookieAuth credential needs only a name — Save is enabled immediately, no secret required', async ({
     page,
   }) => {
-    await page.getByRole('button', { name: '0 credentials' }).click();
+    await openCredentialsDrawer(page);
     await page.locator('.declared-credential', { hasText: 'cookieAuth' }).getByRole('button', { name: 'Configure' }).click();
 
     await expect(page.getByLabel('Type')).toHaveValue('cookie');
@@ -65,28 +77,27 @@ test.describe('Credentials drawer', () => {
     await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
 
     await page.getByRole('button', { name: 'Save' }).click();
-    await expect(page.getByRole('button', { name: '1 credential' })).toBeVisible();
     await expect(page.locator('.credential-card', { hasText: 'cookieAuth' })).toBeVisible();
   });
 
   test('deleting a configured credential brings it back into the declared list', async ({ page }) => {
-    await page.getByRole('button', { name: '0 credentials' }).click();
+    await openCredentialsDrawer(page);
     await page.locator('.declared-credential', { hasText: 'apiKeyAuth' }).getByRole('button', { name: 'Configure' }).click();
     await page.getByPlaceholder('key value').fill('e2e-test-key');
     await page.getByRole('button', { name: 'Save' }).click();
 
-    await expect(page.getByRole('button', { name: '1 credential' })).toBeVisible();
+    await expect(page.locator('.credential-card', { hasText: 'apiKeyAuth' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Delete apiKeyAuth' }).click();
 
-    await expect(page.getByRole('button', { name: '0 credentials' })).toBeVisible();
+    await expect(page.locator('.credential-card', { hasText: 'apiKeyAuth' })).toHaveCount(0);
     await expect(page.locator('.declared-credential', { hasText: 'apiKeyAuth' })).toBeVisible();
   });
 
   test('manually creating a credential not tied to any declared scheme still works, unaffected by the spec', async ({
     page,
   }) => {
-    await page.getByRole('button', { name: '0 credentials' }).click();
+    await openCredentialsDrawer(page);
     await page.getByRole('button', { name: '+ New credential' }).click();
 
     await page.getByPlaceholder('name').fill('manual-basic');
@@ -95,14 +106,13 @@ test.describe('Credentials drawer', () => {
     await page.getByPlaceholder('password').fill('hunter2');
     await page.getByRole('button', { name: 'Save' }).click();
 
-    await expect(page.getByRole('button', { name: '1 credential' })).toBeVisible();
     const card = page.locator('.credential-card', { hasText: 'manual-basic' });
     await expect(card).toBeVisible();
     await expect(card.getByText('From spec:')).toHaveCount(0);
   });
 
   test('closes on Escape', async ({ page }) => {
-    await page.getByRole('button', { name: '0 credentials' }).click();
+    await openCredentialsDrawer(page);
     await expect(page.getByRole('heading', { name: 'Credentials' })).toBeVisible();
 
     await page.keyboard.press('Escape');
@@ -112,7 +122,7 @@ test.describe('Credentials drawer', () => {
   test('Edit pre-fills the form with the existing values, and Save changes updates the card in place', async ({
     page,
   }) => {
-    await page.getByRole('button', { name: '0 credentials' }).click();
+    await openCredentialsDrawer(page);
     await page.getByRole('button', { name: '+ New credential' }).click();
     await page.getByPlaceholder('name').fill('editable-cred');
     await page.getByPlaceholder('bearer token').fill('original-token');
@@ -126,7 +136,6 @@ test.describe('Credentials drawer', () => {
     await page.getByRole('button', { name: 'Save changes' }).click();
 
     // Still just one credential — an edit, not a second one — under the new name.
-    await expect(page.getByRole('button', { name: '1 credential' })).toBeVisible();
     await expect(page.locator('.credential-card', { hasText: 'renamed-cred' })).toBeVisible();
     await expect(page.locator('.credential-card', { hasText: 'editable-cred' })).toHaveCount(0);
   });
