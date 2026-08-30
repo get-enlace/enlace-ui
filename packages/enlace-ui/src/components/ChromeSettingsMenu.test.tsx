@@ -32,6 +32,36 @@ describe('ChromeSettingsMenu', () => {
     expect(screen.getByRole('menuitem', { name: 'Import' })).toBeInTheDocument();
   });
 
+  it('reopens after an outside click dismissed it', async () => {
+    const user = userEvent.setup();
+    render(
+      <div>
+        <button type="button">Elsewhere</button>
+        <ChromeSettingsMenu />
+      </div>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Elsewhere' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('toggles closed when the gear is clicked again', async () => {
+    const user = userEvent.setup();
+    render(<ChromeSettingsMenu />);
+
+    const gear = screen.getByRole('button', { name: 'Settings' });
+    await user.click(gear);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    await user.click(gear);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
   it('Credentials menu item opens the credentials drawer', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({

@@ -141,7 +141,9 @@ export function CredentialsPanel({ showTrigger = true, open, onOpenChange }: Cre
           <div className="credentials-drawer__backdrop" onClick={closeDrawer} />
           <aside className="credentials-drawer">
             <div className="credentials-drawer__header">
-              <h2>Credentials</h2>
+              <h2>
+                {isAdding ? (editingId ? 'Edit credential' : 'New credential') : 'Credentials'}
+              </h2>
               <button
                 type="button"
                 className="pane-collapse-btn"
@@ -160,9 +162,11 @@ export function CredentialsPanel({ showTrigger = true, open, onOpenChange }: Cre
                 </p>
               )}
 
+              {/* List stays visible under the form so you keep context of what
+                  already exists — header title alone marks add vs edit. */}
               {credentials.length === 0 && !isAdding && (
                 <p className="credentials-drawer__empty">
-                  No credentials yet. Add one, then attach it to a node via the lock icon next to the operation in the inspector.
+                  No credentials yet. Add one, then attach it to a node via the lock icon in the inspector.
                 </p>
               )}
 

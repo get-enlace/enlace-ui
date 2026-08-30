@@ -68,6 +68,8 @@ body {
   background: var(--color-topbar-bg);
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text);
+  position: relative;
+  z-index: 20; /* keep chrome above canvas/panels so gear hits aren't stolen */
 }
 
 .app__chrome-actions {
@@ -172,16 +174,37 @@ body {
 
 .chrome-settings {
   position: relative;
-}
-
-.chrome-settings__trigger {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-panel-bg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.chrome-settings:hover,
+.chrome-settings:focus-visible {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+  outline: none;
+}
+
+.chrome-settings__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .chrome-settings__icon {
   display: block;
+  pointer-events: none;
 }
 
 .chrome-settings__menu {
@@ -195,6 +218,7 @@ body {
   border: 1px solid var(--color-border);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  cursor: default;
 }
 
 .chrome-settings__item {
@@ -410,6 +434,11 @@ body {
   gap: 8px;
 }
 
+/* Triggerless host next to the gear — no layout box of its own. */
+.workflow-file-menu--host {
+  display: contents;
+}
+
 
 /* --- Body layout --- */
 
@@ -423,7 +452,7 @@ body {
  * clickable strip instead. */
 .app__body {
   display: grid;
-  grid-template-columns: 240px minmax(240px, 1fr) minmax(220px, 340px);
+  grid-template-columns: 240px minmax(240px, 1fr) 240px;
   flex: 1;
   min-height: 0;
 }
@@ -927,8 +956,7 @@ body {
 }
 
 .canvas .react-flow__attribution {
-  background: transparent;
-  color: var(--color-text-muted);
+  display: none;
 }
 
 /* Two distinct edge kinds — see Canvas.tsx: order (user-drawn connections,
@@ -1392,7 +1420,7 @@ body {
   flex-direction: column;
   background: var(--color-panel-bg);
   border-left: 1px solid var(--color-border);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
   animation: credentials-drawer-in 0.18s ease-out;
 }
 
@@ -1409,17 +1437,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
   padding: 14px 16px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-panel-bg);
 }
 
 .credentials-drawer__header h2 {
   margin: 0;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--color-text);
 }
 
 .credentials-drawer__body {
@@ -1456,59 +1486,48 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+/* Neutral cards — type color lives on the badge only (same idea as canvas nodes). */
+.credential-card {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: transparent;
+}
+
+.credential-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 10px;
 }
 
-/* Left-border color doubles as the type indicator at a glance, same idea
- * as the operation list's method-colored fieldset border. */
-.credential-card {
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  background: var(--color-topbar-bg);
+.credential-card__main {
+  min-width: 0;
+  flex: 1;
 }
 
-.credential-card--bearer {
-  border-left-color: var(--color-get);
+.credential-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 
-.credential-card--basic {
-  border-left-color: var(--color-patch);
-}
-
-.credential-card--apiKey {
-  border-left-color: var(--color-put);
-}
-
-.credential-card--oauth2_clientCredentials {
-  border-left-color: var(--color-post);
-}
-
-/* Muted gray rather than a fifth hue plucked from the method palette
- * (which would collide with apiKey's orange, since --color-warning reuses
- * that same hex) — reads as "deprecated/de-emphasized", distinct from
- * every other type's more vivid color. */
-.credential-card--oauth2_password {
-  border-left-color: var(--color-text-muted);
-}
-
-.credential-card--cookie {
-  border-left-color: var(--color-cookie);
-}
-
-.credential-card__header {
+.credential-card__meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 6px 8px;
+  margin-top: 6px;
 }
 
 .credential-badge {
   display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -1549,100 +1568,58 @@ body {
 .credential-card__actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
-.credential-card__login {
-  background: transparent;
-  border: none;
-  color: var(--color-cookie);
-  font-size: 11px;
+/* Same bordered icon chip as the inspector lock — text links felt too flat. */
+.credential-card__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-panel-bg);
+  color: var(--color-text-muted);
   cursor: pointer;
-  padding: 2px 4px;
 }
 
-.credential-card__login:hover {
-  text-decoration: underline;
-}
-
-.credential-card__edit {
-  background: transparent;
-  border: none;
-  color: var(--color-focus);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 2px 4px;
-}
-
-.credential-card__edit:hover {
-  text-decoration: underline;
-}
-
-.credential-card__delete {
-  background: transparent;
-  border: none;
-  color: var(--color-error);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 2px 4px;
-}
-
-.credential-card__delete:hover {
-  text-decoration: underline;
-}
-
-.credential-card__name {
-  font-weight: 700;
-  font-size: 13px;
+.credential-card__icon-btn:hover {
+  border-color: var(--color-text-muted);
   color: var(--color-text);
-  overflow-wrap: anywhere;
+}
+
+.credential-card__icon-btn--danger:hover {
+  border-color: var(--color-delete);
+  color: var(--color-delete);
+  background: var(--color-delete-bg);
 }
 
 .credential-card__preview {
-  margin-top: 2px;
-  font-family: monospace;
   font-size: 11px;
   color: var(--color-text-muted);
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
 
-.credential-card__preview--incomplete {
-  color: var(--color-warning);
-  font-family: var(--font-sans);
-}
-
-/* Only shown when a node actually references this credential — a nudge
- * before deleting it out from under a configured node, not a blocking
- * confirmation (removeCredential itself already degrades that node's
- * credentialId to null rather than leaving a dangling reference). */
-.credential-card__usage {
-  margin-top: 6px;
+.credential-card__flag {
   font-size: 11px;
+  font-weight: 600;
   color: var(--color-warning);
 }
 
-/* Persistent "this came from the spec" indicator — the point-of-creation
- * banner (.credentials-panel__spec-banner) only exists while the form is
- * open, so this is what keeps that provenance visible on the saved card.
- * An outlined pill in the same blue as that banner (rather than plain
- * muted text) ties the two together as "the same kind of information",
- * and reads at a glance rather than needing to be read as a sentence. */
 .credential-card__source {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 8px;
-  padding: 2px 8px;
-  border: 1px solid var(--color-focus);
-  border-radius: 999px;
-  font-size: 10px;
-  color: var(--color-focus);
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
 }
 
 .credential-card__source code {
-  color: inherit;
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 /* Credentials the spec itself declares (components.securitySchemes) get
@@ -1888,7 +1865,7 @@ body {
   background: var(--color-topbar-bg);
   display: flex;
   flex-direction: column;
-  height: 260px;
+  height: 140px;
   position: relative;
 }
 
@@ -2142,21 +2119,32 @@ body {
 
 
 .debug-step__panels {
-  display: flex;
-  gap: 12px;
+  /* Shared row tracks so Request/Response titles, headers, and bodies line up
+   * even when the request title carries a URL (or wraps). */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto auto auto;
+  column-gap: 12px;
   margin-top: 8px;
-  flex-wrap: wrap;
+}
+
+.debug-step__panels:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .debug-step__panel {
-  flex: 1 1 260px;
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 3;
   min-width: 0;
+  align-content: start;
 }
 
 .debug-step__panel-title {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -2165,12 +2153,19 @@ body {
   margin-bottom: 6px;
 }
 
+/* Inlined beside "Request" — one line so it doesn't stretch this column alone. */
 .debug-step__request-url {
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--color-text);
-  overflow-wrap: anywhere;
-  margin: 0 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .debug-step__panel-empty {

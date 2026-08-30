@@ -63,6 +63,7 @@ describe('CredentialsPanel', () => {
 
     await user.click(screen.getByRole('button', { name: '0 credentials' }));
     await user.click(screen.getByRole('button', { name: '+ New credential' }));
+    expect(screen.getByRole('heading', { name: 'New credential' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('name')).toBeInTheDocument();
 
     await user.type(screen.getByPlaceholderText('name'), 'discard-me');
@@ -70,6 +71,7 @@ describe('CredentialsPanel', () => {
 
     expect(useWorkflowStore.getState().credentials).toHaveLength(0);
     expect(screen.queryByPlaceholderText('name')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Credentials' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ New credential' })).toBeInTheDocument();
   });
 
@@ -158,6 +160,7 @@ describe('CredentialsPanel', () => {
     await user.click(screen.getByRole('button', { name: '1 credential' }));
     await user.click(screen.getByRole('button', { name: 'Edit staging' }));
 
+    expect(screen.getByRole('heading', { name: 'Edit credential' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('name')).toHaveValue('staging');
     expect(screen.getByPlaceholderText('bearer token')).toHaveValue('old-token');
 

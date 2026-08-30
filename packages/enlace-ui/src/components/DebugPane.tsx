@@ -7,7 +7,7 @@ export interface DebugPaneProps {
   onToggleCollapsed: () => void;
 }
 
-const DEFAULT_HEIGHT = 260;
+const DEFAULT_HEIGHT = 140; // match min so first paint stays compact
 const MIN_HEIGHT = 140;
 const MAX_HEIGHT_RATIO = 0.55;
 

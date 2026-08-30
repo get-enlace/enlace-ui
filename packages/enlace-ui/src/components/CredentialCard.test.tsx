@@ -45,30 +45,45 @@ describe('CredentialCard', () => {
     expect(screen.getByText('bearerAuth', { selector: 'code' })).toBeInTheDocument();
   });
 
-  it('shows a "Used by N node(s)" hint only when usageCount is greater than zero, with correct singular/plural', () => {
-    const { rerender } = render(
-      <CredentialCard credential={bearerCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />
-    );
+  it('does not show always-on usage copy — confirms before delete when in use', async () => {
+    const user = userEvent.setup();
+    const onDelete = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<CredentialCard credential={bearerCredential} usageCount={2} onEdit={() => {}} onDelete={onDelete} />);
     expect(screen.queryByText(/Used by/)).not.toBeInTheDocument();
 
-    rerender(<CredentialCard credential={bearerCredential} usageCount={1} onEdit={() => {}} onDelete={() => {}} />);
-    expect(screen.getByText(/Used by 1 node —/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete staging' }));
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('used by 2 nodes'));
+    expect(onDelete).toHaveBeenCalledWith('c1');
 
-    rerender(<CredentialCard credential={bearerCredential} usageCount={2} onEdit={() => {}} onDelete={() => {}} />);
-    expect(screen.getByText(/Used by 2 nodes —/)).toBeInTheDocument();
+    confirmSpy.mockReturnValue(false);
+    onDelete.mockClear();
+    await user.click(screen.getByRole('button', { name: 'Delete staging' }));
+    expect(onDelete).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
   });
 
-  it('calls onEdit/onDelete with the credential/id when those buttons are clicked', async () => {
+  it('deletes without confirm when unused', async () => {
+    const user = userEvent.setup();
+    const onDelete = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    render(<CredentialCard credential={bearerCredential} usageCount={0} onEdit={() => {}} onDelete={onDelete} />);
+
+    await user.click(screen.getByRole('button', { name: 'Delete staging' }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(onDelete).toHaveBeenCalledWith('c1');
+    confirmSpy.mockRestore();
+  });
+
+  it('calls onEdit with the credential when Edit is clicked', async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();
-    const onDelete = vi.fn();
-    render(<CredentialCard credential={bearerCredential} usageCount={0} onEdit={onEdit} onDelete={onDelete} />);
+    render(<CredentialCard credential={bearerCredential} usageCount={0} onEdit={onEdit} onDelete={() => {}} />);
 
     await user.click(screen.getByRole('button', { name: 'Edit staging' }));
     expect(onEdit).toHaveBeenCalledWith(bearerCredential);
-
-    await user.click(screen.getByRole('button', { name: 'Delete staging' }));
-    expect(onDelete).toHaveBeenCalledWith('c1');
   });
 
   it('shows "Needs a value" instead of an empty mask when the secret is missing', () => {
@@ -80,7 +95,7 @@ describe('CredentialCard', () => {
 
   it('shows no "Open login page" button for non-cookie credentials', () => {
     render(<CredentialCard credential={bearerCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);
-    expect(screen.queryByRole('button', { name: /Open login page/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open login page|Login/ })).not.toBeInTheDocument();
   });
 
   describe('cookie', () => {
@@ -100,7 +115,7 @@ describe('CredentialCard', () => {
       expect(screen.getByText(/No stored secret/)).toBeInTheDocument();
     });
 
-    it('the "Open login page" button opens the credential\'s loginUrl in a new tab, plainly (no popup sizing)', async () => {
+    it('the Login button opens the credential\'s loginUrl in a new tab', async () => {
       const user = userEvent.setup();
       const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
       render(<CredentialCard credential={cookieCredential} usageCount={0} onEdit={() => {}} onDelete={() => {}} />);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-const DEFAULT_WIDTH = 340;
+const DEFAULT_WIDTH = 240; // match ops list column for a balanced first paint
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 560;
 

@@ -146,7 +146,7 @@ export const WorkflowFileMenu = forwardRef<WorkflowFileMenuHandle, WorkflowFileM
     };
 
     return (
-      <div className="workflow-file-menu">
+      <div className={`workflow-file-menu${hideButtons ? ' workflow-file-menu--host' : ''}`}>
         {!hideButtons && (
           <>
             <button
