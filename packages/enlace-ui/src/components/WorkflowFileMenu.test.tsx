@@ -17,6 +17,7 @@ function resetStore() {
     selectedNodeId: null,
     runResult: null,
     error: null,
+    credentialReview: null,
   });
 }
 
@@ -158,6 +159,28 @@ describe('WorkflowFileMenu', () => {
     expect(useWorkflowStore.getState().credentials).toEqual([
       { id: 'c1', name: 'staging', type: 'bearer', token: 'imported-secret' },
     ]);
+  });
+
+  it('hands stripped credentials to the drawer for review instead of naming them in the header', async () => {
+    const user = userEvent.setup();
+    const incoming = serializeCollection({
+      nodes: [{ id: 'n-new', operationId: 'GET /new', credentialId: 'c1', fieldValues: {} }],
+      connections: [],
+      nodePositions: {},
+      credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'super-secret-token' }],
+    });
+    render(<WorkflowFileMenu />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, workflowFile(incoming));
+
+    await waitFor(() =>
+      expect(useWorkflowStore.getState().credentialReview).toEqual({
+        needsValueIds: ['c1'],
+        secretsDiscarded: false,
+      })
+    );
+    expect(screen.queryByText(/needs a value/i)).not.toBeInTheDocument();
   });
 
   it('imports immediately when the canvas is empty, and surfaces a parse error for a bad file', async () => {

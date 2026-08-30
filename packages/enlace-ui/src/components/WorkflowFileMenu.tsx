@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import {
   collectionFilename,
-  formatCollectionNotice,
+  formatUnknownOperationsError,
   parseCollection,
   serializeCollection,
 } from '../utils/workflowDocument.js';
@@ -46,12 +46,13 @@ export function WorkflowFileMenu() {
   const credentials = useWorkflowStore((s) => s.credentials);
   const specInfo = useWorkflowStore((s) => s.specInfo);
   const operations = useWorkflowStore((s) => s.operations);
+  const isRunning = useWorkflowStore((s) => s.isRunning);
   const replaceWorkflow = useWorkflowStore((s) => s.replaceWorkflow);
+  const setCredentialReview = useWorkflowStore((s) => s.setCredentialReview);
   const setError = (error: string | null) => useWorkflowStore.setState({ error });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingImport | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [showExport, setShowExport] = useState(false);
   const [exportName, setExportName] = useState('');
   const [includeSecrets, setIncludeSecrets] = useState(false);
@@ -79,10 +80,27 @@ export function WorkflowFileMenu() {
   };
 
   const applyCollection = (collection: EnlaceCollection, warnings: CollectionWarnings) => {
+    // replaceWorkflow itself already no-ops while a run is in progress
+    // (workflowStore.ts's isLocked) — checked again here (rather than just
+    // relying on the Import button's disabled state below) because a run
+    // can still start in the gap between picking a file and this call
+    // resolving (onFileChosen awaits reading the file's text first). Report
+    // that honestly instead of closing the dialog and claiming success on a
+    // canvas that was never touched.
+    if (useWorkflowStore.getState().isRunning) {
+      setPending(null);
+      setError("Can't import while the workflow is running.");
+      return;
+    }
     replaceWorkflow(collection);
     setPending(null);
-    setError(null);
-    setNotice(formatCollectionNotice(warnings));
+    setError(formatUnknownOperationsError(warnings));
+    const needsValueIds = warnings.credentialsNeedingSecrets.map((c) => c.id);
+    setCredentialReview(
+      needsValueIds.length > 0 || warnings.unexpectedSecretsDiscarded
+        ? { needsValueIds, secretsDiscarded: warnings.unexpectedSecretsDiscarded }
+        : null
+    );
   };
 
   const onFileChosen = async (file: File | undefined) => {
@@ -91,7 +109,6 @@ export function WorkflowFileMenu() {
     const result = parseCollection(text, { operations });
     if (!result.ok) {
       setPending(null);
-      setNotice(null);
       setError(result.error);
       return;
     }
@@ -113,7 +130,13 @@ export function WorkflowFileMenu() {
       >
         Export
       </button>
-      <button type="button" className="btn btn--secondary" onClick={() => fileInputRef.current?.click()}>
+      <button
+        type="button"
+        className="btn btn--secondary"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={isRunning}
+        title={isRunning ? "Can't import while the workflow is running." : undefined}
+      >
         Import
       </button>
       <input
@@ -127,11 +150,6 @@ export function WorkflowFileMenu() {
           void onFileChosen(file);
         }}
       />
-      {notice && (
-        <p className="workflow-file-menu__notice" role="status">
-          {notice}
-        </p>
-      )}
       {showExport && (
         <Modal title="Export Enlace collection" onClose={() => setShowExport(false)}>
           <label className="workflow-export__field">
@@ -218,7 +236,11 @@ export function WorkflowFileMenu() {
             <button type="button" onClick={() => setPending(null)}>
               Cancel
             </button>
-            <button type="button" onClick={() => applyCollection(pending.collection, pending.warnings)}>
+            <button
+              type="button"
+              onClick={() => applyCollection(pending.collection, pending.warnings)}
+              disabled={isRunning}
+            >
               {pending.collection.secrets === 'included' ? 'Import secrets' : 'Replace'}
             </button>
           </div>

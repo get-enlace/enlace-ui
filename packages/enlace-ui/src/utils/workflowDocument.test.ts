@@ -3,7 +3,7 @@ import type { Credential, CredentialStub, Operation, WorkflowNode } from '../typ
 import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../types.js';
 import {
   collectionFilename,
-  formatCollectionNotice,
+  formatUnknownOperationsError,
   hydrateCredential,
   hydrateCollection,
   parseCollection,
@@ -235,28 +235,25 @@ describe('hydrateCollection / helpers', () => {
     ]);
   });
 
-  it('builds a filename from the spec title and formats a warning notice', () => {
+  it('builds a filename from the spec title', () => {
     const doc = serializeAll();
     expect(collectionFilename(doc)).toBe('sample-api.enlace');
     expect(collectionFilename(serializeAll({ includeSecrets: true }))).toBe('sample-api-with-secrets.enlace');
     expect(collectionFilename({ ...doc, name: '---' })).toBe('enlace-collection.enlace');
+  });
 
-    const notice = formatCollectionNotice({
-      unknownOperationIds: ['POST /missing'],
-      credentialsNeedingSecrets: [{ id: 'c-bearer', name: 'staging', type: 'bearer' }],
+  it('reports unknown operations only — credential problems are the drawer’s job', () => {
+    const warnings = {
+      credentialsNeedingSecrets: [{ id: 'c-bearer', name: 'staging', type: 'bearer' as const }],
       secretsIncluded: false,
       unexpectedSecretsDiscarded: true,
-    });
-    expect(notice).toBe(
-      'Unknown operations: POST /missing. Credential needing a value: staging. Unexpected credential secrets in a stripped collection were discarded.'
+    };
+    expect(formatUnknownOperationsError({ ...warnings, unknownOperationIds: [] })).toBeNull();
+    expect(formatUnknownOperationsError({ ...warnings, unknownOperationIds: ['POST /missing'] })).toBe(
+      "Operation POST /missing isn't in the loaded spec — load the matching spec before running."
     );
     expect(
-      formatCollectionNotice({
-        unknownOperationIds: [],
-        credentialsNeedingSecrets: [],
-        secretsIncluded: true,
-        unexpectedSecretsDiscarded: false,
-      })
-    ).toBeNull();
+      formatUnknownOperationsError({ ...warnings, unknownOperationIds: ['POST /missing', 'GET /gone'] })
+    ).toBe("Operations POST /missing, GET /gone aren't in the loaded spec — load the matching spec before running.");
   });
 });
