@@ -524,7 +524,7 @@ describe('executeChain', () => {
     expect(result.steps[0].error).toMatch(/token request.*failed with status 401/);
   });
 
-  it('resolves a tag chip embedded in an ordinary Form-mode static field, even with bodyMode back to "form"', async () => {
+  it('resolves a tag chip embedded in an ordinary Form-mode static field, even with requestMode back to "form"', async () => {
     // Reproduces a real reported scenario: insert a tag chip in Raw JSON
     // mode (whole-match), then type extra text right before it ("str"),
     // making it embedded — then switch to Form anyway despite the "may
@@ -565,7 +565,7 @@ describe('executeChain', () => {
       id: 'b',
       operationId: 'POST /orders',
       credentialId: null,
-      bodyMode: 'form',
+      requestMode: 'form',
       fieldValues: { 'body.note': { source: 'static', value: 'str{{enlace:tag1}}' } },
       rawBody: {
         template: '{"note":"str{{enlace:tag1}}"}',
@@ -586,6 +586,50 @@ describe('executeChain', () => {
     expect(result.steps.every((s) => !s.error)).toBe(true);
     const [, orderInit] = fetchMock.mock.calls[1];
     expect(JSON.parse(orderInit.body)).toEqual({ note: 'strcust-1' });
+  });
+
+  it('substitutes path and query from rawPath/rawQuery when requestMode is raw', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const updateCustomer: Operation = {
+      id: 'PATCH /customers/{id}',
+      method: 'patch',
+      path: '/customers/{id}',
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+        { name: 'dryRun', in: 'query', required: false, schema: { type: 'boolean' } },
+      ],
+      requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+      responseSchema: null,
+    };
+
+    const node: WorkflowNode = {
+      id: 'n1',
+      operationId: 'PATCH /customers/{id}',
+      credentialId: null,
+      requestMode: 'raw',
+      fieldValues: {
+        // Stale form values must be ignored in raw mode.
+        'path.id': { source: 'static', value: 'stale' },
+        'query.dryRun': { source: 'static', value: false },
+        'body.name': { source: 'static', value: 'stale' },
+      },
+      rawPath: { template: JSON.stringify({ id: 'cust-9' }), tags: {} },
+      rawQuery: { template: JSON.stringify({ dryRun: true }), tags: {} },
+      rawBody: { template: JSON.stringify({ name: 'Ada' }), tags: {} },
+    };
+
+    const result = await executeChain(
+      { nodes: [node], connections: [] },
+      new Map([['PATCH /customers/{id}', updateCustomer]]),
+      new Map(),
+      { baseUrl: 'http://example.test' }
+    );
+
+    expect(result.steps[0].error).toBeUndefined();
+    expect(fetchMock.mock.calls[0][0]).toBe('http://example.test/customers/cust-9?dryRun=true');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ name: 'Ada' });
   });
 
   it('fires a node the instant its own dependency settles, without waiting for an unrelated slower sibling in the same wave', async () => {

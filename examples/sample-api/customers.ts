@@ -46,10 +46,17 @@ customersRouter.patch('/customers/:id', requireBearer, (req, res) => {
     res.status(404).json({ error: 'not found' });
     return;
   }
+  const dryRun = req.query.dryRun === 'true' || req.query.dryRun === '1';
   const { name, email, status } = req.body ?? {};
-  if (name !== undefined) customer.name = name;
-  if (email !== undefined) customer.email = email;
-  if (status !== undefined) customer.status = status;
+  const next = { ...customer };
+  if (name !== undefined) next.name = name;
+  if (email !== undefined) next.email = email;
+  if (status !== undefined) next.status = status;
+  if (dryRun) {
+    res.json(next);
+    return;
+  }
+  Object.assign(customer, next);
   // Simulate a slow DB write so the UI can show a spinner while waiting for the
   setTimeout(() => {
     res.json(customer);

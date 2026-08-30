@@ -146,7 +146,7 @@ export function CredentialsPanel() {
 
               {credentials.length === 0 && !isAdding && (
                 <p className="credentials-drawer__empty">
-                  No credentials yet. Add one, then attach it to a node from the inspector's "Credential" dropdown.
+                  No credentials yet. Add one, then attach it to a node via the lock icon next to the operation in the inspector.
                 </p>
               )}
 

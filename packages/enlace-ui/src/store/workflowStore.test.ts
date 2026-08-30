@@ -533,7 +533,7 @@ describe('locked while a run is in progress', () => {
       setCredential,
       setFieldValue,
       mergeFieldValues,
-      setBodyMode,
+      setRequestMode,
       setRawBody,
       toggleBreakpoint,
     } = useWorkflowStore.getState();
@@ -548,7 +548,7 @@ describe('locked while a run is in progress', () => {
     setCredential(a, 'some-credential-id');
     setFieldValue(a, 'body.x', { source: 'static', value: 'nope' });
     mergeFieldValues(a, { 'body.y': { source: 'static', value: 'nope' } });
-    setBodyMode(a, 'raw');
+    setRequestMode(a, 'raw');
     setRawBody(a, { template: '{}', tags: {} });
     useWorkflowStore.getState().connectNodes(b, a);
     useWorkflowStore.getState().disconnectNodes(a, b);

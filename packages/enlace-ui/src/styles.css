@@ -281,12 +281,129 @@ body {
   text-transform: none;
   letter-spacing: normal;
   font-family: var(--font-mono);
+  margin: 0;
+}
+
+.node-inspector__op-heading {
+  position: relative;
+  margin: 0 0 14px;
+}
+
+.node-inspector__op-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.node-inspector__op-title h2 {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.node-inspector__cred-lock {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.node-inspector__cred-lock:hover {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+}
+
+.node-inspector__cred-lock--set {
+  color: var(--color-post);
+  border-color: rgba(73, 204, 144, 0.45);
+}
+
+.node-inspector__cred-lock--set:hover {
+  color: var(--color-post);
+  border-color: var(--color-post);
+}
+
+.node-inspector__cred-lock[aria-expanded='true'] {
+  border-color: var(--color-focus);
+}
+
+.node-inspector__cred-menu {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-topbar-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.node-inspector__cred-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--color-text);
+  font-size: 12px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.node-inspector__cred-option:hover {
+  background: var(--color-get-bg);
+}
+
+.node-inspector__cred-option--active {
+  color: var(--color-post);
+  background: var(--color-post-bg);
 }
 
 .node-inspector h3 {
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-muted);
+}
+
+.node-inspector__request-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid var(--color-border);
+  margin-bottom: 10px;
+}
+
+.node-inspector__section {
+  margin-top: 12px;
+}
+
+.node-inspector__section-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 /* --- Method badges: solid pills, Swagger's palette --- */
@@ -826,6 +943,14 @@ body {
   margin: 0 0 14px;
 }
 
+.node-inspector__hint code {
+  font-family: var(--font-mono);
+  font-style: normal;
+  background: var(--color-topbar-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
 .node-inspector__field {
   display: flex;
   flex-direction: column;
@@ -844,10 +969,13 @@ body {
 .node-inspector__field-row {
   display: flex;
   gap: 6px;
+  align-items: flex-start;
 }
 
-.node-inspector__field-row + .node-inspector__field-row {
-  margin-top: 6px;
+.node-inspector__source-select {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 7.5rem;
 }
 
 .node-inspector__field-row select,
@@ -863,6 +991,11 @@ body {
   font-family: var(--font-sans);
   background: var(--color-topbar-bg);
   color: var(--color-text);
+}
+
+/* Source mode stays compact so the value / map controls get the remaining width. */
+.node-inspector__field-row .node-inspector__source-select {
+  flex: 0 0 auto;
 }
 
 /* JSON is more readable monospaced — array fields are the only textarea. */
@@ -1627,6 +1760,14 @@ body {
   margin-bottom: 6px;
 }
 
+.debug-step__request-url {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+  margin: 0 0 10px;
+}
+
 .debug-step__panel-empty {
   color: var(--color-text-muted);
   font-size: 12px;
@@ -1866,21 +2007,7 @@ details.debugger-row > .debugger-row__summary::-webkit-details-marker {
  * see the note above .credentials-drawer__backdrop). */
 
 .node-inspector__body {
-  margin-top: 4px;
-}
-
-.node-inspector__body-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.node-inspector__body-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
+  margin-top: 12px;
 }
 
 /* A single flip switch reads as "one setting with two positions" more

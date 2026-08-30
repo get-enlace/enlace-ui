@@ -21,7 +21,11 @@ function embedAsStringFragment(value: unknown): string {
  * source node hasn't produced a response yet, or a referenced header is
  * missing — never silently sends a placeholder.
  */
-export function resolveRawBody(rawBody: RawBody, stepsByNodeId: Map<string, RunStep>): unknown {
+export function resolveRawBody(
+  rawBody: RawBody,
+  stepsByNodeId: Map<string, RunStep>,
+  nodeLabels?: Map<string, string>
+): unknown {
   const text = rawBody.template;
   let result = '';
   let lastIndex = 0;
@@ -33,7 +37,7 @@ export function resolveRawBody(rawBody: RawBody, stepsByNodeId: Map<string, RunS
     const tag = rawBody.tags[tagId];
     if (!tag) throw new Error(`Body references unknown tag "${tagId}".`);
 
-    const value = resolveTagValue(tag, stepsByNodeId);
+    const value = resolveTagValue(tag, stepsByNodeId, nodeLabels);
     const whole = isWholeStringMatch(text, start, end);
     // A whole-string match's surrounding quotes belong to the substitution
     // too — JSON.stringify(value) supplies its own quoting (or none, for

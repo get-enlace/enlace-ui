@@ -274,7 +274,9 @@ function serializeNode(node: WorkflowNode): WorkflowNode {
     credentialId: node.credentialId ?? null,
     fieldValues: { ...node.fieldValues },
   };
-  if (node.bodyMode) out.bodyMode = node.bodyMode;
+  if (node.requestMode) out.requestMode = node.requestMode;
+  if (node.rawPath) out.rawPath = cloneRawBody(node.rawPath);
+  if (node.rawQuery) out.rawQuery = cloneRawBody(node.rawQuery);
   if (node.rawBody) out.rawBody = cloneRawBody(node.rawBody);
   return out;
 }
@@ -432,11 +434,16 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
     credentialId: typeof raw.credentialId === 'string' ? raw.credentialId : null,
     fieldValues,
   };
-  if (raw.bodyMode === 'form' || raw.bodyMode === 'raw') node.bodyMode = raw.bodyMode;
-  if (raw.rawBody != null) {
-    const rawBody = parseRawBody(raw.rawBody, raw.id);
-    if (typeof rawBody === 'string') return rawBody;
-    node.rawBody = rawBody;
+  // Prefer requestMode; accept legacy bodyMode from older collections.
+  const mode = raw.requestMode ?? raw.bodyMode;
+  if (mode === 'form' || mode === 'raw') node.requestMode = mode;
+
+  for (const key of ['rawPath', 'rawQuery', 'rawBody'] as const) {
+    if (raw[key] != null) {
+      const parsed = parseRawBody(raw[key], raw.id, key);
+      if (typeof parsed === 'string') return parsed;
+      node[key] = parsed;
+    }
   }
   return node;
 }
@@ -467,14 +474,14 @@ function parseFieldValues(raw: unknown, nodeId: string): Record<string, FieldVal
   return out;
 }
 
-function parseRawBody(raw: unknown, nodeId: string): RawBody | string {
+function parseRawBody(raw: unknown, nodeId: string, fieldName = 'rawBody'): RawBody | string {
   if (!isRecord(raw) || typeof raw.template !== 'string' || !isRecord(raw.tags)) {
-    return `Enlace collection node "${nodeId}" has an invalid rawBody.`;
+    return `Enlace collection node "${nodeId}" has an invalid ${fieldName}.`;
   }
   const tags: Record<string, BodyTag> = {};
   for (const [id, tag] of Object.entries(raw.tags)) {
     if (isUnsafeKey(id)) {
-      return `Enlace collection node "${nodeId}" has an invalid raw-body tag id "${id}".`;
+      return `Enlace collection node "${nodeId}" has an invalid ${fieldName} tag id "${id}".`;
     }
     if (
       !isRecord(tag) ||
@@ -482,7 +489,7 @@ function parseRawBody(raw: unknown, nodeId: string): RawBody | string {
       typeof tag.sourceNodeId !== 'string' ||
       (tag.type !== 'response_body' && tag.type !== 'response_raw' && tag.type !== 'response_header')
     ) {
-      return `Enlace collection node "${nodeId}" has an invalid raw-body tag "${id}".`;
+      return `Enlace collection node "${nodeId}" has an invalid ${fieldName} tag "${id}".`;
     }
     const copy: BodyTag = { id: tag.id, type: tag.type, sourceNodeId: tag.sourceNodeId };
     if (typeof tag.jsonPath === 'string') copy.jsonPath = tag.jsonPath;

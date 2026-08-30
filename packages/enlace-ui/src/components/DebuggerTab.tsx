@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { CyclicWorkflowError, topologicalSort } from '../engine/chainExecutor.js';
 import { useWorkflowStore } from '../store/workflowStore.js';
+import { buildNodeLabels } from '../utils/nodeLabel.js';
 import { redactRequest } from './debugPaneShared.js';
 import type { Operation, RunStep, RunStepRequest, RunStepStatus, WorkflowNode } from '../types.js';
 
@@ -25,8 +26,9 @@ function StatusIcon({ status }: { status: RunStepStatus }) {
 }
 
 interface DebuggerRowProps {
-  node: WorkflowNode;
   operation: Operation | undefined;
+  /** Canvas-matched name from buildNodeLabels (includes "#N" for duplicates). */
+  label: string;
   status: RunStepStatus;
   step: RunStep | undefined;
   previewRequest: RunStepRequest | undefined;
@@ -37,9 +39,8 @@ interface DebuggerRowProps {
 // request/response cards — a compact icon-led summary line, and a single
 // unified JSON block (the whole request or response object, redacted) when
 // a row expands, closer to a plain code viewer than a form.
-function DebuggerRow({ node, operation, status, step, previewRequest, onStepThis }: DebuggerRowProps) {
+function DebuggerRow({ operation, label, status, step, previewRequest, onStepThis }: DebuggerRowProps) {
   const method = operation?.method ?? 'get';
-  const path = operation?.path ?? node.operationId;
   const continueExecution = useWorkflowStore((s) => s.continueExecution);
   const stopExecution = useWorkflowStore((s) => s.stopExecution);
   // A row only expands once there's something to show — a completed/failed
@@ -53,7 +54,7 @@ function DebuggerRow({ node, operation, status, step, previewRequest, onStepThis
     <>
       <StatusIcon status={status} />
       <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
-      <span className="debug-step__url">{path}</span>
+      <span className="debug-step__url">{label}</span>
       {step?.response && (
         <span className={`status-badge ${step.error ? 'status-badge--error' : 'status-badge--ok'}`}>
           {step.response.status}
@@ -148,6 +149,7 @@ export function DebuggerTab() {
 
   const operationsById = useMemo(() => new Map(operations.map((o) => [o.id, o])), [operations]);
   const stepsByNodeId = useMemo(() => new Map((runResult?.steps ?? []).map((s) => [s.nodeId, s])), [runResult]);
+  const nodeLabels = useMemo(() => buildNodeLabels(nodes, operationsById), [nodes, operationsById]);
 
   // Dependency order, not just store/insertion order — reads top-to-bottom
   // roughly the way the chain actually runs. Purely a display convenience:
@@ -177,8 +179,8 @@ export function DebuggerTab() {
       {orderedNodes.map((node) => (
         <DebuggerRow
           key={node.id}
-          node={node}
           operation={operationsById.get(node.operationId)}
+          label={nodeLabels.get(node.id) ?? node.operationId}
           status={stepStatusByNodeId[node.id] ?? 'pending'}
           step={stepsByNodeId.get(node.id)}
           previewRequest={previewRequestByNodeId[node.id]}

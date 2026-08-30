@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { useWorkflowStore } from '../store/workflowStore.js';
-import { redactRequest, redactUrl, RequestPanel, ResponsePanel } from './debugPaneShared.js';
+import { buildNodeLabels } from '../utils/nodeLabel.js';
+import { redactRequest, RequestPanel, ResponsePanel } from './debugPaneShared.js';
 
 /**
  * The plain "what happened" view — every run's steps, in the order they
@@ -9,7 +11,12 @@ import { redactRequest, redactUrl, RequestPanel, ResponsePanel } from './debugPa
  * — no behavior change for anyone not using breakpoints.
  */
 export function RunOutputTab() {
-  const { runResult, isRunning, error } = useWorkflowStore();
+  const { runResult, isRunning, error, nodes, operations } = useWorkflowStore();
+  const operationsById = useMemo(() => new Map(operations.map((o) => [o.id, o])), [operations]);
+  // Same labels the canvas cards use (including "… #1" / "… #2" when the
+  // same operation appears more than once) — the summary must distinguish
+  // those steps; the resolved URL alone cannot.
+  const nodeLabels = useMemo(() => buildNodeLabels(nodes, operationsById), [nodes, operationsById]);
 
   return (
     <div className="debug-pane__body">
@@ -26,6 +33,7 @@ export function RunOutputTab() {
       {!error &&
         runResult?.steps.map((step) => {
           const ok = !step.error;
+          const label = nodeLabels.get(step.nodeId) ?? step.request.method;
           return (
             // Collapsed by default — this pane shows the call list only,
             // until a row is opened. Raw request/response detail lives
@@ -38,7 +46,7 @@ export function RunOutputTab() {
                 <span className={`method-badge method-badge--${step.request.method.toLowerCase()}`}>
                   {step.request.method}
                 </span>
-                <span className="debug-step__url">{redactUrl(step.request.url, step.request.redactQueryParams)}</span>
+                <span className="debug-step__url">{label}</span>
                 <span className={`status-badge ${ok ? 'status-badge--ok' : 'status-badge--error'}`}>
                   {step.response?.status ?? 'ERROR'}
                 </span>
