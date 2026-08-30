@@ -41,6 +41,7 @@ export function parseOperations(spec: Record<string, any>): Operation[] {
         path,
         summary: op.summary,
         operationId: op.operationId,
+        tags: Array.isArray(op.tags) ? op.tags : undefined,
         parameters,
         requestBodySchema,
         responseSchema,

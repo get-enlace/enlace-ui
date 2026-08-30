@@ -23,6 +23,8 @@ export interface Operation {
   summary?: string;
   /** The spec's own `operationId` (e.g. "addPet"), when the spec declares one — not every operation has one. */
   operationId?: string;
+  /** First tag wins for grouping; operations with no tags land in the "Untagged" group. */
+  tags?: string[];
   parameters: OperationParameter[];
   requestBodySchema: Record<string, any> | null;
   responseSchema: Record<string, any> | null;

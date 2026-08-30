@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { OperationList } from './OperationList.js';
 import type { Operation } from '../types.js';
 
@@ -102,6 +103,134 @@ describe('OperationList', () => {
 
       expect(screen.queryAllByRole('listitem')).toHaveLength(0);
       expect(screen.getByText('No operations match "nonexistent".')).toBeInTheDocument();
+    });
+
+    it('also matches on /path prefix search', () => {
+      const mixedOps = [
+        makeOperation({ id: 'GET /pets', path: '/pets', operationId: 'listPets' }),
+        makeOperation({ id: 'POST /orders', path: '/orders', operationId: 'createOrder' }),
+      ];
+      render(<OperationList operations={mixedOps} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+        target: { value: '/orders' },
+      });
+
+      expect(screen.getAllByRole('listitem')).toHaveLength(1);
+      expect(screen.getByText('createOrder')).toBeInTheDocument();
+    });
+  });
+
+  describe('tag grouping', () => {
+    const taggedOps = [
+      makeOperation({ id: 'GET /pets', path: '/pets', operationId: 'listPets', tags: ['pets'] }),
+      makeOperation({ id: 'POST /pets', path: '/pets', operationId: 'addPet', tags: ['pets'] }),
+      makeOperation({ id: 'GET /orders', path: '/orders', operationId: 'listOrders', tags: ['orders'] }),
+      makeOperation({ id: 'DELETE /misc', path: '/misc', operationId: 'deleteMisc' }), // untagged → (untagged) group
+    ];
+
+    it('renders a collapsible group header for each tag', () => {
+      render(<OperationList operations={taggedOps} />);
+
+      expect(screen.getByRole('button', { name: /pets/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /orders/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /untagged/i })).toBeInTheDocument();
+    });
+
+    it('all groups start collapsed, hiding their operations', () => {
+      render(<OperationList operations={taggedOps} />);
+
+      expect(screen.queryByText('listPets')).not.toBeInTheDocument();
+      expect(screen.queryByText('addPet')).not.toBeInTheDocument();
+      expect(screen.queryByText('listOrders')).not.toBeInTheDocument();
+      expect(screen.queryByText('deleteMisc')).not.toBeInTheDocument();
+      // Headers are still present so the user can expand.
+      expect(screen.getByRole('button', { name: /pets/i })).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('clicking a group header expands it, showing its operations', async () => {
+      const user = userEvent.setup();
+      render(<OperationList operations={taggedOps} />);
+
+      await user.click(screen.getByRole('button', { name: /pets/i }));
+
+      expect(screen.getByText('listPets')).toBeInTheDocument();
+      expect(screen.getByText('addPet')).toBeInTheDocument();
+      // other groups stay collapsed
+      expect(screen.queryByText('listOrders')).not.toBeInTheDocument();
+    });
+
+    it('clicking an expanded group collapses it again', async () => {
+      const user = userEvent.setup();
+      render(<OperationList operations={taggedOps} />);
+
+      const btn = screen.getByRole('button', { name: /pets/i });
+      await user.click(btn); // expand
+      await user.click(btn); // collapse
+      expect(screen.queryByText('listPets')).not.toBeInTheDocument();
+    });
+
+    it('search expands matching groups and hides empty ones', () => {
+      render(<OperationList operations={taggedOps} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+        target: { value: 'order' },
+      });
+
+      expect(screen.getByText('listOrders')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /pets/i })).not.toBeInTheDocument();
+    });
+
+    it('clearing the search returns groups to collapsed', () => {
+      render(<OperationList operations={taggedOps} />);
+
+      const input = screen.getByLabelText('Search operations by operationId');
+      fireEvent.change(input, { target: { value: 'order' } });
+      expect(screen.getByText('listOrders')).toBeInTheDocument();
+
+      fireEvent.change(input, { target: { value: '' } });
+      expect(screen.queryByText('listOrders')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /orders/i })).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('Expand all / Collapse all toggles every group', async () => {
+      const user = userEvent.setup();
+      render(<OperationList operations={taggedOps} />);
+
+      expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+      expect(screen.queryByText('listPets')).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Expand all' }));
+      expect(screen.getByText('listPets')).toBeInTheDocument();
+      expect(screen.getByText('listOrders')).toBeInTheDocument();
+      expect(screen.getByText('deleteMisc')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Collapse all' })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Collapse all' }));
+      expect(screen.queryByText('listPets')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Expand all' })).toBeInTheDocument();
+    });
+
+    it('hides the expand/collapse toggle while searching', () => {
+      render(<OperationList operations={taggedOps} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+        target: { value: 'order' },
+      });
+
+      expect(screen.queryByRole('button', { name: /Expand all|Collapse all/ })).not.toBeInTheDocument();
+    });
+
+    it('renders a flat list (no group headers) when no operations have tags', () => {
+      const untagged = [
+        makeOperation({ id: 'GET /a', path: '/a', operationId: 'opA' }),
+        makeOperation({ id: 'GET /b', path: '/b', operationId: 'opB' }),
+      ];
+      render(<OperationList operations={untagged} />);
+
+      expect(screen.queryByRole('button', { name: /opA|opB/i })).not.toBeInTheDocument();
+      expect(screen.getByText('opA')).toBeInTheDocument();
+      expect(screen.getByText('opB')).toBeInTheDocument();
     });
   });
 });

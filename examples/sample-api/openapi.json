@@ -5,6 +5,7 @@
   "paths": {
     "/customers": {
       "post": {
+        "tags": ["Customers"],
         "summary": "Create a customer",
         "operationId": "createCustomer",
         "security": [{ "basicAuth": [] }],
@@ -45,6 +46,7 @@
     },
     "/customers/{id}": {
       "get": {
+        "tags": ["Customers"],
         "summary": "Fetch a customer by id",
         "operationId": "getCustomerById",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
@@ -69,6 +71,7 @@
         }
       },
       "patch": {
+        "tags": ["Customers"],
         "summary": "Update a customer",
         "operationId": "updateCustomer",
         "security": [{ "bearerAuth": [] }],
@@ -108,6 +111,7 @@
         }
       },
       "delete": {
+        "tags": ["Customers"],
         "summary": "Delete a customer",
         "operationId": "deleteCustomer",
         "security": [{ "bearerAuth": [] }],
@@ -120,6 +124,7 @@
     },
     "/products": {
       "post": {
+        "tags": ["Products"],
         "summary": "Create a product",
         "operationId": "createProduct",
         "security": [{ "oauth2Password": [] }],
@@ -160,6 +165,7 @@
     },
     "/products/{id}": {
       "get": {
+        "tags": ["Products"],
         "summary": "Fetch a product by id",
         "operationId": "getProductById",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
@@ -184,6 +190,7 @@
         }
       },
       "patch": {
+        "tags": ["Products"],
         "summary": "Update a product",
         "operationId": "updateProduct",
         "security": [{ "oauth2Password": [] }],
@@ -223,6 +230,7 @@
         }
       },
       "delete": {
+        "tags": ["Products"],
         "summary": "Delete a product",
         "operationId": "deleteProduct",
         "security": [{ "oauth2Password": [] }],
@@ -235,6 +243,7 @@
     },
     "/orders": {
       "post": {
+        "tags": ["Orders"],
         "summary": "Create an order (references an existing customer + product)",
         "operationId": "createOrder",
         "security": [{ "apiKeyAuth": [] }],
@@ -278,6 +287,7 @@
     },
     "/orders/{id}": {
       "get": {
+        "tags": ["Orders"],
         "summary": "Fetch an order by id",
         "operationId": "getOrderById",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
@@ -303,6 +313,7 @@
         }
       },
       "patch": {
+        "tags": ["Orders"],
         "summary": "Update an order",
         "operationId": "updateOrder",
         "security": [{ "cookieAuth": [] }],
@@ -342,6 +353,7 @@
         }
       },
       "delete": {
+        "tags": ["Orders"],
         "summary": "Delete an order",
         "operationId": "deleteOrder",
         "security": [{ "oauth2ClientCreds": [] }],
