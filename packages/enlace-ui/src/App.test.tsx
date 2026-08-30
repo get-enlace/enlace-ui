@@ -105,7 +105,7 @@ describe('App', () => {
       expect(screen.getByRole('group', { name: 'Debug controls' })).toBeInTheDocument();
     });
 
-    it('shows one global set of controls once a run is controllable, not one per paused node', () => {
+    it('shows header debug controls once a run is controllable; pause bar also offers Continue/Step', () => {
       useWorkflowStore.setState({
         isRunning: true,
         isDebugRun: true,
@@ -118,9 +118,13 @@ describe('App', () => {
       });
       render(<App />);
 
-      expect(screen.getAllByRole('button', { name: /Continue/ })).toHaveLength(1);
-      expect(screen.getAllByRole('button', { name: 'Step' })).toHaveLength(1);
-      expect(screen.getAllByRole('button', { name: /Stop/ })).toHaveLength(1);
+      const header = document.querySelector('.run-segment')!;
+      expect(header.querySelectorAll('[aria-label="Continue"]')).toHaveLength(1);
+      expect(header.querySelectorAll('[aria-label="Step"]')).toHaveLength(1);
+      expect(header.querySelectorAll('[aria-label="Stop"]')).toHaveLength(1);
+      // Pause bar mirrors Continue/Step for the focused paused node (not Stop).
+      expect(document.querySelectorAll('.results-pause-bar [aria-label="Continue"]')).toHaveLength(1);
+      expect(document.querySelectorAll('.results-pause-bar [aria-label="Step"]')).toHaveLength(1);
     });
 
     it('Continue and Stop forward to activeControl', async () => {
@@ -135,10 +139,10 @@ describe('App', () => {
       });
       render(<App />);
 
-      await user.click(screen.getByRole('button', { name: /Continue/ }));
+      await user.click(document.querySelector('.run-segment [aria-label="Continue"]')!);
       expect(control.continue).toHaveBeenCalled();
 
-      await user.click(screen.getByRole('button', { name: /Stop/ }));
+      await user.click(document.querySelector('.run-segment [aria-label="Stop"]')!);
       expect(control.stop).toHaveBeenCalled();
     });
 
@@ -158,7 +162,7 @@ describe('App', () => {
       });
       render(<App />);
 
-      await user.click(screen.getByRole('button', { name: 'Step' }));
+      await user.click(document.querySelector('.run-segment [aria-label="Step"]')!);
       expect(control.step).toHaveBeenCalledWith('b');
     });
 
@@ -178,7 +182,7 @@ describe('App', () => {
       });
       render(<App />);
 
-      await user.click(screen.getByRole('button', { name: 'Step' }));
+      await user.click(document.querySelector('.run-segment [aria-label="Step"]')!);
       expect(control.step).toHaveBeenCalledWith('a');
     });
 
@@ -192,9 +196,9 @@ describe('App', () => {
       });
       render(<App />);
 
-      expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Step' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: /Stop/ })).not.toBeDisabled();
+      expect(document.querySelector('.run-segment [aria-label="Continue"]')).toBeDisabled();
+      expect(document.querySelector('.run-segment [aria-label="Step"]')).toBeDisabled();
+      expect(document.querySelector('.run-segment [aria-label="Stop"]')).not.toBeDisabled();
     });
   });
 });

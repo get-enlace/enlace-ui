@@ -188,6 +188,11 @@ interface WorkflowState {
   /** Stops the active run: nothing new fires, everything already in flight still completes, every still-pending/paused node becomes 'skipped'. A no-op if no run is in progress. */
   stopExecution: () => void;
   /**
+   * Clears the last run's results from the Results pane. A no-op while
+   * `isRunning` — don't wipe live progress mid-flight.
+   */
+  clearResults: () => void;
+  /**
    * Held in browser memory only — never sent anywhere except as the resolved
    * header/query param on the actual request (see engine/credentials.ts).
    * `id` is optional and normally omitted — a fresh id is minted here. The
@@ -410,6 +415,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   continueExecution: () => get().activeControl?.continue(),
   stepNode: (nodeId) => get().activeControl?.step(nodeId),
   stopExecution: () => get().activeControl?.stop(),
+
+  clearResults: () => {
+    if (get().isRunning) return;
+    set({
+      runResult: null,
+      stepStatusByNodeId: {},
+      previewRequestByNodeId: {},
+      error: null,
+    });
+  },
 
   addCredential: (credential, id) => {
     const withId = { ...credential, id: id ?? randomId() } as Credential;

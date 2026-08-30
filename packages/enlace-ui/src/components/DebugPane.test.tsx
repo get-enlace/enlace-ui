@@ -22,11 +22,21 @@ function makeStep(overrides: Partial<RunStep> = {}): RunStep {
   };
 }
 
-describe('DebugPane', () => {
+const petOp = {
+  id: 'POST /pet',
+  method: 'post' as const,
+  path: '/pet',
+  parameters: [],
+  requestBodySchema: null,
+  responseSchema: null,
+};
+
+describe('DebugPane (Results)', () => {
   beforeEach(() => {
     useWorkflowStore.setState({
       runResult: null,
       isRunning: false,
+      isDebugRun: false,
       error: null,
       nodes: [],
       connections: [],
@@ -35,11 +45,13 @@ describe('DebugPane', () => {
       armedBreakpoints: new Set(),
       previewRequestByNodeId: {},
       activeControl: null,
+      selectedNodeId: null,
     });
   });
 
-  it('shows a placeholder before any run', () => {
+  it('shows Results title and a placeholder before any run', () => {
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    expect(screen.getByText('Results')).toBeInTheDocument();
     expect(screen.getByText(/Run the workflow to see each step/)).toBeInTheDocument();
   });
 
@@ -50,27 +62,44 @@ describe('DebugPane', () => {
   });
 
   it('shows the run-level error message when one is set', () => {
-    useWorkflowStore.setState({ error: 'Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.' });
+    useWorkflowStore.setState({
+      error: 'Could not determine a target base URL — add a `servers` entry to the OpenAPI spec.',
+    });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
     expect(screen.getByText(/Could not determine a target base URL/)).toBeInTheDocument();
   });
 
-  it('redacts the Authorization header in the request headers table, case-insensitively, without touching other headers', () => {
+  it('redacts the Authorization header in the request panels', async () => {
+    const user = userEvent.setup();
     useWorkflowStore.setState({
+      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      operations: [petOp],
       runResult: {
-        steps: [makeStep({ request: { ...makeStep().request, headers: { 'content-type': 'application/json', authorization: 'Bearer super-secret-token' } } })],
+        steps: [
+          makeStep({
+            request: {
+              ...makeStep().request,
+              headers: { 'content-type': 'application/json', authorization: 'Bearer super-secret-token' },
+            },
+          }),
+        ],
       },
+      stepStatusByNodeId: { 'node-1': 'completed' },
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    await user.click(screen.getByText('POST /pet'));
 
-    const dump = document.querySelector('.debug-step')!.textContent!;
+    const dump = document.querySelector('.debugger-row')!.textContent!;
     expect(dump).not.toContain('super-secret-token');
     expect(dump).toContain('[redacted]');
-    expect(dump).toContain('application/json'); // non-auth headers pass through untouched
+    expect(dump).toContain('application/json');
   });
 
-  it('redacts an apiKey-in-query credential value in the request panel URL', () => {
+  it('redacts an apiKey-in-query credential value in the request panel URL', async () => {
+    const user = userEvent.setup();
     useWorkflowStore.setState({
+      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      operations: [petOp],
       runResult: {
         steps: [
           makeStep({
@@ -84,87 +113,106 @@ describe('DebugPane', () => {
           }),
         ],
       },
+      stepStatusByNodeId: { 'node-1': 'completed' },
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    await user.click(screen.getByText('POST /pet'));
 
     expect(screen.getByText('http://localhost:4000/pet?apiKey=%5Bredacted%5D&limit=10')).toBeInTheDocument();
-
-    const dump = document.querySelector('.debug-step')!.textContent!;
+    const dump = document.querySelector('.debugger-row')!.textContent!;
     expect(dump).not.toContain('super-secret-key');
-    expect(dump).toContain('limit=10'); // non-secret query params pass through untouched
+    expect(dump).toContain('limit=10');
   });
 
-  it('summarizes each step with the canvas node label, including #N when the same operation is used twice', () => {
+  it('summarizes each step with the canvas node label, including #N for duplicates', () => {
     useWorkflowStore.setState({
       nodes: [
         { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
         { id: 'node-2', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
       ],
-      operations: [
-        {
-          id: 'POST /pet',
-          method: 'post',
-          path: '/pet',
-          parameters: [],
-          requestBodySchema: null,
-          responseSchema: null,
-        },
-      ],
+      operations: [petOp],
       runResult: { steps: [makeStep(), makeStep({ nodeId: 'node-2' })] },
+      stepStatusByNodeId: { 'node-1': 'completed', 'node-2': 'completed' },
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
     expect(screen.getByText('POST /pet #1')).toBeInTheDocument();
     expect(screen.getByText('POST /pet #2')).toBeInTheDocument();
-    // Resolved URLs stay in the expanded request panel, not the summary.
-    expect(document.querySelector('.debug-step__summary')!.textContent).not.toContain('http://localhost:4000/pet');
+    expect(document.querySelector('.debugger-row__summary')!.textContent).not.toContain('http://localhost:4000/pet');
   });
 
-  it('shows the request and response bodies immediately, without needing to open a headers toggle', () => {
-    useWorkflowStore.setState({ runResult: { steps: [makeStep()] } });
+  it('shows request and response bodies in expand panels', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      operations: [petOp],
+      runResult: { steps: [makeStep()] },
+      stepStatusByNodeId: { 'node-1': 'completed' },
+    });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    await user.click(screen.getByText('POST /pet'));
 
     const [requestBody, responseBody] = document.querySelectorAll('.debug-body__pre');
     expect(requestBody.textContent).toContain('"name": "Rex"');
     expect(responseBody.textContent).toContain('"id": 1');
   });
 
-  it('shows a credentials: include chip on the request panel for cookie-based steps', () => {
+  it('shows a credentials: include chip on the request panel', async () => {
+    const user = userEvent.setup();
     useWorkflowStore.setState({
+      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      operations: [petOp],
       runResult: { steps: [makeStep({ request: { ...makeStep().request, credentials: 'include' } })] },
+      stepStatusByNodeId: { 'node-1': 'completed' },
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    await user.click(screen.getByText('POST /pet'));
 
     expect(screen.getByText('credentials: include')).toBeInTheDocument();
   });
 
-  it('shows the step count and a status badge per step', () => {
-    useWorkflowStore.setState({ runResult: { steps: [makeStep(), makeStep({ nodeId: 'node-2' })] } });
+  it('shows a status summary and status badges', () => {
+    useWorkflowStore.setState({
+      nodes: [
+        { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+        { id: 'node-2', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+      ],
+      operations: [petOp],
+      runResult: { steps: [makeStep(), makeStep({ nodeId: 'node-2' })] },
+      stepStatusByNodeId: { 'node-1': 'completed', 'node-2': 'completed' },
+    });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
-    expect(screen.getByText('2 call(s)')).toBeInTheDocument();
-    // One "200" badge per step in the summary row, plus one in each step's opened Response panel.
-    expect(document.querySelectorAll('.debug-step__summary .status-badge--ok')).toHaveLength(2);
+    expect(screen.getByText('2 completed')).toBeInTheDocument();
+    expect(document.querySelectorAll('.debugger-row__summary .status-badge--ok')).toHaveLength(2);
   });
 
-  it('shows ERROR status and the error message for a failed step', () => {
+  it('shows ERROR status and the error message for a failed step', async () => {
+    const user = userEvent.setup();
     useWorkflowStore.setState({
+      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      operations: [petOp],
       runResult: { steps: [makeStep({ response: undefined, error: 'Network request failed' })] },
+      stepStatusByNodeId: { 'node-1': 'failed' },
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
     expect(screen.getByText('ERROR')).toBeInTheDocument();
-    // Shown twice on purpose: once in the collapsed summary, once in the Response panel in place
-    // of a body, so the reason for "no response" is visible without opening anything further.
-    expect(screen.getAllByText('Network request failed')).toHaveLength(2);
+    await user.click(screen.getByText('POST /pet'));
+    expect(screen.getAllByText('Network request failed').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('hides the body (but not the header/count) when collapsed', () => {
-    useWorkflowStore.setState({ runResult: { steps: [makeStep()] } });
+  it('hides the body when collapsed', () => {
+    useWorkflowStore.setState({
+      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      operations: [petOp],
+      runResult: { steps: [makeStep()] },
+      stepStatusByNodeId: { 'node-1': 'completed' },
+    });
     render(<DebugPane collapsed={true} onToggleCollapsed={() => {}} />);
 
-    expect(screen.getByText('1 call(s)')).toBeInTheDocument();
-    expect(screen.queryByText('POST')).not.toBeInTheDocument();
+    expect(screen.getByText('1 completed')).toBeInTheDocument();
+    expect(screen.queryByText('POST /pet')).not.toBeInTheDocument();
   });
 
   it('calls onToggleCollapsed when the header button is clicked', async () => {
@@ -175,125 +223,68 @@ describe('DebugPane', () => {
     };
     render(<DebugPane collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />);
 
-    await user.click(screen.getByRole('button', { name: 'Hide run output' }));
+    await user.click(screen.getByRole('button', { name: 'Hide results' }));
     expect(collapsed).toBe(true);
   });
 
-  it('starts on the Run output tab, and stays there for anyone not using breakpoints', () => {
-    useWorkflowStore.setState({ runResult: { steps: [makeStep()] } });
+  it('clears results when Clear is clicked', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      operations: [petOp],
+      runResult: { steps: [makeStep()] },
+      stepStatusByNodeId: { 'node-1': 'completed' },
+    });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
-    expect(screen.getByRole('tab', { name: 'Run output' })).toHaveAttribute('aria-selected', 'true');
-    expect(document.querySelector('.debug-step')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(useWorkflowStore.getState().runResult).toBeNull();
+    expect(useWorkflowStore.getState().stepStatusByNodeId).toEqual({});
   });
 
-  describe('Debugger tab', () => {
-    it('shows a hint instead of rows when no breakpoint is armed', async () => {
-      const user = userEvent.setup();
-      render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
-
-      await user.click(screen.getByRole('tab', { name: 'Debugger' }));
-      expect(screen.getByText('Arm a breakpoint on a connector to start debugging.')).toBeInTheDocument();
+  it('shows a pause bar with Step targeting the paused node', async () => {
+    const user = userEvent.setup();
+    const stepNode = vi.fn();
+    useWorkflowStore.setState({
+      nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+      connections: [],
+      operations: [
+        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
+      ],
+      stepStatusByNodeId: { a: 'paused' },
+      previewRequestByNodeId: {
+        a: { method: 'GET', url: 'http://localhost:4000/a', headers: {}, credentials: 'omit' },
+      },
+      stepNode,
+      isDebugRun: true,
     });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
-    it('shows an aggregate status breakdown and a row per node once a breakpoint is armed', async () => {
-      const user = userEvent.setup();
-      useWorkflowStore.setState({
-        nodes: [
-          { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
-          { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
-        ],
-        connections: [{ fromNodeId: 'a', toNodeId: 'b' }],
-        operations: [
-          { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
-          { id: 'GET /b', method: 'get', path: '/b', parameters: [], requestBodySchema: null, responseSchema: null },
-        ],
-        armedBreakpoints: new Set(['a->b']),
-        stepStatusByNodeId: { a: 'completed', b: 'paused' },
-      });
-      render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    expect(screen.getByText(/Paused at/)).toBeInTheDocument();
+    expect(screen.getByText('Preview — resolved, not yet sent')).toBeInTheDocument();
+    expect(document.querySelector('.debug-step__panels')).toBeInTheDocument();
 
-      await user.click(screen.getByRole('tab', { name: 'Debugger' }));
+    await user.click(screen.getByRole('button', { name: 'Step' }));
+    expect(stepNode).toHaveBeenCalledWith('a');
+  });
 
-      expect(screen.getByText('1 paused · 1 completed')).toBeInTheDocument();
-      expect(screen.getByText('GET /a')).toBeInTheDocument();
-      expect(screen.getByText('GET /b')).toBeInTheDocument();
+  it('lists every node with live status once the canvas has steps', () => {
+    useWorkflowStore.setState({
+      nodes: [
+        { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
+        { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+      ],
+      connections: [{ fromNodeId: 'a', toNodeId: 'b' }],
+      operations: [
+        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
+        { id: 'GET /b', method: 'get', path: '/b', parameters: [], requestBodySchema: null, responseSchema: null },
+      ],
+      stepStatusByNodeId: { a: 'completed', b: 'paused' },
     });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
-    it("expands a paused row into a unified 'preview' JSON block, distinct from Run Output's split panels", async () => {
-      const user = userEvent.setup();
-      useWorkflowStore.setState({
-        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
-        connections: [],
-        operations: [
-          { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
-        ],
-        armedBreakpoints: new Set(['x->a']),
-        stepStatusByNodeId: { a: 'paused' },
-        previewRequestByNodeId: {
-          a: {
-            method: 'GET',
-            url: 'http://localhost:4000/a',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'omit',
-          },
-        },
-      });
-      render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
-      await user.click(screen.getByRole('tab', { name: 'Debugger' }));
-      await user.click(screen.getByText('GET /a'));
-
-      expect(screen.getByText('Preview — resolved, not yet sent')).toBeInTheDocument();
-      // Not the Run Output tab's Request/Response side-by-side panels.
-      expect(document.querySelector('.debug-step__panels')).not.toBeInTheDocument();
-      // The row's own icon-only controls — see App.test.tsx for the
-      // separate global header controls this complements, not replaces.
-      expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
-      const dump = document.querySelector('.debugger-row__json')!.textContent!;
-      expect(dump).toContain('"url": "http://localhost:4000/a"');
-    });
-
-    it("wires a paused row's inline Step button to step that exact node", async () => {
-      const user = userEvent.setup();
-      const stepNode = vi.fn();
-      useWorkflowStore.setState({
-        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
-        connections: [],
-        operations: [
-          { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
-        ],
-        armedBreakpoints: new Set(['x->a']),
-        stepStatusByNodeId: { a: 'paused' },
-        previewRequestByNodeId: {
-          a: { method: 'GET', url: 'http://localhost:4000/a', headers: {}, credentials: 'omit' },
-        },
-        stepNode,
-      });
-      render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
-      await user.click(screen.getByRole('tab', { name: 'Debugger' }));
-
-      await user.click(screen.getByRole('button', { name: 'Step' }));
-      expect(stepNode).toHaveBeenCalledWith('a');
-    });
-
-    it('auto-switches to the Debugger tab the instant a node pauses, but not on every re-render while still paused', () => {
-      useWorkflowStore.setState({
-        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
-        armedBreakpoints: new Set(['x->a']),
-        stepStatusByNodeId: { a: 'pending' },
-      });
-      const { rerender } = render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
-      expect(screen.getByRole('tab', { name: 'Run output' })).toHaveAttribute('aria-selected', 'true');
-
-      useWorkflowStore.setState({ stepStatusByNodeId: { a: 'paused' } });
-      rerender(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
-      expect(screen.getByRole('tab', { name: 'Debugger' })).toHaveAttribute('aria-selected', 'true');
-
-      // Switch back to Run output manually — a second render while `a` is
-      // still paused shouldn't force it back to Debugger.
-      screen.getByRole('tab', { name: 'Run output' }).click();
-      rerender(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
-      expect(screen.getByRole('tab', { name: 'Run output' })).toHaveAttribute('aria-selected', 'true');
-    });
+    expect(screen.getByText('1 paused · 1 completed')).toBeInTheDocument();
+    expect(screen.getByText('GET /a')).toBeInTheDocument();
+    expect(screen.getAllByText('GET /b').length).toBeGreaterThanOrEqual(1);
   });
 });
