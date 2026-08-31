@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps } from 'reactflow';
+import { Handle, Position, useStore, type NodeProps } from 'reactflow';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import type { Operation, RunStepStatus, WorkflowNode } from '../types.js';
 
@@ -47,6 +47,15 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
   // isLocked) — disabling the button too is just so it doesn't look
   // clickable when it wouldn't do anything.
   const isRunning = useWorkflowStore((s) => s.isRunning);
+  // This button is plain custom chrome, not React Flow's own machinery —
+  // so unlike dragging (which RF blocks natively), it has no built-in
+  // awareness of the Controls panel's lock/unlock toggle at all and would
+  // happily remove a node while the canvas is locked. See Canvas.tsx's
+  // elementsSelectable comment for the fuller story (that fix covers
+  // click-to-select and Delete/Backspace; this covers this button, the
+  // third, separate way a node could be removed).
+  const elementsSelectable = useStore((s) => s.elementsSelectable);
+  const removeDisabled = isRunning || !elementsSelectable;
   const method = operation?.method ?? 'get';
   // Skip the legend when it would just repeat the method+path already shown in the header below —
   // only worth a second line when the spec names the operation, or this operation appears more
@@ -106,13 +115,19 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
       <button
         type="button"
         className="nodrag nopan workflow-node__remove-btn"
-        disabled={isRunning}
+        disabled={removeDisabled}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
           removeNode(node.id);
         }}
-        title={isRunning ? "Can't remove a node while the workflow is running" : 'Remove this node'}
+        title={
+          isRunning
+            ? "Can't remove a node while the workflow is running"
+            : !elementsSelectable
+              ? 'Canvas is locked — unlock it to remove nodes'
+              : 'Remove this node'
+        }
         aria-label="Remove this node"
       >
         ×

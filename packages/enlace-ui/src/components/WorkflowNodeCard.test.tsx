@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ReactFlowProvider, Position, type NodeProps } from 'reactflow';
+import { ReactFlowProvider, Position, useStoreApi, type NodeProps } from 'reactflow';
 import { WorkflowNodeCard, type WorkflowNodeData } from './WorkflowNodeCard.js';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import type { Operation, WorkflowNode } from '../types.js';
@@ -47,6 +47,18 @@ function renderCard(data: WorkflowNodeData) {
       <WorkflowNodeCard {...props} />
     </ReactFlowProvider>
   );
+}
+
+// React Flow's own elementsSelectable/nodesDraggable/nodesConnectable live
+// on the ReactFlowProvider's internal store, normally only ever flipped by
+// the Controls panel's lock button (see Canvas.test.tsx's fuller lock
+// coverage, which goes through that real button). There's no <ReactFlow>
+// mounted in this file's bare-card renders, so a locked canvas is faked
+// directly via the store, inside the same provider the card reads from.
+function LockCanvas() {
+  const store = useStoreApi();
+  store.setState({ elementsSelectable: false });
+  return null;
 }
 
 describe('WorkflowNodeCard', () => {
@@ -165,5 +177,42 @@ describe('WorkflowNodeCard', () => {
     renderCard({ node: makeNode({ id: 'node-1' }), operation: makeOperation(), selected: false });
 
     expect(screen.getByRole('button', { name: 'Remove this node' })).toBeDisabled();
+  });
+
+  it('disables the remove button while the canvas is locked, and does not remove the node if clicked anyway', async () => {
+    // Reproduces a reported bug: locking the canvas (Controls panel's lock
+    // button) already stopped dragging and, after a separate fix, stopped
+    // click-to-select and Delete/Backspace too — but this × button is
+    // plain custom chrome with no built-in awareness of React Flow's own
+    // lock state at all, so it kept removing nodes regardless.
+    const props: NodeProps<WorkflowNodeData> = {
+      id: 'node-1',
+      data: { node: makeNode({ id: 'node-1' }), operation: makeOperation(), selected: false },
+      dragHandle: undefined,
+      type: 'workflowNode',
+      selected: false,
+      isConnectable: true,
+      xPos: 0,
+      yPos: 0,
+      zIndex: 0,
+      dragging: false,
+      targetPosition: Position.Left,
+      sourcePosition: Position.Right,
+    };
+    useWorkflowStore.setState({ nodes: [makeNode({ id: 'node-1' })], nodePositions: { 'node-1': { x: 0, y: 0 } } });
+
+    render(
+      <ReactFlowProvider>
+        <LockCanvas />
+        <WorkflowNodeCard {...props} />
+      </ReactFlowProvider>
+    );
+
+    const removeButton = screen.getByRole('button', { name: 'Remove this node' });
+    expect(removeButton).toBeDisabled();
+    expect(removeButton).toHaveAttribute('title', 'Canvas is locked — unlock it to remove nodes');
+
+    await userEvent.setup().click(removeButton);
+    expect(useWorkflowStore.getState().nodes).toHaveLength(1);
   });
 });

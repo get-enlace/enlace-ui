@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "predev": "node scripts/ensure-ui-built.mjs",
+    "predev:no-auth": "node scripts/ensure-ui-built.mjs",
     "dev": "tsx watch examples/sample-api/server.ts",
     "dev:no-auth": "cross-env ENLACE_EXAMPLE_NO_AUTH=1 tsx watch examples/sample-api/server.ts",
     "start": "npm run dev",
