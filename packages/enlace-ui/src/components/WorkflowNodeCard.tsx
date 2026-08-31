@@ -78,7 +78,7 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
             establish execution ORDER (a WorkflowConnection) — separate from
             field mapping (data source), which stays in the Node Inspector's
             "map from..." picker. onConnect is wired up in Canvas.tsx. */}
-        <Handle type="target" position={Position.Left} title="Drop here to connect — sets run order, not data" />
+        <Handle type="target" position={Position.Left} title="Drop here to connect" />
         <div className="workflow-node__header">
           <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
           <span className="workflow-node__path">{operation?.path ?? 'Unknown operation'}</span>
@@ -92,7 +92,7 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
             Debugger tab open — the corner badge alone reads as "something's
             up" at a glance across a busy canvas, this line says what. */}
         {status === 'paused' && <div className="workflow-node__paused-label">⏸ Paused here</div>}
-        <Handle type="source" position={Position.Right} title="Drag to connect — sets run order, not data" />
+        <Handle type="source" position={Position.Right} title="Drag to connect" />
       </fieldset>
       {/* After the fieldset so it paints above the card border — a sibling
           underneath let the fieldset's top/right edges cut through the × and

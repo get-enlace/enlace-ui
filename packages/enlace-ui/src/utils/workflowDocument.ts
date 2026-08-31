@@ -240,12 +240,22 @@ export function formatUnknownOperationsError(warnings: CollectionWarnings): stri
     : `Operations ${ids} aren't in the loaded spec — load the matching spec before running.`;
 }
 
-export function collectionFilename(collection: EnlaceCollection): string {
+/**
+ * `encrypted` describes what's actually being written to disk (an
+ * `EncryptedCollectionEnvelope`, wrapping the collection rather than being
+ * one) — it's independent of `collection.secrets`, which describes the
+ * *collection's* contents, not the bytes of the file on disk. A full-secret
+ * export is always encrypted going forward, but `collection.secrets ===
+ * 'included'` alone still needs to name itself "-with-secrets" for the
+ * legacy plaintext path (old exports, and any internal caller that
+ * serializes without encrypting).
+ */
+export function collectionFilename(collection: EnlaceCollection, encrypted = false): string {
   const slug = collection.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  const secretSuffix = collection.secrets === 'included' ? '-with-secrets' : '';
+  const secretSuffix = encrypted ? '-encrypted' : collection.secrets === 'included' ? '-with-secrets' : '';
   return slug ? `${slug}${secretSuffix}.enlace` : `enlace-collection${secretSuffix}.enlace`;
 }
 

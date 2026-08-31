@@ -242,6 +242,13 @@ describe('hydrateCollection / helpers', () => {
     expect(collectionFilename({ ...doc, name: '---' })).toBe('enlace-collection.enlace');
   });
 
+  it('names an encrypted export by what is actually on disk, not by collection.secrets alone', () => {
+    const doc = serializeAll({ includeSecrets: true });
+    expect(collectionFilename(doc, true)).toBe('sample-api-encrypted.enlace');
+    // Stripped collections are never encrypted, but the flag is still honored if passed.
+    expect(collectionFilename(serializeAll(), true)).toBe('sample-api-encrypted.enlace');
+  });
+
   it('reports unknown operations only — credential problems are the drawer’s job', () => {
     const warnings = {
       credentialsNeedingSecrets: [{ id: 'c-bearer', name: 'staging', type: 'bearer' as const }],
