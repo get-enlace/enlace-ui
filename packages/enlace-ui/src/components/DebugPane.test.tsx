@@ -46,6 +46,7 @@ describe('DebugPane (Results)', () => {
       previewRequestByNodeId: {},
       activeControl: null,
       selectedNodeId: null,
+      debugConsoleOpen: false,
     });
   });
 
@@ -53,6 +54,14 @@ describe('DebugPane (Results)', () => {
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
     expect(screen.getByText('Results')).toBeInTheDocument();
     expect(screen.getByText(/Run the workflow to see each step/)).toBeInTheDocument();
+  });
+
+  it('splits Console beside Results when debugConsoleOpen', () => {
+    useWorkflowStore.setState({ debugConsoleOpen: true });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    expect(screen.getByText('Debug')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Console query' })).toBeInTheDocument();
+    expect(screen.queryByText('Console')).not.toBeInTheDocument();
   });
 
   it('shows "Running…" while a run is in flight', () => {
@@ -183,7 +192,7 @@ describe('DebugPane (Results)', () => {
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
-    expect(screen.getByText('2 completed')).toBeInTheDocument();
+    expect(screen.getByText('2 ✓')).toBeInTheDocument();
     expect(document.querySelectorAll('.debugger-row__summary .status-badge--ok')).toHaveLength(2);
   });
 
@@ -211,7 +220,7 @@ describe('DebugPane (Results)', () => {
     });
     render(<DebugPane collapsed={true} onToggleCollapsed={() => {}} />);
 
-    expect(screen.getByText('1 completed')).toBeInTheDocument();
+    expect(screen.getByText('1 ✓')).toBeInTheDocument();
     expect(screen.queryByText('POST /pet')).not.toBeInTheDocument();
   });
 
@@ -227,6 +236,19 @@ describe('DebugPane (Results)', () => {
     expect(collapsed).toBe(true);
   });
 
+  it('does not list canvas nodes as pending before any run', () => {
+    useWorkflowStore.setState({
+      nodes: [
+        { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+        { id: 'node-2', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+      ],
+      operations: [petOp],
+    });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    expect(screen.getByText(/Run the workflow to see each step/)).toBeInTheDocument();
+    expect(document.querySelector('.debugger-row')).toBeNull();
+  });
+
   it('clears results when Clear is clicked', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
@@ -236,10 +258,13 @@ describe('DebugPane (Results)', () => {
       stepStatusByNodeId: { 'node-1': 'completed' },
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+    expect(document.querySelector('.debugger-row')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Clear' }));
-    expect(useWorkflowStore.getState().runResult).toBeNull();
+    expect(useWorkflowStore.getState().runResult).toEqual({ steps: [makeStep()] });
     expect(useWorkflowStore.getState().stepStatusByNodeId).toEqual({});
+    expect(document.querySelector('.debugger-row')).toBeNull();
+    expect(screen.getByText(/Run the workflow to see each step/)).toBeInTheDocument();
   });
 
   it('shows a pause bar with Step targeting the paused node', async () => {
@@ -283,7 +308,8 @@ describe('DebugPane (Results)', () => {
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
-    expect(screen.getByText('1 paused · 1 completed')).toBeInTheDocument();
+    expect(screen.getByText('1 ⏸ · 1 ✓')).toBeInTheDocument();
+    expect(screen.getByTitle('1 paused · 1 completed')).toBeInTheDocument();
     expect(screen.getByText('GET /a')).toBeInTheDocument();
     expect(screen.getAllByText('GET /b').length).toBeGreaterThanOrEqual(1);
   });

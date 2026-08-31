@@ -24,6 +24,7 @@ beforeEach(() => {
     activeControl: null,
     isRunning: false,
     isDebugRun: false,
+    debugConsoleOpen: false,
     error: null,
   });
 });
@@ -389,6 +390,38 @@ describe('run', () => {
     expect(final.stepStatusByNodeId[b]).toBe('completed'); // never paused, despite the armed breakpoint
     expect(final.activeControl).toBeNull();
     expect(final.isDebugRun).toBe(false);
+    expect(final.debugConsoleOpen).toBe(false);
+  });
+
+  it('Debug run opens the console for the session and closes it when the session ends', async () => {
+    const noop = {
+      id: 'GET /noop',
+      method: 'get' as const,
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
+    const { addNode, run } = useWorkflowStore.getState();
+    addNode('GET /noop');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ ok: true }),
+      })
+    );
+
+    const runPromise = run({ useBreakpoints: true });
+    expect(useWorkflowStore.getState().isDebugRun).toBe(true);
+    expect(useWorkflowStore.getState().debugConsoleOpen).toBe(true);
+
+    await runPromise;
+    expect(useWorkflowStore.getState().isDebugRun).toBe(false);
+    expect(useWorkflowStore.getState().debugConsoleOpen).toBe(false);
   });
 });
 

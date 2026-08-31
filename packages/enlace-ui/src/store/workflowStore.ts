@@ -152,6 +152,12 @@ interface WorkflowState {
    * both keep `activeControl` so Stop works either way.
    */
   isDebugRun: boolean;
+  /**
+   * Bottom-pane debug REPL (Results | Console split). Open only while a
+   * Debug session is active (`isDebugRun`); closes when the session ends
+   * so Results takes the full pane again.
+   */
+  debugConsoleOpen: boolean;
   error: string | null;
   /**
    * Set by an import that left credentials unusable — non-null pops the
@@ -211,8 +217,10 @@ interface WorkflowState {
   /** Stops the active run: nothing new fires, everything already in flight still completes, every still-pending/paused node becomes 'skipped'. A no-op if no run is in progress. */
   stopExecution: () => void;
   /**
-   * Clears the last run's results from the Results pane. A no-op while
-   * `isRunning` — don't wipe live progress mid-flight.
+   * Clears Results pane chrome (statuses, pause previews, errors) so the
+   * list goes empty. Keeps `runResult` so tag-mapping preview in the
+   * inspector can still resolve against the last responses. A no-op while
+   * `isRunning`.
    */
   clearResults: () => void;
   /**
@@ -274,6 +282,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   activeControl: null,
   isRunning: false,
   isDebugRun: false,
+  debugConsoleOpen: false,
   error: null,
   credentialReview: null,
 
@@ -482,10 +491,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   clearResults: () => {
     if (get().isRunning) return;
     set({
-      runResult: null,
+      // Keep runResult — TagConfigModal / mapping chips still need last responses.
       stepStatusByNodeId: {},
       previewRequestByNodeId: {},
       error: null,
+      debugConsoleOpen: false,
     });
   },
 
@@ -526,6 +536,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       previewRequestByNodeId: {},
       activeControl: null,
       isDebugRun: false,
+      debugConsoleOpen: false,
       error: null,
       credentialReview: null,
     });
@@ -553,6 +564,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({
       isRunning: true,
       isDebugRun: useBreakpoints,
+      // Debug opens the REPL; a plain Run closes any leftover debug console.
+      debugConsoleOpen: useBreakpoints,
       error: null,
       runResult: { steps: [] },
       stepStatusByNodeId: nodes.reduce<Record<string, RunStepStatus>>((acc, n) => {
@@ -612,7 +625,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     } finally {
-      set({ isRunning: false, isDebugRun: false, activeControl: null });
+      set({ isRunning: false, isDebugRun: false, activeControl: null, debugConsoleOpen: false });
     }
   },
 }));
