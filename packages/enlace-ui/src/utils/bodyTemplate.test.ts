@@ -34,7 +34,30 @@ describe('buildRawBodyFromForm', () => {
 
   it('uses the schema example for fields with no fieldValue set', () => {
     const raw = buildRawBodyFromForm(op(simpleSchema), {});
-    expect(JSON.parse(raw.template)).toEqual({ name: 'string', category: { id: 0 } });
+    expect(JSON.parse(raw.template)).toEqual({ name: '', category: { id: 0 } });
+  });
+
+  it('only falls back to the schema default where Form mode set nothing — an already-set field is never overwritten', () => {
+    const schema = {
+      type: 'object',
+      required: ['name', 'active'],
+      properties: {
+        name: { type: 'string' },
+        active: { type: 'boolean' },
+        nickname: { type: 'string' },
+      },
+    };
+    const fieldValues: Record<string, FieldValue> = {
+      // "name" is required but the user already gave it a real value in
+      // Form mode — that value must win over the "" default entirely.
+      'body.name': { source: 'static', value: 'Widget Co' },
+    };
+    const raw = buildRawBodyFromForm(op(schema), fieldValues);
+    expect(JSON.parse(raw.template)).toEqual({
+      name: 'Widget Co', // untouched by the default — Form's value wins
+      active: false, // required, untouched in Form mode -> empty default
+      nickname: null, // not required, untouched -> null
+    });
   });
 
   it('turns a mapped field into a tag chip placeholder registered in tags', () => {

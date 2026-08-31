@@ -5,6 +5,7 @@ import ReactFlow, {
   MarkerType,
   ReactFlowProvider,
   useReactFlow,
+  useStore,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -53,6 +54,36 @@ function CanvasInner() {
   const { screenToFlowPosition, fitView, getViewport } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const prevNodeCountRef = useRef(nodes.length);
+
+  // The Controls panel's own lock/unlock button (bottom-left) toggles
+  // nodesDraggable/nodesConnectable/elementsSelectable together as one
+  // "isInteractive" flag (see @reactflow/controls) — dragging and
+  // connecting are entirely React Flow's own internal machinery, so they
+  // already respect it correctly with no code of ours involved. Selection
+  // doesn't: React Flow calls the onNodeClick prop unconditionally on
+  // every click, regardless of elementsSelectable — that flag only gates
+  // React Flow's *own* internal selection bookkeeping, not a consumer's
+  // onClick handler. Since this app drives selectedNodeId (and, through
+  // it, the top-level `selected` flag `useGlobalKeyHandler` checks for
+  // Delete/Backspace — see flowNodes above) from that same onNodeClick,
+  // a locked canvas was letting a click both select a node and, via that
+  // same selection, make it deletable — despite dragging correctly being
+  // blocked. Reading elementsSelectable back out here is what lets
+  // onNodeClick below opt out while locked, closing that gap.
+  const elementsSelectable = useStore((s) => s.elementsSelectable);
+
+  // Locking while a node/edge is already selected must not leave it
+  // selected (and so still delete-eligible) just because the selection
+  // predates the lock — onNodeClick's guard above only stops *new*
+  // selections. Unlocking again is deliberately a no-op here: there's
+  // nothing to restore, since nothing could have gotten selected while
+  // locked in the first place.
+  useEffect(() => {
+    if (!elementsSelectable) {
+      selectNode(null);
+      setSelectedEdgeId(null);
+    }
+  }, [elementsSelectable, selectNode]);
 
   // Canvas-local, not store state — unlike node selection (which the
   // Inspector panel needs), nothing outside the canvas cares which edge
@@ -313,6 +344,7 @@ function CanvasInner() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={(_, node) => {
+          if (!elementsSelectable) return; // canvas is locked — see elementsSelectable's own comment above
           selectNode(node.id);
           setSelectedEdgeId(null);
         }}

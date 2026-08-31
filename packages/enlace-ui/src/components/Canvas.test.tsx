@@ -82,6 +82,60 @@ describe('Canvas', () => {
     expect(container.querySelector('.workflow-node')).toHaveClass('workflow-node--in-flight');
   });
 
+  describe('locked canvas (Controls panel lock/unlock button)', () => {
+    // Reproduces a reported bug: locking the canvas already correctly
+    // blocked dragging (that's React Flow's own internal machinery, no
+    // code of ours involved), but nodes stayed clickable-to-select, and a
+    // selected node is still delete-eligible (see the Delete/Backspace
+    // test above) — so a locked canvas wasn't actually protecting nodes
+    // from deletion via a stray keystroke, only from being dragged.
+
+    it('does not select a node on click while locked', () => {
+      useWorkflowStore.setState({
+        nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+        nodePositions: { n1: { x: 0, y: 0 } },
+        selectedNodeId: null,
+        operations: [petOperation],
+      });
+      const { container } = render(<Canvas />);
+
+      // The same lock button a user clicks — React Flow's Controls panel.
+      fireEvent.click(container.querySelector('.react-flow__controls-interactive')!);
+      fireEvent.click(container.querySelector('.react-flow__node')!);
+
+      expect(useWorkflowStore.getState().selectedNodeId).toBeNull();
+    });
+
+    it('still selects a node on click while unlocked (the default)', () => {
+      useWorkflowStore.setState({
+        nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+        nodePositions: { n1: { x: 0, y: 0 } },
+        selectedNodeId: null,
+        operations: [petOperation],
+      });
+      const { container } = render(<Canvas />);
+
+      fireEvent.click(container.querySelector('.react-flow__node')!);
+
+      expect(useWorkflowStore.getState().selectedNodeId).toBe('n1');
+    });
+
+    it('deselects a node that was already selected the moment the canvas is locked', () => {
+      useWorkflowStore.setState({
+        nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+        nodePositions: { n1: { x: 0, y: 0 } },
+        selectedNodeId: 'n1',
+        operations: [petOperation],
+      });
+      const { container } = render(<Canvas />);
+      expect(useWorkflowStore.getState().selectedNodeId).toBe('n1');
+
+      fireEvent.click(container.querySelector('.react-flow__controls-interactive')!);
+
+      expect(useWorkflowStore.getState().selectedNodeId).toBeNull();
+    });
+  });
+
   it("doesn't apply the in-flight pulse to a node that's already settled", () => {
     useWorkflowStore.setState({
       nodes: [{ id: 'n1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
