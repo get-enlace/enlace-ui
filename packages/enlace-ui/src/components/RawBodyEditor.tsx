@@ -63,6 +63,8 @@ const jsonHighlightStyle = HighlightStyle.define([
 const scripted = Annotation.define<boolean>();
 /** Dispatched with no document change, purely to make the chip decoration plugin recompute labels after a tag's config (not its placeholder text) changes. */
 const refreshChips = StateEffect.define<void>();
+/** Carries the freshly cloned tag(s) a paste produced (see buildTagAutoCloneExtension) from the transactionFilter that computed them through to the updateListener below, which is the only place with access to the rest of rawBody.tags needed to merge them in. Exported so a test can inspect a clone's content directly, same as buildJsonAutocompleteExtensions is exported for CodeMirror-level testing. */
+export const cloneTagsEffect = StateEffect.define<Record<string, BodyTag>>();
 
 function tagLabel(tag: BodyTag, nodesById: Map<string, WorkflowNode>, nodeLabels: Map<string, string>): string {
   const label = nodesById.has(tag.sourceNodeId) ? nodeLabels.get(tag.sourceNodeId)! : '(missing)';
@@ -256,6 +258,60 @@ export function buildJsonAutocompleteExtensions(
   ];
 }
 
+/**
+ * A tag chip's placeholder text (`{{enlace:<id>}}`) is, to CodeMirror, just
+ * plain document text — copying a chip and pasting it into another field
+ * copies that literal text, id and all, rather than the config it renders.
+ * Left alone, that produces two placeholders sharing one `BodyTag` entry:
+ * editing "the pasted one" is really editing the one shared config, so the
+ * original chip silently changes too. Every *other* way of getting a
+ * placeholder into the doc (typing `{{` through the autocomplete flow, see
+ * tagCompletionSource above) always mints a fresh id, so this is reachable
+ * only via copy-paste — and nobody pasting a chip expects aliasing.
+ *
+ * This transactionFilter runs on every doc-changing transaction (including
+ * paste) and, whenever it finds a placeholder id repeated in the resulting
+ * document, rewrites every occurrence past the first to a freshly minted id
+ * with its own cloned copy of the original tag's config — as part of the
+ * *same* transaction (`sequential: true` interprets the rename's positions
+ * against the document the first spec just produced, not the pre-paste
+ * one), so the doc and its tags never observably pass through the aliased
+ * state. The clone itself travels to the updateListener via `cloneTagsEffect`,
+ * since only the listener has `rawBody.tags` in scope to merge it into.
+ *
+ * `getExistingTags` is read fresh on every transaction (not captured once)
+ * so this always clones from the current config, not a stale closure.
+ */
+export function buildTagAutoCloneExtension(getExistingTags: () => Record<string, BodyTag>): Extension {
+  return EditorState.transactionFilter.of((tr) => {
+    if (!tr.docChanged || tr.annotation(scripted)) return tr;
+
+    const existingTags = getExistingTags();
+    const newText = tr.newDoc.toString();
+    const seenIds = new Set<string>();
+    const renameChanges: { from: number; to: number; insert: string }[] = [];
+    const cloned: Record<string, BodyTag> = {};
+
+    for (const match of newText.matchAll(tagPattern())) {
+      const id = match[1];
+      if (!seenIds.has(id)) {
+        seenIds.add(id);
+        continue;
+      }
+      const original = existingTags[id];
+      if (!original) continue; // orphaned/unrecognized id — nothing to clone from
+
+      const newId = randomId();
+      cloned[newId] = { ...original, id: newId };
+      const from = match.index ?? 0;
+      renameChanges.push({ from, to: from + match[0].length, insert: makeTagPlaceholder(newId) });
+    }
+
+    if (renameChanges.length === 0) return tr;
+    return [tr, { changes: renameChanges, effects: cloneTagsEffect.of(cloned), sequential: true }];
+  });
+}
+
 export function RawBodyEditor({
   rawBody,
   onChange,
@@ -295,9 +351,17 @@ export function RawBodyEditor({
       if (!update.docChanged) return;
       if (update.transactions.some((tr) => tr.annotation(scripted))) return;
 
+      const clonedTags: Record<string, BodyTag> = {};
+      for (const tr of update.transactions) {
+        for (const effect of tr.effects) {
+          if (effect.is(cloneTagsEffect)) Object.assign(clonedTags, effect.value);
+        }
+      }
+
       const template = update.state.doc.toString();
       const presentIds = new Set([...template.matchAll(tagPattern())].map((m) => m[1]));
-      const tags = Object.fromEntries(Object.entries(liveRef.current.rawBody.tags).filter(([id]) => presentIds.has(id)));
+      const mergedTags = { ...liveRef.current.rawBody.tags, ...clonedTags };
+      const tags = Object.fromEntries(Object.entries(mergedTags).filter(([id]) => presentIds.has(id)));
       liveRef.current.onChange({ template, tags });
     });
 
@@ -305,6 +369,7 @@ export function RawBodyEditor({
 
     const extensions: Extension[] = [
       ...buildJsonAutocompleteExtensions((type, from, to) => setPendingInsert({ type, from, to })),
+      buildTagAutoCloneExtension(() => liveRef.current.rawBody.tags),
       chipPluginType,
       EditorView.atomicRanges.of((view) => view.plugin(chipPluginType)?.decorations ?? Decoration.none),
       updateListener,
@@ -362,6 +427,31 @@ export function RawBodyEditor({
     viewRef.current?.dispatch({ effects: refreshChips.of() });
   }, [rawBody.tags]);
 
+  /**
+   * Returns keyboard focus to this field's own CodeMirror doc once its tag
+   * popup closes — for any reason: confirm, delete, or cancel.
+   *
+   * Reproduces a reported bug otherwise: React Flow's built-in Delete/
+   * Backspace handler (useGlobalKeyHandler) listens on the whole document
+   * and only backs off when the *currently focused* element is an input/
+   * textarea/contenteditable (see @reactflow/core's isInputDOMNode). A tag
+   * chip's own mousedown handler calls preventDefault() specifically to
+   * stop CodeMirror from placing the cursor inside it (see TagChipWidget
+   * above) — which also means clicking a chip never gives the editor real
+   * DOM focus in the first place. So once its popup closes, focus is
+   * sitting nowhere in particular (document.body), which isn't an "input"
+   * as far as that guard is concerned: the still-selected node it was
+   * opened from stays fully delete-eligible, and any stray Delete/
+   * Backspace keystroke — on a Mac, the key labeled "delete" *is*
+   * Backspace — wipes the node the user only meant to stop editing.
+   * CodeMirror's content is a real contenteditable element, which that
+   * guard already recognizes and protects; this just makes sure focus
+   * actually lands there again instead of nowhere.
+   */
+  function refocusEditor() {
+    viewRef.current?.focus();
+  }
+
   function handleInsertConfirm(tag: BodyTag) {
     const view = viewRef.current;
     if (!view || !pendingInsert) return;
@@ -377,6 +467,7 @@ export function RawBodyEditor({
     });
     onChange({ template: view.state.doc.toString(), tags: { ...rawBody.tags, [tag.id]: tag } });
     setPendingInsert(null);
+    refocusEditor();
   }
 
   function findTagSpan(text: string, tagId: string): { from: number; to: number } | null {
@@ -388,6 +479,7 @@ export function RawBodyEditor({
   function handleEditConfirm(tag: BodyTag) {
     onChange({ template: rawBody.template, tags: { ...rawBody.tags, [tag.id]: tag } });
     setEditingTagId(null);
+    refocusEditor();
   }
 
   function handleDelete() {
@@ -401,6 +493,17 @@ export function RawBodyEditor({
     delete tags[editingTagId];
     onChange({ template: view.state.doc.toString(), tags });
     setEditingTagId(null);
+    refocusEditor();
+  }
+
+  function handleCancelInsert() {
+    setPendingInsert(null);
+    refocusEditor();
+  }
+
+  function handleCancelEdit() {
+    setEditingTagId(null);
+    refocusEditor();
   }
 
   const editingTag = editingTagId ? rawBody.tags[editingTagId] : undefined;
@@ -420,7 +523,7 @@ export function RawBodyEditor({
           nodeLabels={nodeLabels}
           initialType={pendingInsert.type}
           onConfirm={handleInsertConfirm}
-          onCancel={() => setPendingInsert(null)}
+          onCancel={handleCancelInsert}
         />
       )}
 
@@ -432,7 +535,7 @@ export function RawBodyEditor({
           initialTag={editingTag}
           onConfirm={handleEditConfirm}
           onDelete={handleDelete}
-          onCancel={() => setEditingTagId(null)}
+          onCancel={handleCancelEdit}
         />
       )}
     </div>
