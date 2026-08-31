@@ -24,16 +24,29 @@ function StatusIcon({ status }: { status: RunStepStatus }) {
 }
 
 interface ResultsRowProps {
+  nodeId: string;
   operation: Operation | undefined;
   label: string;
   status: RunStepStatus;
   step: RunStep | undefined;
   previewRequest: RunStepRequest | undefined;
+  focused: boolean;
   /** Prefer open on rising-edge pause for the focused paused row. */
   preferOpen: boolean;
+  onSelect: (nodeId: string) => void;
 }
 
-function ResultsRow({ operation, label, status, step, previewRequest, preferOpen }: ResultsRowProps) {
+function ResultsRow({
+  nodeId,
+  operation,
+  label,
+  status,
+  step,
+  previewRequest,
+  focused,
+  preferOpen,
+  onSelect,
+}: ResultsRowProps) {
   const method = operation?.method ?? step?.request.method.toLowerCase() ?? 'get';
   const hasDetail = Boolean(step) || Boolean(previewRequest);
   const rowRef = useRef<HTMLDetailsElement | HTMLDivElement | null>(null);
@@ -62,16 +75,33 @@ function ResultsRow({ operation, label, status, step, previewRequest, preferOpen
     </>
   );
 
+  const rowClass = `debugger-row${focused ? ' debugger-row--focused' : ''}`;
+
   if (!hasDetail) {
     return (
-      <div className="debugger-row debugger-row--plain">
+      <div
+        className={`${rowClass} debugger-row--plain`}
+        onClick={() => onSelect(nodeId)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(nodeId);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+      >
         <div className="debugger-row__summary">{summary}</div>
       </div>
     );
   }
 
   return (
-    <details ref={rowRef as React.RefObject<HTMLDetailsElement>} className="debugger-row">
+    <details
+      ref={rowRef as React.RefObject<HTMLDetailsElement>}
+      className={rowClass}
+      onClickCapture={() => onSelect(nodeId)}
+    >
       <summary className="debugger-row__summary">
         <span className="debugger-row__chevron" aria-hidden="true">
           ▶
@@ -98,9 +128,9 @@ function ResultsRow({ operation, label, status, step, previewRequest, preferOpen
 }
 
 /**
- * Unified Results list: debugger-style status rows for every workflow node,
- * with Run-output request/response panels on expand. Prepares the surface for
- * a future debug-only console split (not built in this pass).
+ * Unified Results list: debugger-style status rows for nodes that have
+ * run/preview data (not every canvas node). Clear wipes that data and the
+ * list goes empty so the pane stops eating space with pending ghosts.
  */
 export function ResultsList() {
   const {
@@ -113,8 +143,7 @@ export function ResultsList() {
     isRunning,
     error,
     selectedNodeId,
-    continueExecution,
-    stepNode,
+    selectNode,
   } = useWorkflowStore();
 
   const operationsById = useMemo(() => new Map(operations.map((o) => [o.id, o])), [operations]);
@@ -130,14 +159,22 @@ export function ResultsList() {
     }
   }, [nodes, connections]);
 
+  /** Only nodes with live Results chrome (status or pause preview) — not
+   * every canvas node, and not `runResult` alone (kept after Clear for mapping). */
+  const resultNodes = useMemo(
+    () =>
+      orderedNodes.filter(
+        (n) => n.id in stepStatusByNodeId || previewRequestByNodeId[n.id] !== undefined
+      ),
+    [orderedNodes, stepStatusByNodeId, previewRequestByNodeId]
+  );
+
   const pausedNodeIds = useMemo(
-    () => orderedNodes.filter((n) => stepStatusByNodeId[n.id] === 'paused').map((n) => n.id),
-    [orderedNodes, stepStatusByNodeId]
+    () => resultNodes.filter((n) => stepStatusByNodeId[n.id] === 'paused').map((n) => n.id),
+    [resultNodes, stepStatusByNodeId]
   );
   const pauseFocusId = pausedNodeIds.includes(selectedNodeId ?? '') ? selectedNodeId! : pausedNodeIds[0];
-  const pauseFocusLabel = pauseFocusId ? (nodeLabels.get(pauseFocusId) ?? pauseFocusId) : null;
 
-  const preferOpenIdRef = useRef<string | null>(null);
   const [preferOpenId, setPreferOpenId] = useState<string | null>(null);
   const prevPausedRef = useRef(false);
   useEffect(() => {
@@ -151,48 +188,22 @@ export function ResultsList() {
 
   const hasGraph = nodes.length > 0;
   const hasSteps = (runResult?.steps.length ?? 0) > 0;
-  const empty = !hasGraph && !hasSteps && !isRunning && !error;
+  const hasLiveResults =
+    Object.keys(stepStatusByNodeId).length > 0 || Object.keys(previewRequestByNodeId).length > 0;
+  const empty = !hasLiveResults && !isRunning && !error;
 
   return (
     <div className="debug-pane__body results-list">
-      {pausedNodeIds.length > 0 && pauseFocusLabel && (
-        <div className="results-pause-bar" role="status">
-          <span className="results-pause-bar__label">
-            Paused at <strong>{pauseFocusLabel}</strong>
-          </span>
-          <span className="results-pause-bar__actions">
-            <button
-              type="button"
-              className="btn btn--icon btn--execute"
-              onClick={continueExecution}
-              title="Continue — release every node currently paused"
-              aria-label="Continue"
-            >
-              ▶
-            </button>
-            <button
-              type="button"
-              className="btn btn--icon btn--secondary"
-              onClick={() => pauseFocusId && stepNode(pauseFocusId)}
-              title="Step — release just this paused node"
-              aria-label="Step"
-            >
-              ⏭
-            </button>
-          </span>
-        </div>
-      )}
+      <div className="results-list__scroll">
+        {isRunning && pausedNodeIds.length === 0 && (
+          <p className="debug-pane__status debug-pane__status--running">Running…</p>
+        )}
+        {!isRunning && error && <p className="debug-pane__status debug-pane__status--error">{error}</p>}
+        {empty && (
+          <p className="debug-pane__status">Run the workflow to see each step&apos;s request and response.</p>
+        )}
 
-      {isRunning && pausedNodeIds.length === 0 && (
-        <p className="debug-pane__status debug-pane__status--running">Running…</p>
-      )}
-      {!isRunning && error && <p className="debug-pane__status debug-pane__status--error">{error}</p>}
-      {empty && (
-        <p className="debug-pane__status">Run the workflow to see each step&apos;s request and response.</p>
-      )}
-
-      {hasGraph &&
-        orderedNodes.map((node) => {
+        {resultNodes.map((node) => {
           const status = stepStatusByNodeId[node.id] ?? (stepsByNodeId.has(node.id) ? 'completed' : 'pending');
           // After a finished run with no status map, treat settled steps as completed.
           const resolvedStatus: RunStepStatus =
@@ -204,56 +215,70 @@ export function ResultsList() {
           return (
             <ResultsRow
               key={node.id}
+              nodeId={node.id}
               operation={operationsById.get(node.operationId)}
               label={nodeLabels.get(node.id) ?? node.operationId}
               status={resolvedStatus}
               step={stepsByNodeId.get(node.id)}
               previewRequest={previewRequestByNodeId[node.id]}
+              focused={selectedNodeId === node.id}
               preferOpen={preferOpenId === node.id}
+              onSelect={selectNode}
             />
           );
         })}
 
-      {/* Settled-only fallback when the canvas was cleared but a result remains. */}
-      {!hasGraph &&
-        hasSteps &&
-        runResult!.steps.map((step) => (
-          <ResultsRow
-            key={step.nodeId}
-            operation={undefined}
-            label={step.request.method}
-            status={step.error ? 'failed' : 'completed'}
-            step={step}
-            previewRequest={undefined}
-            preferOpen={false}
-          />
-        ))}
+        {/* Settled-only fallback when the canvas was cleared but Results chrome remains. */}
+        {!hasGraph &&
+          hasLiveResults &&
+          hasSteps &&
+          runResult!.steps.map((step) => (
+            <ResultsRow
+              key={step.nodeId}
+              nodeId={step.nodeId}
+              operation={undefined}
+              label={step.request.method}
+              status={step.error ? 'failed' : 'completed'}
+              step={step}
+              previewRequest={undefined}
+              focused={selectedNodeId === step.nodeId}
+              preferOpen={false}
+              onSelect={selectNode}
+            />
+          ))}
+      </div>
     </div>
   );
+}
+
+export interface ResultsStatusSummary {
+  /** Compact glyph form for the header, e.g. `1 ⏸ · 2 ✓`. */
+  text: string;
+  /** Hover / accessible expansion, e.g. `1 paused · 2 completed`. */
+  title: string;
 }
 
 export function summarizeResultsStatus(
   nodes: WorkflowNode[],
   stepStatusByNodeId: Record<string, RunStepStatus>,
-  settledCount: number
-): string {
-  if (nodes.length === 0) {
-    return settledCount > 0 ? `${settledCount} call(s)` : '';
+  _settledCount: number
+): ResultsStatusSummary | null {
+  const statusEntries = Object.entries(stepStatusByNodeId);
+  if (statusEntries.length === 0) {
+    // `runResult` may still exist after Clear (mapping preview) — don't
+    // surface a stale count in the Results header.
+    return null;
   }
   const counts = new Map<RunStepStatus, number>();
-  for (const node of nodes) {
-    const status = stepStatusByNodeId[node.id] ?? 'pending';
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  for (const [id, status] of statusEntries) {
+    if (nodes.length > 0 && !nodeIds.has(id)) continue;
     counts.set(status, (counts.get(status) ?? 0) + 1);
   }
-  const hasLive = [...counts.keys()].some((s) => s !== 'pending') || Object.keys(stepStatusByNodeId).length > 0;
-  if (!hasLive && settledCount === 0) {
-    return `${nodes.length} step(s)`;
-  }
-  if (!hasLive && settledCount > 0) {
-    return `${settledCount} call(s)`;
-  }
+  if (counts.size === 0) return null;
+
   const order: RunStepStatus[] = ['in-flight', 'paused', 'completed', 'failed', 'skipped', 'pending'];
-  const label: Record<RunStepStatus, string> = {
+  const words: Record<RunStepStatus, string> = {
     pending: 'pending',
     'in-flight': 'in flight',
     paused: 'paused',
@@ -261,8 +286,9 @@ export function summarizeResultsStatus(
     failed: 'failed',
     skipped: 'skipped',
   };
-  return order
-    .filter((status) => (counts.get(status) ?? 0) > 0)
-    .map((status) => `${counts.get(status)} ${label[status]}`)
-    .join(' · ');
+  const active = order.filter((status) => (counts.get(status) ?? 0) > 0);
+  return {
+    text: active.map((status) => `${counts.get(status)} ${STATUS_ICON[status]}`).join(' · '),
+    title: active.map((status) => `${counts.get(status)} ${words[status]}`).join(' · '),
+  };
 }

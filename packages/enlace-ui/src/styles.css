@@ -2076,12 +2076,25 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 0;
-  margin-bottom: 4px;
+  flex-shrink: 0;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-panel-bg);
   color: var(--color-put);
   font-size: 12px;
   font-weight: 600;
+  z-index: 1;
+}
+
+/* Lives in the Debug/Results header — compact, no second chrome row. */
+.results-pause-bar--header {
+  flex: 1;
+  min-width: 0;
+  max-width: 50%;
+  padding: 0;
+  margin: 0 8px;
+  border: none;
+  background: transparent;
 }
 
 .results-pause-bar__label {
@@ -2118,6 +2131,184 @@ body {
   font-size: 12px;
   flex: 1;
   min-height: 0;
+}
+
+/* Pause bar stays pinned; only the step list scrolls. */
+.debug-pane__body.results-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.results-list__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 16px;
+}
+
+.debug-pane__split {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.debug-pane__split--console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+}
+
+.debug-console {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-topbar-bg);
+}
+
+.debug-console__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.debug-console__title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+}
+
+.debug-console__focus {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.debug-console__history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.debug-console__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.debug-console__hint code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.debug-console__entry {
+  margin-bottom: 10px;
+}
+
+.debug-console__query {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.debug-console__entry-focus {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+}
+
+.debug-console__prompt {
+  color: var(--color-focus);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.debug-console__output {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+}
+
+.debug-console__output--error {
+  color: var(--color-error);
+}
+
+.debug-console__input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.debug-console__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.debug-console__input .cm-editor {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: transparent;
+  color: var(--color-text);
+}
+
+.debug-console__input .cm-editor.cm-focused {
+  outline: none;
+}
+
+.debug-console__input .cm-scroller {
+  overflow: hidden;
+}
+
+.debug-console__input .cm-content {
+  padding: 4px 0;
+  caret-color: #fff;
+}
+
+.debug-console__input .cm-line {
+  padding: 0;
+}
+
+.debug-console__input .cm-placeholder {
+  color: var(--color-text-muted);
+  font-style: normal;
+}
+
+.debug-console__input .cm-tooltip-autocomplete {
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 
 .debug-pane__status {
@@ -2206,12 +2397,10 @@ body {
 
 
 .debug-step__panels {
-  /* Shared row tracks so Request/Response titles, headers, and bodies line up
-   * even when the request title carries a URL (or wraps). */
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: auto auto auto;
   column-gap: 12px;
+  align-items: start;
   margin-top: 8px;
 }
 
@@ -2220,11 +2409,10 @@ body {
 }
 
 .debug-step__panel {
-  display: grid;
-  grid-template-rows: subgrid;
-  grid-row: span 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-width: 0;
-  align-content: start;
 }
 
 .debug-step__panel-title {
@@ -2237,7 +2425,6 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--color-text-muted);
-  margin-bottom: 6px;
 }
 
 /* Inlined beside "Request" — one line so it doesn't stretch this column alone. */
@@ -2276,7 +2463,7 @@ body {
 /* Headers are secondary to the body — collapsed by default so opening a step lands on the body,
  * not a scroll past every header first. */
 .debug-headers {
-  margin-bottom: 6px;
+  margin: 0;
 }
 
 .debug-headers__summary {
@@ -2367,6 +2554,15 @@ body {
 .debugger-row {
   border-bottom: 1px solid var(--color-border);
   padding: 7px 0;
+}
+
+.debugger-row--plain {
+  cursor: pointer;
+}
+
+.debugger-row--focused {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 2px 0 0 var(--color-focus);
 }
 
 .debugger-row:last-child {
