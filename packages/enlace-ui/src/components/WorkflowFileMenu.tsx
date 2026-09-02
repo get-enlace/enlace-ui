@@ -77,6 +77,7 @@ export const WorkflowFileMenu = forwardRef<WorkflowFileMenuHandle, WorkflowFileM
     const nodes = useWorkflowStore((s) => s.nodes);
     const connections = useWorkflowStore((s) => s.connections);
     const nodePositions = useWorkflowStore((s) => s.nodePositions);
+    const groups = useWorkflowStore((s) => s.groups);
     const credentials = useWorkflowStore((s) => s.credentials);
     const specInfo = useWorkflowStore((s) => s.specInfo);
     const workflowName = useWorkflowStore((s) => s.workflowName);
@@ -129,6 +130,7 @@ export const WorkflowFileMenu = forwardRef<WorkflowFileMenuHandle, WorkflowFileM
         nodes,
         connections,
         nodePositions,
+        groups,
         credentials,
         specInfo,
       });

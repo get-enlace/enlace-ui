@@ -52,6 +52,7 @@ const collection: EnlaceCollection = {
       nodes: [],
       connections: [],
       nodePositions: {},
+      groups: [],
     },
   ],
 };

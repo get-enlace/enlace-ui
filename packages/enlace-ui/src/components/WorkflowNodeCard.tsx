@@ -24,6 +24,9 @@ export interface WorkflowNodeData {
    * separately from `operation.operationId` — otherwise the two agree.
    */
   label?: string;
+  /** Set when this node belongs to a canvas group — drives the leave-group control. */
+  groupId?: string;
+  groupName?: string;
 }
 
 // A small badge at the card's top-left corner (the remove button already
@@ -40,9 +43,40 @@ const STATUS_BADGE_GLYPH: Partial<Record<RunStepStatus, string>> = {
   failed: '!',
 };
 
+/** Nude corner chrome — same 10×10 stroke weight for leave-group and delete. */
+function LeaveGroupIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <path
+        d="M2 2h4v6H2M6 5h3M7.5 3.5 9 5 7.5 6.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function DeleteNodeIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <path
+        d="M2.5 2.5 7.5 7.5M7.5 2.5 2.5 7.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
-  const { node, operation, selected, status, label } = data;
+  const { node, operation, selected, status, label, groupId, groupName } = data;
   const removeNode = useWorkflowStore((s) => s.removeNode);
+  const removeFromGroup = useWorkflowStore((s) => s.removeFromGroup);
   // removeNode itself already no-ops while running (workflowStore.ts's
   // isLocked) — disabling the button too is just so it doesn't look
   // clickable when it wouldn't do anything.
@@ -55,7 +89,7 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
   // click-to-select and Delete/Backspace; this covers this button, the
   // third, separate way a node could be removed).
   const elementsSelectable = useStore((s) => s.elementsSelectable);
-  const removeDisabled = isRunning || !elementsSelectable;
+  const chromeDisabled = isRunning || !elementsSelectable;
   const method = operation?.method ?? 'get';
   // Skip the legend when it would just repeat the method+path already shown in the header below —
   // only worth a second line when the spec names the operation, or this operation appears more
@@ -75,7 +109,7 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
           the verb badge; the card chrome is neutral until a run status paints
           a border (see styles.css's workflow-node--{in-flight,paused,failed}). */}
       <fieldset
-        className={`workflow-node${selected ? ' workflow-node--selected' : ''}${status ? ` workflow-node--${status}` : ''}`}
+        className={`workflow-node${selected ? ' workflow-node--selected' : ''}${status ? ` workflow-node--${status}` : ''}${groupId ? ' workflow-node--grouped' : ''}`}
       >
         {showLegend && <legend className="workflow-node__operation-id">{label}</legend>}
         {badgeGlyph && (
@@ -112,10 +146,32 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
           React's stopPropagation alone doesn't reach those — and the click
           that should call removeNode never lands, especially right after
           selecting a previously-deselected node. */}
+      {groupId && (
+        <button
+          type="button"
+          className="nodrag nopan workflow-node__leave-group-btn"
+          disabled={chromeDisabled}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            removeFromGroup(groupId, node.id);
+          }}
+          title={
+            isRunning
+              ? "Can't leave a group while the workflow is running"
+              : !elementsSelectable
+                ? 'Canvas is locked — unlock it to edit groups'
+                : `Remove from group${groupName ? ` “${groupName}”` : ''} — keeps the node on the canvas`
+          }
+          aria-label="Remove from group"
+        >
+          <LeaveGroupIcon />
+        </button>
+      )}
       <button
         type="button"
         className="nodrag nopan workflow-node__remove-btn"
-        disabled={removeDisabled}
+        disabled={chromeDisabled}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
@@ -130,7 +186,7 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
         }
         aria-label="Remove this node"
       >
-        ×
+        <DeleteNodeIcon />
       </button>
     </div>
   );

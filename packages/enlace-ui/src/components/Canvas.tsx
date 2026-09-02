@@ -17,15 +17,28 @@ import 'reactflow/dist/style.css';
 import { connectionKey } from '../engine/chainExecutor.js';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import { buildNodeLabels } from '../utils/nodeLabel.js';
+import {
+  expandedGroupFrame,
+  findGroupDropTarget,
+  findUngroupedOutsidersInFrame,
+  groupContainingNode,
+  nudgeOutsideFrame,
+  sortGroupMemberIds,
+  type GroupDropTarget,
+} from '../utils/groupGeometry.js';
+import { collapsedGroupSize } from '../utils/nodePlacement.js';
 import { BreakpointConnectionEdge } from './BreakpointConnectionEdge.js';
+import { GroupConfirmModal } from './GroupConfirmModal.js';
+import { GroupNodeCard, type GroupMemberSummary, type GroupNodeData } from './GroupNodeCard.js';
 import { WorkflowNodeCard, type WorkflowNodeData } from './WorkflowNodeCard.js';
 
-const nodeTypes = { workflowNode: WorkflowNodeCard };
+const nodeTypes = { workflowNode: WorkflowNodeCard, nodeGroup: GroupNodeCard };
 const edgeTypes = { connection: BreakpointConnectionEdge };
 
-// useReactFlow (needed to translate a drop's screen coordinates into canvas
-// coordinates) only works inside a ReactFlowProvider, so the actual canvas
-// logic lives in an inner component wrapped by one.
+type PendingGroup =
+  | { kind: 'create'; draggedNodeId: string; position: { x: number; y: number }; withNodeId: string }
+  | { kind: 'join'; draggedNodeId: string; position: { x: number; y: number }; groupId: string };
+
 export function Canvas() {
   return (
     <ReactFlowProvider>
@@ -38,11 +51,13 @@ function CanvasInner() {
   const {
     nodes,
     nodePositions,
+    groups,
     connections,
     operations,
     selectedNodeId,
     stepStatusByNodeId,
     armedBreakpoints,
+    isRunning,
     addNode,
     updateNodePosition,
     selectNode,
@@ -50,34 +65,18 @@ function CanvasInner() {
     disconnectNodes,
     removeNode,
     toggleBreakpoint,
+    createGroup,
+    joinGroup,
+    moveGroup,
   } = useWorkflowStore();
   const { screenToFlowPosition, fitView, getViewport } = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const prevNodeCountRef = useRef(nodes.length);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [pendingGroup, setPendingGroup] = useState<PendingGroup | null>(null);
 
-  // The Controls panel's own lock/unlock button (bottom-left) toggles
-  // nodesDraggable/nodesConnectable/elementsSelectable together as one
-  // "isInteractive" flag (see @reactflow/controls) — dragging and
-  // connecting are entirely React Flow's own internal machinery, so they
-  // already respect it correctly with no code of ours involved. Selection
-  // doesn't: React Flow calls the onNodeClick prop unconditionally on
-  // every click, regardless of elementsSelectable — that flag only gates
-  // React Flow's *own* internal selection bookkeeping, not a consumer's
-  // onClick handler. Since this app drives selectedNodeId (and, through
-  // it, the top-level `selected` flag `useGlobalKeyHandler` checks for
-  // Delete/Backspace — see flowNodes above) from that same onNodeClick,
-  // a locked canvas was letting a click both select a node and, via that
-  // same selection, make it deletable — despite dragging correctly being
-  // blocked. Reading elementsSelectable back out here is what lets
-  // onNodeClick below opt out while locked, closing that gap.
   const elementsSelectable = useStore((s) => s.elementsSelectable);
 
-  // Locking while a node/edge is already selected must not leave it
-  // selected (and so still delete-eligible) just because the selection
-  // predates the lock — onNodeClick's guard above only stops *new*
-  // selections. Unlocking again is deliberately a no-op here: there's
-  // nothing to restore, since nothing could have gotten selected while
-  // locked in the first place.
   useEffect(() => {
     if (!elementsSelectable) {
       selectNode(null);
@@ -85,23 +84,6 @@ function CanvasInner() {
     }
   }, [elementsSelectable, selectNode]);
 
-  // Canvas-local, not store state — unlike node selection (which the
-  // Inspector panel needs), nothing outside the canvas cares which edge
-  // is selected. `flowEdges` is a value freshly computed every render
-  // (not React Flow's own internal state, same as `flowNodes` above), so
-  // without tracking this ourselves and feeding it back in as each edge's
-  // `selected` prop, a click's selection would just vanish on the very
-  // next re-render instead of sticking around to show which edge Delete
-  // would act on.
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-
-  // Handles live inside the zoomed viewport, so their hit target shrinks
-  // right along with the canvas — at the 0.5 minZoom floor the connect
-  // gesture from card-cluttered zoom-out targets a couple of screen
-  // pixels. Mirror the current zoom onto a CSS var so .react-flow__handle
-  // (styles.css) can counter-scale its hit area back to a constant,
-  // grabbable screen size at any zoom level, not just a fixed fraction
-  // bigger.
   const setZoomVar = useCallback((viewport: Viewport) => {
     wrapperRef.current?.style.setProperty('--rf-zoom', String(viewport.zoom));
   }, []);
@@ -110,91 +92,138 @@ function CanvasInner() {
     setZoomVar(getViewport());
   }, [getViewport, setZoomVar]);
 
-  // Global — every node in the workflow at once, not scoped to any one node's ancestors — so a
-  // card's "#N" here always matches what that same node shows in every "Map from..." picker and
-  // tag chip (see utils/nodeLabel.ts's buildNodeLabels doc).
   const nodeLabels = useMemo(() => {
     const operationsById = new Map(operations.map((o) => [o.id, o]));
     return buildNodeLabels(nodes, operationsById);
   }, [nodes, operations]);
 
-  const flowNodes: Node<WorkflowNodeData>[] = useMemo(
-    () =>
-      nodes.map((n) => ({
+  const collapsedMemberIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const g of groups) {
+      if (g.collapsed) for (const id of g.nodeIds) ids.add(id);
+    }
+    return ids;
+  }, [groups]);
+
+  const flowNodes: Node[] = useMemo(() => {
+    const result: Node[] = [];
+
+    for (const g of groups) {
+      if (g.collapsed) {
+        const size = collapsedGroupSize(g.nodeIds.length);
+        const members: GroupMemberSummary[] = sortGroupMemberIds(g.nodeIds, nodePositions).map((nodeId) => {
+          const node = nodes.find((n) => n.id === nodeId);
+          const operation = node ? operations.find((o) => o.id === node.operationId) : undefined;
+          return {
+            nodeId,
+            method: operation?.method ?? 'get',
+            path: operation?.path ?? '?',
+            label: nodeLabels.get(nodeId) ?? nodeId,
+            status: stepStatusByNodeId[nodeId],
+          };
+        });
+        result.push({
+          id: g.id,
+          type: 'nodeGroup',
+          position: g.position,
+          zIndex: 5,
+          data: {
+            group: g,
+            width: size.width,
+            height: size.height,
+            memberCount: g.nodeIds.length,
+            members,
+          } satisfies GroupNodeData,
+        });
+      } else {
+        const frame = expandedGroupFrame(g.nodeIds, nodePositions);
+        if (!frame) continue;
+        result.push({
+          id: g.id,
+          type: 'nodeGroup',
+          position: frame.position,
+          zIndex: 0,
+          // Expanded chrome tracks member bounds via data; drag moves the group.
+          data: {
+            group: { ...g, position: frame.position },
+            width: frame.width,
+            height: frame.height,
+            memberCount: g.nodeIds.length,
+          } satisfies GroupNodeData,
+        });
+      }
+    }
+
+    for (const n of nodes) {
+      const hidden = collapsedMemberIds.has(n.id);
+      const owningGroup = groupContainingNode(groups, n.id);
+      result.push({
         id: n.id,
         type: 'workflowNode',
         position: nodePositions[n.id] ?? { x: 80, y: 80 },
-        // Top-level `selected` is what React Flow uses for keyboard Delete/
-        // Backspace (and its own selection chrome). `data.selected` is only
-        // for our card CSS — without the top-level flag, the node looks
-        // selected (blue border) but Delete does nothing.
         selected: n.id === selectedNodeId,
+        hidden,
+        zIndex: 2,
         data: {
           node: n,
           operation: operations.find((o) => o.id === n.operationId),
           selected: n.id === selectedNodeId,
           status: stepStatusByNodeId[n.id],
           label: nodeLabels.get(n.id),
-        },
-      })),
-    [nodes, nodePositions, operations, selectedNodeId, stepStatusByNodeId, nodeLabels]
-  );
+          groupId: owningGroup?.id,
+          groupName: owningGroup?.name,
+        } satisfies WorkflowNodeData,
+      });
+    }
 
-  // Two distinct edge kinds, styled differently (see styles.css):
-  //   - "connection" edges are user-drawn (via onConnect below) and
-  //     establish execution ORDER only.
-  //   - "mapping" edges are derived, not user-drawn, and visualize a
-  //     field's DATA SOURCE set via the Node Inspector's "map from..."
-  //     picker. A mapping always implies its own order dependency too
-  //     (see src/types.ts's WorkflowConnection doc), so it's fine for both
-  //     kinds to exist between the same two nodes at once.
-  //
-  // When both kinds exist for the same pair, they're geometrically
-  // identical curves (same source/target, no distinct handles), stacked
-  // exactly on top of each other. Mapping edges MUST be pushed into the
-  // array before connection edges, not after: React Flow (like plain SVG)
-  // paints later array entries on top, and only the topmost edge receives
-  // pointer events, so whichever kind renders last wins every hover/click/
-  // double-click. Connection edges are the ones carrying the interactive
-  // breakpoint gesture (BreakpointConnectionEdge's double-click handler in
-  // Canvas.tsx's onEdgeDoubleClick below); if a mapping edge ends up on top
-  // instead, that double-click lands on the plain, non-interactive mapping
-  // edge and silently no-ops — arming a breakpoint becomes impossible on
-  // any node pair that's connected by both an order connector and a field
-  // mapping.
+    return result;
+  }, [
+    groups,
+    nodes,
+    nodePositions,
+    operations,
+    selectedNodeId,
+    stepStatusByNodeId,
+    nodeLabels,
+    collapsedMemberIds,
+  ]);
+
   const flowEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
+    const resolveEndpoint = (nodeId: string): string => {
+      if (!collapsedMemberIds.has(nodeId)) return nodeId;
+      const g = groupContainingNode(groups, nodeId);
+      return g?.id ?? nodeId;
+    };
 
     for (const node of nodes) {
       for (const fieldValue of Object.values(node.fieldValues)) {
-        if (fieldValue.source === 'mapped') {
-          edges.push({
-            id: `map-${fieldValue.fromNodeId}->${node.id}-${edges.length}`,
-            source: fieldValue.fromNodeId,
-            target: node.id,
-            className: 'edge-mapping',
-            animated: true,
-          });
-        }
+        if (fieldValue.source !== 'mapped') continue;
+        const source = resolveEndpoint(fieldValue.fromNodeId);
+        const target = resolveEndpoint(node.id);
+        // Hide edges wholly inside a collapsed group.
+        if (source === target && groups.some((g) => g.id === source && g.collapsed)) continue;
+        edges.push({
+          id: `map-${fieldValue.fromNodeId}->${node.id}-${edges.length}`,
+          source,
+          target,
+          className: 'edge-mapping',
+          animated: true,
+        });
       }
     }
 
     for (const c of connections) {
+      const source = resolveEndpoint(c.fromNodeId);
+      const target = resolveEndpoint(c.toNodeId);
+      if (source === target && groups.some((g) => g.id === source && g.collapsed)) continue;
       edges.push({
         id: `conn-${c.fromNodeId}->${c.toNodeId}`,
-        source: c.fromNodeId,
-        target: c.toNodeId,
-        // 'connection' (registered in edgeTypes above) — never applied to a
-        // mapping edge above, which is what makes "a breakpoint can only
-        // ever arm on a connector" true at the rendering level, not just a
-        // runtime check.
+        source,
+        target,
         type: 'connection',
         className: 'edge-connection',
         markerEnd: { type: MarkerType.ArrowClosed, color: '#9aa0a6' },
-        // Carried through to onEdgesChange below, so a 'remove' change (select
-        // the edge, press Backspace/Delete) can call disconnectNodes with the
-        // right pair without parsing it back out of the id string. `armed`
-        // drives BreakpointConnectionEdge's marker — see its own doc comment.
         data: {
           fromNodeId: c.fromNodeId,
           toNodeId: c.toNodeId,
@@ -204,7 +233,7 @@ function CanvasInner() {
     }
 
     return edges.map((e) => ({ ...e, selected: e.id === selectedEdgeId }));
-  }, [nodes, connections, selectedEdgeId, armedBreakpoints]);
+  }, [nodes, connections, selectedEdgeId, armedBreakpoints, collapsedMemberIds, groups]);
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -219,56 +248,41 @@ function CanvasInner() {
 
   const onConnect = useCallback(
     (params: Connection) => {
-      if (params.source && params.target) connectNodes(params.source, params.target);
+      if (params.source && params.target) {
+        // Don't treat group chrome as a connectable workflow endpoint.
+        if (params.source.startsWith('g-') || params.target.startsWith('g-')) return;
+        connectNodes(params.source, params.target);
+      }
     },
     [connectNodes]
   );
 
-  // Nodes are otherwise controlled entirely from the store — without this,
-  // a drag updates React Flow's internal position for one frame and then
-  // gets overwritten by the next render's `flowNodes` (computed from
-  // `nodePositions`), so the box snaps back and looks unmovable. The same
-  // applies to deletion: React Flow's default deleteKeyCode (Backspace/
-  // Delete) fires a 'remove' change here when a selected node is deleted,
-  // but without this handler our store never drops it, so it would just
-  // reappear on the next render. The node card's own × button is the more
-  // discoverable way to remove a node; this is a bonus for keyboard users.
-  //
-  // Collision settle lives in `onNodeDragStop` below, not here: React Flow's
-  // drag-end `position` change sets `dragging: false` but intentionally omits
-  // `position` (`updateNodePositions(..., positionChanged=false)`), so an
-  // `avoidOverlap` gated on that event never saw a place to snap to.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const change of changes) {
         if (change.type === 'position' && change.position) {
-          updateNodePosition(change.id, change.position);
+          if (change.id.startsWith('g-')) {
+            moveGroup(change.id, change.position);
+          } else {
+            // Members move independently inside a group; group chrome drag
+            // (moveGroup) is what translates the whole cluster. AvoidOverlap
+            // on drag-end skips groupmates so tight packing isn't blown apart.
+            updateNodePosition(change.id, change.position);
+          }
         } else if (change.type === 'remove') {
-          removeNode(change.id);
+          if (!change.id.startsWith('g-')) removeNode(change.id);
         }
       }
     },
-    [updateNodePosition, removeNode]
+    [updateNodePosition, removeNode, moveGroup]
   );
 
-  // Same story as onNodesChange above, for edges: they're computed fresh
-  // from `connections`/`fieldValues` every render (flowEdges), not React
-  // Flow's own internal state, so selecting a "connection" edge and
-  // pressing Backspace/Delete does nothing to the store without this —
-  // the edge just reappears next render. Only "connection" edges (solid,
-  // user-drawn via onConnect, carrying `data` above) are removable this
-  // way; "mapping" edges (dashed/animated) are derived from a field's
-  // "Map from..." source and have no `data`, so they're left alone on
-  // 'remove' — clearing that mapping in the Node Inspector is what
-  // removes one. Both kinds still respond to 'select' (a click), feeding
-  // selectedEdgeId back into flowEdges above so the click's highlight
-  // actually sticks instead of disappearing on the next render.
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       for (const change of changes) {
         if (change.type === 'select') {
           setSelectedEdgeId(change.selected ? change.id : null);
-          if (change.selected) selectNode(null); // one selection at a time — an edge click shouldn't leave a node looking selected too
+          if (change.selected) selectNode(null);
         } else if (change.type === 'remove') {
           const edge = flowEdges.find((e) => e.id === change.id);
           if (edge?.data) disconnectNodes(edge.data.fromNodeId, edge.data.toNodeId);
@@ -278,15 +292,6 @@ function CanvasInner() {
     [flowEdges, disconnectNodes, selectNode]
   );
 
-  // Two things can otherwise leave a card fully or partially clipped with
-  // no visual cue it still exists: dropping a new node past the edge of a
-  // canvas that's grown cluttered, or the canvas's own container shrinking
-  // (e.g. the inspector panel expanding) around nodes that were fine a
-  // moment ago. React Flow's `fitView` prop only runs once, on mount, so
-  // neither case re-frames the viewport on its own — check node DOM rects
-  // against the wrapper's on both triggers and zoom out to refit only when
-  // something's actually out of view, so a deliberate manual zoom/pan
-  // isn't fought while everything still fits.
   const refitIfNeeded = useCallback(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper || nodes.length === 0) return;
@@ -299,24 +304,135 @@ function CanvasInner() {
     if (outOfView) fitView({ padding: 0.2, duration: 300 });
   }, [nodes.length, fitView]);
 
-  // Settle collisions here — not in onNodesChange. React Flow's drag-end
-  // `position` change sets `dragging: false` but omits `position`
-  // (`updateNodePositions(..., positionChanged=false)`), so an avoidOverlap
-  // gated on that event never saw where to snap. After settling, re-frame
-  // if the nearest free slot landed outside the current viewport.
+  const applyDropTarget = useCallback(
+    (draggedNodeId: string, position: { x: number; y: number }, target: GroupDropTarget) => {
+      if (target.kind === 'join') {
+        const group = groups.find((g) => g.id === target.groupId);
+        if (group?.skipConfirmOnDrop) {
+          joinGroup(target.groupId, draggedNodeId, position);
+          requestAnimationFrame(() => refitIfNeeded());
+          return;
+        }
+        setPendingGroup({
+          kind: 'join',
+          draggedNodeId,
+          position,
+          groupId: target.groupId,
+        });
+        return;
+      }
+      setPendingGroup({
+        kind: 'create',
+        draggedNodeId,
+        position,
+        withNodeId: target.withNodeId,
+      });
+    },
+    [groups, joinGroup, refitIfNeeded]
+  );
+
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      if (node.id.startsWith('g-')) {
+        // moveGroup already applied during drag via onNodesChange — never
+        // run per-member avoidOverlap (that would blow apart a tight group).
+        requestAnimationFrame(() => refitIfNeeded());
+        return;
+      }
+      if (isRunning) {
+        updateNodePosition(node.id, node.position, { avoidOverlap: true });
+        requestAnimationFrame(() => refitIfNeeded());
+        return;
+      }
+
+      const target = findGroupDropTarget(
+        node.id,
+        node.position,
+        groups,
+        nodes.map((n) => n.id),
+        { ...nodePositions, [node.id]: node.position }
+      );
+
+      if (target) {
+        applyDropTarget(node.id, node.position, target);
+        return;
+      }
+
+      // Member drag can grow the expanded frame around an ungrouped card
+      // without that card ever being dropped — offer join so UI matches membership.
+      const ownGroup = groupContainingNode(groups, node.id);
+      if (ownGroup && !ownGroup.collapsed) {
+        const positionsNow = { ...nodePositions, [node.id]: node.position };
+        const swallowed = findUngroupedOutsidersInFrame(
+          ownGroup,
+          nodes.map((n) => n.id),
+          positionsNow,
+          groups
+        );
+        if (swallowed[0]) {
+          const outsiderId = swallowed[0].nodeId;
+          const outsiderPos = positionsNow[outsiderId] ?? nodePositions[outsiderId];
+          if (outsiderPos) {
+            applyDropTarget(outsiderId, outsiderPos, {
+              kind: 'join',
+              groupId: ownGroup.id,
+              ratio: swallowed[0].ratio,
+            });
+            return;
+          }
+        }
+        requestAnimationFrame(() => refitIfNeeded());
+        return;
+      }
+
       updateNodePosition(node.id, node.position, { avoidOverlap: true });
       requestAnimationFrame(() => refitIfNeeded());
     },
-    [updateNodePosition, refitIfNeeded]
+    [isRunning, groups, nodes, nodePositions, updateNodePosition, refitIfNeeded, applyDropTarget]
+  );
+
+  const cancelPendingGroup = useCallback(() => {
+    if (!pendingGroup) return;
+    let position = pendingGroup.position;
+    // Join cancel after a frame-swallow: push the outsider clear of the frame
+    // so it doesn't keep looking like a member.
+    if (pendingGroup.kind === 'join') {
+      const group = groups.find((g) => g.id === pendingGroup.groupId);
+      if (group && !group.collapsed) {
+        const frame = expandedGroupFrame(group.nodeIds, nodePositions);
+        if (frame) position = nudgeOutsideFrame(position, frame);
+      }
+    }
+    updateNodePosition(pendingGroup.draggedNodeId, position, { avoidOverlap: true });
+    setPendingGroup(null);
+    requestAnimationFrame(() => refitIfNeeded());
+  }, [pendingGroup, groups, nodePositions, updateNodePosition, refitIfNeeded]);
+
+  const confirmPendingGroup = useCallback(
+    (result: { name: string; skipConfirmOnDrop: boolean }) => {
+      if (!pendingGroup) return;
+      if (pendingGroup.kind === 'create') {
+        createGroup({
+          name: result.name,
+          nodeIds: [pendingGroup.draggedNodeId, pendingGroup.withNodeId],
+          draggedNodeId: pendingGroup.draggedNodeId,
+          draggedPosition: pendingGroup.position,
+          skipConfirmOnDrop: result.skipConfirmOnDrop,
+        });
+      } else {
+        joinGroup(pendingGroup.groupId, pendingGroup.draggedNodeId, pendingGroup.position, {
+          skipConfirmOnDrop: result.skipConfirmOnDrop,
+        });
+      }
+      setPendingGroup(null);
+      requestAnimationFrame(() => refitIfNeeded());
+    },
+    [pendingGroup, createGroup, joinGroup, refitIfNeeded]
   );
 
   useEffect(() => {
     if (prevNodeCountRef.current === nodes.length) return;
     prevNodeCountRef.current = nodes.length;
-    // Wait a frame so React Flow has measured the new node's DOM rect
-    // before we check it.
     const raf = requestAnimationFrame(refitIfNeeded);
     return () => cancelAnimationFrame(raf);
   }, [nodes.length, refitIfNeeded]);
@@ -336,6 +452,10 @@ function CanvasInner() {
     };
   }, [refitIfNeeded]);
 
+  const pendingJoinGroup = pendingGroup?.kind === 'join' ? groups.find((g) => g.id === pendingGroup.groupId) : null;
+  const pendingCreateLabel =
+    pendingGroup?.kind === 'create' ? (nodeLabels.get(pendingGroup.withNodeId) ?? pendingGroup.withNodeId) : '';
+
   return (
     <div className="canvas" ref={wrapperRef} onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
       <ReactFlow
@@ -344,7 +464,12 @@ function CanvasInner() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={(_, node) => {
-          if (!elementsSelectable) return; // canvas is locked — see elementsSelectable's own comment above
+          if (!elementsSelectable) return;
+          if (node.id.startsWith('g-')) {
+            selectNode(null);
+            setSelectedEdgeId(null);
+            return;
+          }
           selectNode(node.id);
           setSelectedEdgeId(null);
         }}
@@ -356,12 +481,6 @@ function CanvasInner() {
         onNodesChange={onNodesChange}
         onNodeDragStop={onNodeDragStop}
         onEdgesChange={onEdgesChange}
-        // Double-click a connector to arm a breakpoint (double-click again
-        // to disarm). Only connection edges carry `data.fromNodeId` — a
-        // double-click on a mapping edge (no data) is silently ignored,
-        // preserving the "breakpoints only arm on connectors" invariant.
-        // toggleBreakpoint itself no-ops while a run is in progress
-        // (workflowStore.ts's `isLocked`), so no extra guard needed here.
         onEdgeDoubleClick={(_, edge) => {
           const data = edge.data as { fromNodeId?: string; toNodeId?: string } | undefined;
           if (data?.fromNodeId && data.toNodeId) {
@@ -376,6 +495,30 @@ function CanvasInner() {
         <Background color="#3a3d42" gap={16} />
         <Controls />
       </ReactFlow>
+
+      {pendingGroup && (
+        <GroupConfirmModal
+          mode={
+            pendingGroup.kind === 'create'
+              ? { kind: 'create', withNodeLabel: pendingCreateLabel }
+              : { kind: 'join', groupName: pendingJoinGroup?.name ?? 'Group' }
+          }
+          defaultName={
+            pendingGroup.kind === 'create'
+              ? suggestGroupName(pendingCreateLabel)
+              : (pendingJoinGroup?.name ?? 'Group')
+          }
+          onConfirm={confirmPendingGroup}
+          onCancel={cancelPendingGroup}
+        />
+      )}
     </div>
   );
+}
+
+function suggestGroupName(peerLabel: string): string {
+  const cleaned = peerLabel.replace(/\s*#\d+$/, '').trim();
+  if (!cleaned) return 'Group';
+  // e.g. createOrder → Orders-ish; otherwise use the label as-is.
+  return cleaned;
 }

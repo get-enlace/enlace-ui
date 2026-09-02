@@ -287,6 +287,7 @@ describe('WorkflowFileMenu', () => {
             nodes: [{ id: 'n1', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
             connections: [],
             nodePositions: { n1: { x: 1, y: 2 } },
+            groups: [],
           },
         ],
       })

@@ -119,6 +119,23 @@ export interface WorkflowConnection {
 }
 
 /**
+ * Canvas-only named group of workflow nodes — layout/chrome, never part of
+ * the executed `Workflow`. Members stay real `WorkflowNode`s; collapsing
+ * hides their cards and routes external edges through the group shell.
+ * Persisted beside `nodePositions` in `.enlace` exports.
+ */
+export interface NodeGroup {
+  id: string;
+  name: string;
+  nodeIds: string[];
+  collapsed: boolean;
+  /** Origin of the group chrome (expanded frame / collapsed compact card). */
+  position: { x: number; y: number };
+  /** When true, dropping another node onto this group joins without a confirm. */
+  skipConfirmOnDrop: boolean;
+}
+
+/**
  * In-memory execution shape — `nodes` + `connections` only. Layout,
  * credential records, and spec hints live in an `EnlaceCollection`, the
  * shareable file format (see utils/workflowDocument.ts).
@@ -185,6 +202,8 @@ export interface CollectionWorkflow {
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
   nodePositions: Record<string, { x: number; y: number }>;
+  /** Canvas groups — same tier as `nodePositions`. */
+  groups: NodeGroup[];
 }
 
 export type CollectionSecretsMode = 'stripped' | 'included';

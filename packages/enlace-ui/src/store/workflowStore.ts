@@ -4,6 +4,7 @@ import { parseOperations } from '../engine/specParser.js';
 import { connectionKey, executeChain } from '../engine/chainExecutor.js';
 import { extractDeclaredCredentials, type DeclaredCredential } from '../engine/securitySchemes.js';
 import { findOpenPosition } from '../utils/nodePlacement.js';
+import { expandedGroupFrame, sortGroupMemberIds } from '../utils/groupGeometry.js';
 import { randomId } from '../utils/randomId.js';
 import { hydrateCollection, referencedIncompleteCredentials } from '../utils/workflowDocument.js';
 import type {
@@ -11,6 +12,7 @@ import type {
   EnlaceCollection,
   FieldValue,
   NewCredential,
+  NodeGroup,
   Operation,
   RawBody,
   RunControl,
@@ -102,6 +104,12 @@ interface WorkflowState {
   connections: WorkflowConnection[];
   /** Canvas layout only — not part of the executed Workflow. */
   nodePositions: Record<string, Position>;
+  /**
+   * Named, collapsible node groups — canvas state beside `nodePositions`,
+   * never part of the executed `Workflow`. Round-tripped in `.enlace`
+   * exports (see utils/workflowDocument.ts). See types.ts's `NodeGroup`.
+   */
+  groups: NodeGroup[];
   credentials: Credential[];
   /**
    * In-memory File blobs for `FieldValue` entries with `source: 'file'`.
@@ -180,6 +188,8 @@ interface WorkflowState {
    * Pass `avoidOverlap: true` when the gesture has settled (drop / drag-end)
    * so the card nudges clear of neighbors; leave it off while dragging so the
    * card tracks the pointer without fighting collision snaps mid-gesture.
+   * Fellow members of the same canvas group are never obstacles — groups may
+   * keep the tight/overlapping layout drop-to-group creates.
    */
   updateNodePosition: (nodeId: string, position: Position, options?: { avoidOverlap?: boolean }) => void;
   /**
@@ -208,6 +218,30 @@ interface WorkflowState {
   connectNodes: (fromNodeId: string, toNodeId: string) => void;
   /** Removes one explicit connection edge. Doesn't touch fieldValues — a mapped field that happens to rely on this same ordering still implies its own "runs after" edge regardless (see computeExecutionLevels), so this can't silently break a dependency the way removeNode's cleanup has to guard against. Also disarms any breakpoint on that connection — same dangling-reference reasoning as removeNode's fieldValues cleanup. */
   disconnectNodes: (fromNodeId: string, toNodeId: string) => void;
+  /**
+   * Creates a canvas group from two nodes (drop-overlap create). Places the
+   * dragged node at `draggedPosition` (no anti-overlap snap). No-op while locked.
+   */
+  createGroup: (opts: {
+    name: string;
+    nodeIds: [string, string];
+    draggedNodeId: string;
+    draggedPosition: Position;
+    skipConfirmOnDrop?: boolean;
+  }) => string;
+  /** Adds a node to an existing group. No-op while locked / if already a member. */
+  joinGroup: (groupId: string, nodeId: string, position: Position, opts?: { skipConfirmOnDrop?: boolean }) => void;
+  /** Dissolves a group; member nodes stay on the canvas. */
+  ungroup: (groupId: string) => void;
+  /** Removes one member; dissolves the group if fewer than 2 members remain. */
+  removeFromGroup: (groupId: string, nodeId: string) => void;
+  setGroupCollapsed: (groupId: string, collapsed: boolean) => void;
+  setGroupName: (groupId: string, name: string) => void;
+  /**
+   * Moves group chrome and every member by the same delta. Visual only —
+   * exempt from `isLocked`, like `updateNodePosition`.
+   */
+  moveGroup: (groupId: string, position: Position) => void;
   /** Toggles a breakpoint on one connection edge — never meaningful for a field-mapping edge, since only WorkflowConnections are ever passed here (see components/Canvas.tsx, the only caller). */
   toggleBreakpoint: (fromNodeId: string, toNodeId: string) => void;
   /** Releases every node currently paused at a breakpoint in the active run. A no-op if no run is in progress. */
@@ -271,6 +305,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   nodes: [],
   connections: [],
   nodePositions: {},
+  groups: [],
   credentials: [],
   uploadedFiles: {},
   declaredCredentials: [],
@@ -328,15 +363,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   updateNodePosition: (nodeId, position, options) =>
     set((state) => {
-      const next =
-        options?.avoidOverlap === true
-          ? findOpenPosition(
-              position,
-              Object.entries(state.nodePositions)
-                .filter(([id]) => id !== nodeId)
-                .map(([, pos]) => pos)
-            )
-          : position;
+      let next = position;
+      if (options?.avoidOverlap === true) {
+        const ownGroup = state.groups.find((g) => g.nodeIds.includes(nodeId));
+        const skip = new Set<string>([nodeId, ...(ownGroup?.nodeIds ?? [])]);
+        const obstacles = Object.entries(state.nodePositions)
+          .filter(([id]) => !skip.has(id))
+          .map(([, pos]) => pos);
+        next = findOpenPosition(position, obstacles);
+      }
       return { nodePositions: { ...state.nodePositions, [nodeId]: next } };
     }),
 
@@ -366,10 +401,16 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           return changed ? { ...n, fieldValues } : n;
         });
 
+      // Drop the node from any group; dissolve groups left with < 2 members.
+      const groups = state.groups
+        .map((g) => (g.nodeIds.includes(nodeId) ? { ...g, nodeIds: g.nodeIds.filter((id) => id !== nodeId) } : g))
+        .filter((g) => g.nodeIds.length >= 2);
+
       return {
         nodes,
         nodePositions,
         uploadedFiles,
+        groups,
         connections: state.connections.filter((c) => c.fromNodeId !== nodeId && c.toNodeId !== nodeId),
         selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
       };
@@ -474,6 +515,152 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       };
     }),
 
+  createGroup: ({ name, nodeIds, draggedNodeId, draggedPosition, skipConfirmOnDrop }) => {
+    if (isLocked(get())) return '';
+    const id = `g-${randomId()}`;
+    set((state) => {
+      let groups = state.groups
+        .map((g) => ({
+          ...g,
+          nodeIds: g.nodeIds.filter((nid) => !nodeIds.includes(nid)),
+        }))
+        .filter((g) => g.nodeIds.length >= 2);
+
+      const nodePositions = {
+        ...state.nodePositions,
+        [draggedNodeId]: draggedPosition,
+      };
+      const frame = expandedGroupFrame(nodeIds, nodePositions);
+      const group: NodeGroup = {
+        id,
+        name: name.trim() || 'Group',
+        nodeIds: sortGroupMemberIds(nodeIds, nodePositions),
+        collapsed: false,
+        position: frame?.position ?? draggedPosition,
+        skipConfirmOnDrop: skipConfirmOnDrop ?? false,
+      };
+      groups = [...groups, group];
+      return { groups, nodePositions };
+    });
+    return id;
+  },
+
+  joinGroup: (groupId, nodeId, position, opts) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      const target = state.groups.find((g) => g.id === groupId);
+      if (!target || target.nodeIds.includes(nodeId)) return state;
+
+      let groups = state.groups
+        .map((g) =>
+          g.id === groupId ? g : { ...g, nodeIds: g.nodeIds.filter((id) => id !== nodeId) }
+        )
+        .filter((g) => g.id === groupId || g.nodeIds.length >= 2);
+
+      const memberObstacles = Object.entries(state.nodePositions)
+        .filter(([id]) => id !== nodeId && !target.nodeIds.includes(id))
+        .map(([, pos]) => pos);
+      // Keep the drop position relative to groupmates (may stay tight/overlapping);
+      // only nudge clear of nodes *outside* this group.
+      const settled = findOpenPosition(position, memberObstacles);
+      const nodePositions = { ...state.nodePositions, [nodeId]: settled };
+
+      groups = groups.map((g) => {
+        if (g.id !== groupId) return g;
+        const nodeIds = sortGroupMemberIds([...g.nodeIds, nodeId], nodePositions);
+        const frame = expandedGroupFrame(nodeIds, nodePositions);
+        return {
+          ...g,
+          nodeIds,
+          position: frame?.position ?? g.position,
+          skipConfirmOnDrop: opts?.skipConfirmOnDrop ?? g.skipConfirmOnDrop,
+        };
+      });
+
+      return { groups, nodePositions };
+    }),
+
+  ungroup: (groupId) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return { groups: state.groups.filter((g) => g.id !== groupId) };
+    }),
+
+  removeFromGroup: (groupId, nodeId) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      const group = state.groups.find((g) => g.id === groupId);
+      if (!group || !group.nodeIds.includes(nodeId)) return state;
+
+      const remainingIds = group.nodeIds.filter((id) => id !== nodeId);
+      const groups = state.groups
+        .map((g) => (g.id === groupId ? { ...g, nodeIds: remainingIds } : g))
+        .filter((g) => g.nodeIds.length >= 2);
+
+      // If the released card still overlaps a former groupmate, nudge it
+      // clear so the expanded frame no longer wraps it and the next
+      // drag-end doesn't immediately re-offer "join this group".
+      const nodePositions = { ...state.nodePositions };
+      const pos = nodePositions[nodeId];
+      if (pos && remainingIds.length > 0) {
+        const obstacles = Object.entries(nodePositions)
+          .filter(([id]) => id !== nodeId)
+          .map(([, p]) => p);
+        nodePositions[nodeId] = findOpenPosition(pos, obstacles);
+      }
+
+      // Re-anchor remaining group's chrome if it survived.
+      const nextGroups = groups.map((g) => {
+        if (g.id !== groupId) return g;
+        const frame = expandedGroupFrame(g.nodeIds, nodePositions);
+        return { ...g, position: frame?.position ?? g.position };
+      });
+
+      return { groups: nextGroups, nodePositions };
+    }),
+
+  setGroupCollapsed: (groupId, collapsed) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        groups: state.groups.map((g) => {
+          if (g.id !== groupId) return g;
+          const frame = expandedGroupFrame(g.nodeIds, state.nodePositions);
+          return { ...g, collapsed, position: frame?.position ?? g.position };
+        }),
+      };
+    }),
+
+  setGroupName: (groupId, name) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        groups: state.groups.map((g) => (g.id === groupId ? { ...g, name: name.trim() || 'Group' } : g)),
+      };
+    }),
+
+  moveGroup: (groupId, position) =>
+    set((state) => {
+      const group = state.groups.find((g) => g.id === groupId);
+      if (!group) return state;
+      // Expanded chrome is derived from member bounds each render — delta
+      // against that frame origin, not a possibly-stale stored position.
+      const frame = group.collapsed ? null : expandedGroupFrame(group.nodeIds, state.nodePositions);
+      const origin = group.collapsed ? group.position : (frame?.position ?? group.position);
+      const dx = position.x - origin.x;
+      const dy = position.y - origin.y;
+      if (dx === 0 && dy === 0) return state;
+      const nodePositions = { ...state.nodePositions };
+      for (const nid of group.nodeIds) {
+        const pos = nodePositions[nid];
+        if (pos) nodePositions[nid] = { x: pos.x + dx, y: pos.y + dy };
+      }
+      return {
+        nodePositions,
+        groups: state.groups.map((g) => (g.id === groupId ? { ...g, position } : g)),
+      };
+    }),
+
   toggleBreakpoint: (fromNodeId, toNodeId) =>
     set((state) => {
       if (isLocked(state)) return state;
@@ -526,6 +713,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodes: next.nodes,
       connections: next.connections,
       nodePositions: next.nodePositions,
+      groups: next.groups,
       credentials: next.credentials,
       uploadedFiles: {},
       workflowName,

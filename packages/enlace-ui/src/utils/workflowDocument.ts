@@ -7,6 +7,7 @@ import type {
   CredentialType,
   EnlaceCollection,
   FieldValue,
+  NodeGroup,
   Operation,
   RawBody,
   WorkflowConnection,
@@ -34,6 +35,7 @@ export interface SerializeWorkflowInput {
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
   nodePositions: Record<string, { x: number; y: number }>;
+  groups?: NodeGroup[];
   credentials: Credential[];
   specInfo?: { title?: string; version?: string } | null;
   /** Override for tests — defaults to `new Date().toISOString()`. */
@@ -71,6 +73,7 @@ export function serializeCollection(input: SerializeWorkflowInput): EnlaceCollec
         nodePositions: Object.fromEntries(
           Object.entries(input.nodePositions).map(([id, pos]) => [id, { x: pos.x, y: pos.y }])
         ),
+        groups: sanitizeGroups(input.groups ?? [], new Set(nodes.map((n) => n.id))),
       },
     ],
   };
@@ -144,6 +147,19 @@ export function parseCollection(
     nodePositions[id] = { x: pos.x, y: pos.y };
   }
 
+  let groups: NodeGroup[] = [];
+  if (workflowValue.groups !== undefined) {
+    if (!Array.isArray(workflowValue.groups)) {
+      return { ok: false, error: 'Collection workflow "groups" must be an array when present.' };
+    }
+    for (let i = 0; i < workflowValue.groups.length; i++) {
+      const group = parseGroup(workflowValue.groups[i], i);
+      if (typeof group === 'string') return { ok: false, error: group };
+      groups.push(group);
+    }
+    groups = sanitizeGroups(groups, new Set(nodes.map((n) => n.id)));
+  }
+
   const credentials: Array<CredentialStub | Credential> = [];
   let unexpectedSecretsDiscarded = false;
   for (let i = 0; i < value.credentials.length; i++) {
@@ -175,6 +191,7 @@ export function parseCollection(
     nodes,
     connections,
     nodePositions,
+    groups,
   };
   const collection: EnlaceCollection = {
     format: ENLACE_COLLECTION_FORMAT,
@@ -213,15 +230,18 @@ export function hydrateCollection(collection: EnlaceCollection): {
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
   nodePositions: Record<string, { x: number; y: number }>;
+  groups: NodeGroup[];
   credentials: Credential[];
 } {
   const workflow = collection.workflows[0];
+  const nodes = workflow.nodes.map(serializeNode);
   return {
-    nodes: workflow.nodes.map(serializeNode),
+    nodes,
     connections: workflow.connections.map((c) => ({ fromNodeId: c.fromNodeId, toNodeId: c.toNodeId })),
     nodePositions: Object.fromEntries(
       Object.entries(workflow.nodePositions).map(([id, pos]) => [id, { x: pos.x, y: pos.y }])
     ),
+    groups: sanitizeGroups(workflow.groups ?? [], new Set(nodes.map((n) => n.id))),
     credentials: hydrateCredentials(collection),
   };
 }
@@ -519,6 +539,50 @@ function parseConnection(raw: unknown, index: number): WorkflowConnection | stri
     return `Enlace collection has an invalid connection at index ${index}.`;
   }
   return { fromNodeId: raw.fromNodeId, toNodeId: raw.toNodeId };
+}
+
+function parseGroup(raw: unknown, index: number): NodeGroup | string {
+  if (!isRecord(raw)) {
+    return `Enlace collection has an invalid group at index ${index}.`;
+  }
+  if (typeof raw.id !== 'string' || isUnsafeKey(raw.id)) {
+    return `Enlace collection has an invalid group id at index ${index}.`;
+  }
+  if (typeof raw.name !== 'string') {
+    return `Enlace collection group "${raw.id}" is missing a name.`;
+  }
+  if (!Array.isArray(raw.nodeIds) || !raw.nodeIds.every((id) => typeof id === 'string')) {
+    return `Enlace collection group "${raw.id}" has an invalid "nodeIds" array.`;
+  }
+  if (typeof raw.collapsed !== 'boolean') {
+    return `Enlace collection group "${raw.id}" is missing a boolean "collapsed".`;
+  }
+  if (!isRecord(raw.position) || typeof raw.position.x !== 'number' || typeof raw.position.y !== 'number') {
+    return `Enlace collection group "${raw.id}" has an invalid "position".`;
+  }
+  if (typeof raw.skipConfirmOnDrop !== 'boolean') {
+    return `Enlace collection group "${raw.id}" is missing a boolean "skipConfirmOnDrop".`;
+  }
+  return {
+    id: raw.id,
+    name: raw.name.trim() || 'Group',
+    nodeIds: [...raw.nodeIds],
+    collapsed: raw.collapsed,
+    position: { x: raw.position.x, y: raw.position.y },
+    skipConfirmOnDrop: raw.skipConfirmOnDrop,
+  };
+}
+
+/** Drop dangling member ids; dissolve groups left with fewer than 2 members. */
+function sanitizeGroups(groups: NodeGroup[], knownNodeIds: Set<string>): NodeGroup[] {
+  return groups
+    .map((g) => ({
+      ...g,
+      name: g.name.trim() || 'Group',
+      nodeIds: [...new Set(g.nodeIds.filter((id) => knownNodeIds.has(id)))],
+      position: { x: g.position.x, y: g.position.y },
+    }))
+    .filter((g) => g.nodeIds.length >= 2);
 }
 
 function parseCredentialStub(

@@ -10,6 +10,7 @@ beforeEach(() => {
     nodes: [],
     connections: [],
     nodePositions: {},
+    groups: [],
     selectedNodeId: null,
     credentials: [],
     declaredCredentials: [],
@@ -649,5 +650,253 @@ describe('locked while a run is in progress', () => {
     const state = useWorkflowStore.getState();
     expect(state.connections).toEqual([{ fromNodeId: a, toNodeId: b }]);
     expect(state.armedBreakpoints).toEqual(new Set([connectionKey(a, b)]));
+  });
+});
+
+describe('workflowStore node groups', () => {
+  beforeEach(() => {
+    useWorkflowStore.setState({
+      nodes: [],
+      connections: [],
+      nodePositions: {},
+      groups: [],
+      operations: [
+        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
+        { id: 'GET /b', method: 'get', path: '/b', parameters: [], requestBodySchema: null, responseSchema: null },
+        { id: 'GET /c', method: 'get', path: '/c', parameters: [], requestBodySchema: null, responseSchema: null },
+      ],
+      selectedNodeId: null,
+      isRunning: false,
+    });
+  });
+
+  it('createGroup stores members in canvas reading order, not drag order', () => {
+    const { addNode, createGroup } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 400, y: 0 });
+    // Same as Canvas: [dragged, target] when the right-hand card is dropped onto the left.
+    createGroup({
+      name: 'Orders',
+      nodeIds: [b, a],
+      draggedNodeId: b,
+      draggedPosition: { x: 50, y: 0 },
+    });
+    expect(useWorkflowStore.getState().groups[0].nodeIds).toEqual([a, b]);
+  });
+
+  it('createGroup links two nodes and parks the dragged card at the drop position', () => {
+    const { addNode, createGroup } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 400, y: 0 });
+    const id = createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 390, y: 5 },
+      skipConfirmOnDrop: true,
+    });
+    expect(id).toMatch(/^g-/);
+    const group = useWorkflowStore.getState().groups[0];
+    expect(group.name).toBe('Orders');
+    expect(group.nodeIds).toEqual(expect.arrayContaining([a, b]));
+    expect(group.skipConfirmOnDrop).toBe(true);
+    expect(useWorkflowStore.getState().nodePositions[a]).toEqual({ x: 390, y: 5 });
+  });
+
+  it('joinGroup adds a member and can set skipConfirmOnDrop', () => {
+    const { addNode, createGroup, joinGroup } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 300, y: 0 });
+    const c = addNode('GET /c', { x: 600, y: 0 });
+    const gid = createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 0, y: 0 },
+    });
+    joinGroup(gid, c, { x: 280, y: 10 }, { skipConfirmOnDrop: true });
+    const group = useWorkflowStore.getState().groups.find((g) => g.id === gid)!;
+    expect(group.nodeIds).toContain(c);
+    expect(group.skipConfirmOnDrop).toBe(true);
+  });
+
+  it('ungroup dissolves without removing nodes', () => {
+    const { addNode, createGroup, ungroup } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 300, y: 0 });
+    const gid = createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 0, y: 0 },
+    });
+    ungroup(gid);
+    expect(useWorkflowStore.getState().groups).toHaveLength(0);
+    expect(useWorkflowStore.getState().nodes).toHaveLength(2);
+  });
+
+  it('removeNode drops membership and dissolves a 1-member leftover group', () => {
+    const { addNode, createGroup, removeNode } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 300, y: 0 });
+    createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 0, y: 0 },
+    });
+    removeNode(a);
+    expect(useWorkflowStore.getState().groups).toHaveLength(0);
+    expect(useWorkflowStore.getState().nodes.map((n) => n.id)).toEqual([b]);
+  });
+
+  it('createGroup / joinGroup / ungroup no-op while running', () => {
+    const { addNode, createGroup, joinGroup, ungroup } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 300, y: 0 });
+    const c = addNode('GET /c', { x: 600, y: 0 });
+    const gid = createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 0, y: 0 },
+    });
+    useWorkflowStore.setState({ isRunning: true });
+    expect(
+      createGroup({
+        name: 'Nope',
+        nodeIds: [b, c],
+        draggedNodeId: c,
+        draggedPosition: { x: 300, y: 0 },
+      })
+    ).toBe('');
+    joinGroup(gid, c, { x: 280, y: 0 });
+    ungroup(gid);
+    const state = useWorkflowStore.getState();
+    expect(state.groups).toHaveLength(1);
+    expect(state.groups[0].nodeIds).toEqual(expect.arrayContaining([a, b]));
+    expect(state.groups[0].nodeIds).not.toContain(c);
+  });
+
+  it('moveGroup shifts every member by the same delta', () => {
+    const { addNode, createGroup, moveGroup } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 100, y: 100 });
+    const b = addNode('GET /b', { x: 400, y: 100 });
+    const gid = createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 100, y: 100 },
+    });
+    const before = useWorkflowStore.getState();
+    const origin = before.groups[0].position;
+    moveGroup(gid, { x: origin.x + 50, y: origin.y + 20 });
+    const after = useWorkflowStore.getState();
+    expect(after.nodePositions[a]).toEqual({ x: 150, y: 120 });
+    expect(after.nodePositions[b]).toEqual({ x: 450, y: 120 });
+  });
+
+  it('keeps tight member packing when the group moves — no min-gap snap between groupmates', () => {
+    const { addNode, createGroup, moveGroup, updateNodePosition } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 400, y: 0 });
+    // Overlap them the way drop-to-group does
+    createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 10, y: 10 },
+    });
+    const before = useWorkflowStore.getState();
+    expect(before.nodePositions[a]).toEqual({ x: 10, y: 10 });
+    const origin = before.groups[0].position;
+    moveGroup(before.groups[0].id, { x: origin.x + 80, y: origin.y + 40 });
+    const mid = useWorkflowStore.getState();
+    expect(mid.nodePositions[a]).toEqual({ x: 90, y: 50 });
+    expect(mid.nodePositions[b]).toEqual({
+      x: before.nodePositions[b].x + 80,
+      y: before.nodePositions[b].y + 40,
+    });
+    // Settling one member must not push it clear of its groupmate
+    updateNodePosition(a, mid.nodePositions[a], { avoidOverlap: true });
+    expect(useWorkflowStore.getState().nodePositions[a]).toEqual(mid.nodePositions[a]);
+  });
+
+  it('removeFromGroup releases one member and dissolves when fewer than 2 remain', () => {
+    const { addNode, createGroup, removeFromGroup } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 300, y: 0 });
+    const c = addNode('GET /c', { x: 600, y: 0 });
+    const gid = createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 0, y: 0 },
+    });
+    useWorkflowStore.getState().joinGroup(gid, c, { x: 280, y: 10 });
+    expect(useWorkflowStore.getState().groups[0].nodeIds).toHaveLength(3);
+
+    removeFromGroup(gid, c);
+    const afterOne = useWorkflowStore.getState();
+    expect(afterOne.groups[0].nodeIds).toEqual(expect.arrayContaining([a, b]));
+    expect(afterOne.groups[0].nodeIds).not.toContain(c);
+    expect(afterOne.nodes.map((n) => n.id)).toEqual(expect.arrayContaining([a, b, c]));
+
+    removeFromGroup(gid, a);
+    // One member left → group dissolves; both a and b stay on the canvas
+    expect(useWorkflowStore.getState().groups).toHaveLength(0);
+    expect(useWorkflowStore.getState().nodes).toHaveLength(3);
+  });
+
+  it('removeFromGroup no-ops while running', () => {
+    const { addNode, createGroup, removeFromGroup } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 300, y: 0 });
+    const gid = createGroup({
+      name: 'Orders',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 0, y: 0 },
+    });
+    useWorkflowStore.setState({ isRunning: true });
+    removeFromGroup(gid, a);
+    expect(useWorkflowStore.getState().groups[0].nodeIds).toEqual(expect.arrayContaining([a, b]));
+  });
+
+  it('replaceWorkflow restores groups from the collection', () => {
+    const { addNode, createGroup, replaceWorkflow } = useWorkflowStore.getState();
+    const a = addNode('GET /a', { x: 0, y: 0 });
+    const b = addNode('GET /b', { x: 100, y: 0 });
+    createGroup({
+      name: 'Local',
+      nodeIds: [a, b],
+      draggedNodeId: a,
+      draggedPosition: { x: 0, y: 0 },
+    });
+
+    const incoming = serializeCollection({
+      name: 'Imported',
+      nodes: [
+        { id: 'n-new', operationId: 'GET /a', credentialId: null, fieldValues: {} },
+        { id: 'n-new-2', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+      ],
+      connections: [],
+      nodePositions: { 'n-new': { x: 40, y: 80 }, 'n-new-2': { x: 60, y: 80 } },
+      groups: [
+        {
+          id: 'g-import',
+          name: 'Imported group',
+          nodeIds: ['n-new', 'n-new-2'],
+          collapsed: false,
+          position: { x: 20, y: 40 },
+          skipConfirmOnDrop: false,
+        },
+      ],
+      credentials: [],
+    });
+    replaceWorkflow(incoming);
+    const state = useWorkflowStore.getState();
+    expect(state.groups).toEqual(incoming.workflows[0].groups);
+    expect(state.nodes.map((n) => n.id)).toEqual(['n-new', 'n-new-2']);
   });
 });

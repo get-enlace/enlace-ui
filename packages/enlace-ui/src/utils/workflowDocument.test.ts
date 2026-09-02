@@ -94,6 +94,48 @@ describe('serializeCollection', () => {
     expect(doc.workflows[0].nodes).toEqual([node]);
     expect(doc.workflows[0].connections).toEqual([{ fromNodeId: 'n0', toNodeId: 'n1' }]);
     expect(doc.workflows[0].nodePositions).toEqual({ n1: { x: 10, y: 20 } });
+    expect(doc.workflows[0].groups).toEqual([]);
+  });
+
+  it('round-trips canvas groups with the workflow', () => {
+    const group = {
+      id: 'g-orders',
+      name: 'Orders',
+      nodeIds: ['n1', 'n2'],
+      collapsed: true,
+      position: { x: 40, y: 60 },
+      skipConfirmOnDrop: true,
+    };
+    const doc = serializeCollection({
+      name: 'Grouped',
+      nodes: [
+        { id: 'n1', operationId: 'GET /a', credentialId: null, fieldValues: {} },
+        { id: 'n2', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+        { id: 'n3', operationId: 'GET /c', credentialId: null, fieldValues: {} },
+      ],
+      connections: [],
+      nodePositions: { n1: { x: 0, y: 0 }, n2: { x: 10, y: 10 }, n3: { x: 200, y: 0 } },
+      groups: [group, { ...group, id: 'g-drop', nodeIds: ['n1'] }], // <2 after sanitize dropped
+      credentials: [],
+      now: () => '2026-09-02T00:00:00.000Z',
+    });
+    expect(doc.workflows[0].groups).toEqual([group]);
+
+    const parsed = parseCollection(doc);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.collection.workflows[0].groups).toEqual([group]);
+    expect(hydrateCollection(parsed.collection).groups).toEqual([group]);
+  });
+
+  it('accepts collections that omit groups (treats as empty)', () => {
+    const bare = serializeAll();
+    const { groups: _ignored, ...workflowWithoutGroups } = bare.workflows[0];
+    const raw = { ...bare, workflows: [workflowWithoutGroups] };
+    const parsed = parseCollection(raw);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.collection.workflows[0].groups).toEqual([]);
   });
 
   it('drops the authenticating field on every credential type and keeps non-secret config', () => {

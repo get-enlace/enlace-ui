@@ -23,6 +23,7 @@ describe('Canvas', () => {
     useWorkflowStore.setState({
       nodes: [],
       nodePositions: {},
+      groups: [],
       connections: [],
       operations: [petOperation],
       selectedNodeId: null,

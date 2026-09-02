@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { findOpenPosition, NODE_CARD_GAP, NODE_CARD_SIZE, rectsOverlap } from './nodePlacement.js';
+import {
+  findOpenPosition,
+  NODE_CARD_GAP,
+  NODE_CARD_SIZE,
+  overlapRatio,
+  rectsOverlap,
+} from './nodePlacement.js';
 
 describe('rectsOverlap', () => {
   it('detects partial overlap', () => {
@@ -12,6 +18,12 @@ describe('rectsOverlap', () => {
     expect(
       rectsOverlap({ x: 0, y: 0, width: 100, height: 100 }, { x: 100, y: 0, width: 100, height: 100 })
     ).toBe(false);
+  });
+});
+
+describe('overlapRatio', () => {
+  it('is zero for non-overlapping rects', () => {
+    expect(overlapRatio({ x: 0, y: 0, width: 10, height: 10 }, { x: 20, y: 20, width: 10, height: 10 })).toBe(0);
   });
 });
 

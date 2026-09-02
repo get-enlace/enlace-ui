@@ -29,6 +29,45 @@ export function rectsOverlap(a: NodeRect, b: NodeRect): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
+/**
+ * Fraction of the *smaller* rect’s area that intersects the other.
+ * Used for drop-to-group (≥ 0.5 means “half of the smaller card overlaps”).
+ */
+export function overlapRatio(a: NodeRect, b: NodeRect): number {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  if (x2 <= x1 || y2 <= y1) return 0;
+  const intersection = (x2 - x1) * (y2 - y1);
+  const smaller = Math.min(a.width * a.height, b.width * b.height);
+  return smaller === 0 ? 0 : intersection / smaller;
+}
+
+/** Compact collapsed group card — roughly one workflow node footprint (style A; unused once style B shipped). */
+export const GROUP_COLLAPSED_SIZE = { width: 220, height: 72 } as const;
+
+/** Collapsed style B — mini cluster: header + one row per member. */
+export const GROUP_COLLAPSED_WIDTH = 240;
+export const GROUP_COLLAPSED_HEADER = 36;
+export const GROUP_COLLAPSED_PAD = 16;
+export const GROUP_COLLAPSED_ROW = 28;
+
+export function collapsedGroupSize(memberCount: number): { width: number; height: number } {
+  const n = Math.max(1, memberCount);
+  return {
+    width: GROUP_COLLAPSED_WIDTH,
+    height: GROUP_COLLAPSED_HEADER + GROUP_COLLAPSED_PAD + n * GROUP_COLLAPSED_ROW,
+  };
+}
+
+/** Title bar + padding around members when a group is expanded. */
+export const GROUP_FRAME_PAD = 12;
+export const GROUP_TITLE_HEIGHT = 36;
+
+/** Drop-to-group threshold (see Canvas onNodeDragStop). */
+export const GROUP_OVERLAP_THRESHOLD = 0.5;
+
 function collides(
   position: Position,
   obstacles: Position[],
