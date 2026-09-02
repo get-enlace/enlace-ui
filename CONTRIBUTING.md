@@ -43,8 +43,9 @@ useful context before making a non-trivial change.
   fire independently right after their own publish job succeeds (split in
   two so a pending prod approval can't delay the dev notification): fans
   out a `repository_dispatch: enlace-ui-release` to every known adapter
-  repo (currently `enlace-js`, `enlace-dotnet`), so each can decide for
-  itself whether it needs to fetch the new build — see
+  repo (currently `enlace-js`, `enlace-dotnet`, `enlace-java`,
+  `enlace-python`), so each can decide for itself whether it needs to
+  fetch the new build — see
   [`release-strategy.md`](../release-strategy.md) for the full cross-repo
   picture.
 
@@ -54,6 +55,7 @@ One-time setup this needs, done in the repo's GitHub settings, not in code:
   created.
 - Still outstanding: an `NPM_TOKEN` secret (a public npmjs.org token) on
   the `production` environment, and a `CROSS_REPO_PAT` secret (scoped to
-  trigger `repository_dispatch` on `enlace-js`/`enlace-dotnet`) available
-  to the `notify-downstream-*` jobs. `GITHUB_TOKEN` (used for the GitHub
+  trigger `repository_dispatch` on
+  `enlace-js`/`enlace-dotnet`/`enlace-java`/`enlace-python`) available to
+  the `notify-downstream-*` jobs. `GITHUB_TOKEN` (used for the GitHub
   Packages dev channel) is automatic — no setup needed.

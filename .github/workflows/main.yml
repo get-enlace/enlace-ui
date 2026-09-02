@@ -194,9 +194,8 @@ jobs:
       matrix:
         # Add new adapter repos here as they come online — this is the
         # entire subscriber list (release-strategy.md §6: no separate
-        # registry file yet, at this scale). enlace-java isn't listed yet
-        # since that repo doesn't exist.
-        repo: [enlace-js, enlace-dotnet]
+        # registry file yet, at this scale).
+        repo: [enlace-js, enlace-dotnet, enlace-java, enlace-python]
     steps:
       - name: Notify ${{ matrix.repo }} (dev)
         # -w/-o capture the HTTP status separately from the response body so
@@ -222,7 +221,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        repo: [enlace-js, enlace-dotnet]
+        repo: [enlace-js, enlace-dotnet, enlace-java, enlace-python]
     steps:
       - name: Notify ${{ matrix.repo }} (prod)
         run: |
