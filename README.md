@@ -13,11 +13,15 @@ hand-written file, anything.
 
 ## What's here
 
-- **`packages/enlace-ui`** (`@get-enlace/ui`) — the canvas itself: the
+- **`packages/core`** (`@get-enlace/core`) — portable chain-execution
+  engine: spec parsing, dependency graph, credential injection, and
+  `executeChain`. No React/DOM. Private workspace package (not published);
+  used by the UI today, later a headless CLI.
+- **`packages/ui`** (`@get-enlace/ui`) — the canvas itself: the
   operations list, the drag-and-drop canvas, the node inspector for field
-  mapping and credentials, the debug pane, and the execution engine (spec
-  parsing and the level-based concurrent chain executor). All of it runs
-  client-side, in the browser.
+  mapping and credentials, and the debug pane. Depends on workspace
+  `@get-enlace/core` (bundled into the browser build; core is not published).
+  All of it runs client-side, in the browser.
 - **`examples/sample-api`** — a small sample API (three cross-referencing
   CRUD resources) plus a dev harness, so you can try Enlace immediately
   without wiring up anything of your own. Mounts the canvas via
@@ -74,7 +78,7 @@ order) needs data from **A and C, not B**.
 4. Connect box-to-box (drag right handle → left handle): A→B, A→C, A→D, C→D.
 5. On B: set `path.id` to "Map from..." → A → `id`; give `status` a static value like `"verified"`.
 6. On D: set `body.customerId` to "Map from..." → A → `id`, and `body.productId` to "Map from..." → C → `id`; give `qty` a static value.
-7. Click **Run**. All 4 calls come back green, in the order A, B, C, D — but B and C actually fire concurrently (see `computeExecutionLevels` in `packages/enlace-ui/src/engine/chainExecutor.ts`).
+7. Click **Run**. All 4 calls come back green, in the order A, B, C, D — but B and C actually fire concurrently (see `executeChain` in `packages/core/src/engine/chainExecutor.ts`).
 
 ## Try the credentials demo
 
