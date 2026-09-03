@@ -136,6 +136,38 @@ describe('OAuth2ClientCredentialsFields', () => {
     expect(screen.getByPlaceholderText('scope')).toHaveValue('read write');
   });
 
+  it('lets the user add extra token params onto the draft', async () => {
+    const user = userEvent.setup();
+    let latest: NewCredential | null = null;
+    function HarnessWithDraft() {
+      const [draft, setDraft] = useState<NewCredential>({
+        name: '',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: '',
+        clientId: '',
+        clientSecret: '',
+        scope: '',
+        clientAuthMethod: 'basic',
+      });
+      latest = draft;
+      return (
+        <OAuth2ClientCredentialsFields
+          draft={draft as Extract<NewCredential, { type: 'oauth2_clientCredentials' }>}
+          setDraft={setDraft}
+        />
+      );
+    }
+    render(<HarnessWithDraft />);
+
+    await user.type(screen.getByLabelText('Extra token param name 1'), 'audience');
+    await user.type(screen.getByLabelText('Extra token param value 1'), 'api://orders');
+
+    expect(latest).toMatchObject({
+      type: 'oauth2_clientCredentials',
+      extraTokenParams: { audience: 'api://orders' },
+    });
+  });
+
   it('defaults clientAuthMethod to Basic and lets it switch to POST body', async () => {
     const user = userEvent.setup();
     render(<Harness />);

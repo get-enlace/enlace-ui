@@ -109,6 +109,39 @@ describe('resolveCredentialInjection', () => {
     expect(body.get('scope')).toBe('read write');
   });
 
+  it('merges extraTokenParams into the client-credentials token body and ignores reserved keys', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 60 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      scope: 'read',
+      extraTokenParams: {
+        audience: 'api://orders',
+        resource: 'urn:orders',
+        grant_type: 'should-not-win',
+        scope: 'should-not-win',
+        client_id: 'should-not-win',
+        '': 'ignored',
+      },
+      clientAuthMethod: 'body',
+    };
+
+    await resolveCredentialInjection(credential);
+
+    const body = new URLSearchParams(fetchMock.mock.calls[0][1].body);
+    expect(body.get('grant_type')).toBe('client_credentials');
+    expect(body.get('scope')).toBe('read');
+    expect(body.get('client_id')).toBe('client-id');
+    expect(body.get('audience')).toBe('api://orders');
+    expect(body.get('resource')).toBe('urn:orders');
+  });
+
   it('reuses a cached token instead of re-fetching while it is still valid', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 3600 }));
     vi.stubGlobal('fetch', fetchMock);

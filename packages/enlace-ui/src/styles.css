@@ -1926,6 +1926,56 @@ body {
   color: var(--color-text-muted);
 }
 
+.credentials-panel__extra-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.credentials-panel__extra-params-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.credentials-panel__extra-params-add,
+.credentials-panel__extra-params-remove {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.credentials-panel__extra-params-add:hover,
+.credentials-panel__extra-params-remove:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+.credentials-panel__extra-params-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.credentials-panel__extra-params-row input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-panel-bg);
+  color: var(--color-text);
+  font-size: 12px;
+}
+
 /* Sits directly under the Login URL field it acts on, distinct from the
  * bottom Cancel/Save row — this triggers window.open() immediately, not a
  * form submission, so it reads as its own small action rather than part

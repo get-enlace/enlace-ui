@@ -144,6 +144,95 @@ export function ApiKeyFields({ draft, setDraft }: FieldsProps<ApiKeyDraft>) {
 
 type OAuth2ClientCredentialsDraft = Extract<NewCredential, { type: 'oauth2_clientCredentials' }>;
 
+type ParamRow = { key: string; value: string };
+
+function rowsFromParams(params: Record<string, string> | undefined): ParamRow[] {
+  const entries = Object.entries(params ?? {}).map(([key, value]) => ({ key, value }));
+  return entries.length > 0 ? entries : [{ key: '', value: '' }];
+}
+
+function paramsFromRows(rows: ParamRow[]): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (!key) continue;
+    out[key] = row.value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Optional extra form-body params on the OAuth2 token request (audience,
+ * resource, vendor claims, …). Shared by both oauth2 grants; Scope stays
+ * its own first-class field above this.
+ */
+function ExtraTokenParamsFields({
+  value,
+  onChange,
+}: {
+  value: Record<string, string> | undefined;
+  onChange: (next: Record<string, string> | undefined) => void;
+}) {
+  const [rows, setRows] = useState<ParamRow[]>(() => rowsFromParams(value));
+
+  const commit = (nextRows: ParamRow[]) => {
+    setRows(nextRows);
+    onChange(paramsFromRows(nextRows));
+  };
+
+  return (
+    <div className="credentials-panel__extra-params">
+      <div className="credentials-panel__extra-params-header">
+        <span>Extra token params (optional)</span>
+        <button
+          type="button"
+          className="credentials-panel__extra-params-add"
+          onClick={() => commit([...rows, { key: '', value: '' }])}
+        >
+          Add
+        </button>
+      </div>
+      <p className="credentials-panel__hint">
+        Sent as additional form fields on the token request. Use Scope above for{' '}
+        <code>scope</code> — reserved keys (grant_type, scope, client_id, …) are ignored here.
+      </p>
+      {rows.map((row, index) => (
+        <div key={index} className="credentials-panel__extra-params-row">
+          <input
+            placeholder="param name"
+            aria-label={`Extra token param name ${index + 1}`}
+            value={row.key}
+            onChange={(e) => {
+              const next = rows.map((r, i) => (i === index ? { ...r, key: e.target.value } : r));
+              commit(next);
+            }}
+          />
+          <input
+            placeholder="param value"
+            aria-label={`Extra token param value ${index + 1}`}
+            value={row.value}
+            onChange={(e) => {
+              const next = rows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r));
+              commit(next);
+            }}
+          />
+          <button
+            type="button"
+            className="credentials-panel__extra-params-remove"
+            aria-label={`Remove extra token param ${index + 1}`}
+            onClick={() => {
+              const next = rows.filter((_, i) => i !== index);
+              commit(next.length > 0 ? next : [{ key: '', value: '' }]);
+            }}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function OAuth2ClientCredentialsFields({ draft, setDraft }: FieldsProps<OAuth2ClientCredentialsDraft>) {
   return (
     <>
@@ -196,6 +285,10 @@ export function OAuth2ClientCredentialsFields({ draft, setDraft }: FieldsProps<O
           onChange={(e) => setDraft({ ...draft, scope: e.target.value })}
         />
       </label>
+      <ExtraTokenParamsFields
+        value={draft.extraTokenParams}
+        onChange={(extraTokenParams) => setDraft({ ...draft, extraTokenParams })}
+      />
     </>
   );
 }
@@ -268,6 +361,10 @@ export function OAuth2PasswordFields({ draft, setDraft }: FieldsProps<OAuth2Pass
           onChange={(e) => setDraft({ ...draft, scope: e.target.value })}
         />
       </label>
+      <ExtraTokenParamsFields
+        value={draft.extraTokenParams}
+        onChange={(extraTokenParams) => setDraft({ ...draft, extraTokenParams })}
+      />
     </>
   );
 }
