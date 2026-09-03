@@ -319,6 +319,97 @@ describe('resolveCredentialInjection', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('layers extraTokenParamOverrides on top of extraTokenParams, overriding a shared key', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 60 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      extraTokenParams: { audience: 'api://default', resource: 'urn:orders' },
+      clientAuthMethod: 'body',
+    };
+
+    await resolveCredentialInjection(credential, { audience: 'api://from-node' });
+
+    const body = new URLSearchParams(fetchMock.mock.calls[0][1].body);
+    expect(body.get('audience')).toBe('api://from-node');
+    expect(body.get('resource')).toBe('urn:orders');
+  });
+
+  it('ignores reserved keys in extraTokenParamOverrides same as extraTokenParams', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'issued-token', expires_in: 60 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_password',
+      tokenUrl: 'http://auth.test/token',
+      username: 'alice',
+      password: 'hunter2',
+      clientAuthMethod: 'body',
+    };
+
+    await resolveCredentialInjection(credential, { grant_type: 'should-not-win', password: 'should-not-win' });
+
+    const body = new URLSearchParams(fetchMock.mock.calls[0][1].body);
+    expect(body.get('grant_type')).toBe('password');
+    expect(body.get('password')).toBe('hunter2');
+  });
+
+  it('bypasses the token cache entirely when extraTokenParamOverrides is passed — always refetches, never caches the result', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { access_token: 'from-override', expires_in: 3600 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      clientAuthMethod: 'body',
+    };
+
+    await resolveCredentialInjection(credential, { audience: 'api://a' });
+    await resolveCredentialInjection(credential, { audience: 'api://a' });
+
+    // Same overrides passed twice — a cache keyed only on credential.id
+    // would have served the second call from cache; this proves it didn't.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("doesn't poison the cache for a later call with no overrides", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse(200, { access_token: 'from-override', expires_in: 3600 }))
+      .mockResolvedValueOnce(mockResponse(200, { access_token: 'normal-token', expires_in: 3600 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const credential: Credential = {
+      id: 'c1',
+      name: 'Test',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      clientAuthMethod: 'body',
+    };
+
+    await resolveCredentialInjection(credential, { audience: 'api://a' });
+    // No overrides this time — must hit the (still-empty) normal cache path
+    // and fetch its own token, not reuse whatever the overridden call got.
+    const result = await resolveCredentialInjection(credential);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ headers: { Authorization: 'Bearer normal-token' } });
+  });
+
   it('resolves cookie to credentials: "include", with no headers or query params at all', async () => {
     const credential: Credential = {
       id: 'c1',

@@ -8,7 +8,7 @@ import {
   getByPath,
   topologicalSort,
 } from './chainExecutor.js';
-import { __clearCredentialTokenCacheForTests } from './credentials.js';
+import { __clearCredentialTokenCacheForTests, resolveCredentialInjection } from './credentials.js';
 import type { Credential, Operation, RunControl, RunEvent, WorkflowConnection, WorkflowNode } from '../types.js';
 
 /** Flushes every currently-pending microtask (fetch mocks resolving, buildRequest's own promise chain, etc.) without advancing real time, so a paused/settled state has fully landed before assertions run. */
@@ -484,6 +484,229 @@ describe('executeChain', () => {
     for (const [, init] of requestCalls) {
       expect(init.headers.Authorization).toBe('Bearer issued-token');
     }
+  });
+
+  it('resolves credentialExtraParamOverrides from an ancestor node\'s response, runs it after that ancestor with no explicit connection, and never caches the resulting token', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: { body?: string }) => {
+      if (url === 'http://example.test/tenant') {
+        return Promise.resolve(mockResponse(200, { audience: 'api://from-tenant' }));
+      }
+      if (url === 'http://auth.test/token') {
+        const audience = new URLSearchParams(init?.body).get('audience');
+        return Promise.resolve(mockResponse(200, { access_token: `token-for-${audience}`, expires_in: 3600 }));
+      }
+      return Promise.resolve(mockResponse(200, {}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const tenantOp: Operation = {
+      id: 'GET /tenant',
+      method: 'get',
+      path: '/tenant',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    // No explicit connection from tenant -> b — the mapped override alone
+    // must be enough to order b after tenant.
+    const tenant: WorkflowNode = { id: 'tenant', operationId: 'GET /tenant', credentialId: null, fieldValues: {} };
+    const b: WorkflowNode = {
+      id: 'b',
+      operationId: 'GET /noop',
+      credentialId: 'cred-1',
+      fieldValues: {},
+      credentialExtraParamOverridesEnabled: true,
+      credentialExtraParamOverrides: {
+        audience: { source: 'mapped', fromNodeId: 'tenant', fromResponseFieldPath: 'audience' },
+      },
+    };
+    const credentialsById = new Map<string, Credential>([
+      [
+        'cred-1',
+        {
+          id: 'cred-1',
+          name: 'Test',
+          type: 'oauth2_clientCredentials',
+          tokenUrl: 'http://auth.test/token',
+          clientId: 'client-id',
+          clientSecret: 'client-secret',
+          clientAuthMethod: 'body',
+        },
+      ],
+    ]);
+
+    await executeChain(
+      { nodes: [tenant, b], connections: [] },
+      new Map([
+        ['GET /tenant', tenantOp],
+        ['GET /noop', noop],
+      ]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [, bInit] = fetchMock.mock.calls.find(([url]) => url === 'http://example.test/noop')!;
+    expect(bInit.headers.Authorization).toBe('Bearer token-for-api://from-tenant');
+
+    // Calling through the same shared credential again with no override
+    // must not see a token cached under the override's params.
+    await resolveCredentialInjection(credentialsById.get('cred-1')!);
+    const tokenCalls = fetchMock.mock.calls.filter(([url]) => url === 'http://auth.test/token');
+    expect(tokenCalls).toHaveLength(2);
+    const [, secondInit] = tokenCalls[1];
+    expect(new URLSearchParams(secondInit.body).has('audience')).toBe(false);
+  });
+
+  it("falls through to the credential's own extraTokenParams and its cache when an override is present but resolves to nothing (e.g. no response field picked yet)", async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: { body?: string }) => {
+      if (url === 'http://auth.test/token') {
+        const audience = new URLSearchParams(init?.body).get('audience');
+        return Promise.resolve(mockResponse(200, { access_token: `token-for-${audience}`, expires_in: 3600 }));
+      }
+      return Promise.resolve(mockResponse(200, {}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    // Two nodes sharing the credential: `b` is plain; `a` has an override
+    // row added (mapped from `b`, so no cycle) but no response field chosen
+    // yet ('' — the UI's "Select field..." state). Both must resolve to
+    // the *same*, cached token.
+    const b: WorkflowNode = { id: 'b', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = {
+      id: 'a',
+      operationId: 'GET /noop',
+      credentialId: 'cred-1',
+      fieldValues: {},
+      credentialExtraParamOverridesEnabled: true,
+      credentialExtraParamOverrides: {
+        audience: { source: 'mapped', fromNodeId: 'b', fromResponseFieldPath: '' },
+      },
+    };
+    const credentialsById = new Map<string, Credential>([
+      [
+        'cred-1',
+        {
+          id: 'cred-1',
+          name: 'Test',
+          type: 'oauth2_clientCredentials',
+          tokenUrl: 'http://auth.test/token',
+          clientId: 'client-id',
+          clientSecret: 'client-secret',
+          extraTokenParams: { audience: 'api://configured' },
+          clientAuthMethod: 'body',
+        },
+      ],
+    ]);
+
+    await executeChain(
+      { nodes: [a, b], connections: [] },
+      new Map([['GET /noop', noop]]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    // Exactly one token request — a's unresolved override didn't force its
+    // own uncached fetch, so b's normal cached path reused it.
+    const tokenCalls = fetchMock.mock.calls.filter(([url]) => url === 'http://auth.test/token');
+    expect(tokenCalls).toHaveLength(1);
+    expect(new URLSearchParams(tokenCalls[0][1].body).get('audience')).toBe('api://configured');
+
+    const requestCalls = fetchMock.mock.calls.filter(([url]) => url !== 'http://auth.test/token');
+    for (const [, init] of requestCalls) {
+      expect(init.headers.Authorization).toBe('Bearer token-for-api://configured');
+    }
+  });
+
+  it('ignores credentialExtraParamOverrides entirely while credentialExtraParamOverridesEnabled is off, even with a fully-configured, resolvable override', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: { body?: string }) => {
+      if (url === 'http://example.test/tenant') {
+        return Promise.resolve(mockResponse(200, { audience: 'api://from-tenant' }));
+      }
+      if (url === 'http://auth.test/token') {
+        const audience = new URLSearchParams(init?.body).get('audience');
+        return Promise.resolve(mockResponse(200, { access_token: `token-for-${audience}`, expires_in: 3600 }));
+      }
+      return Promise.resolve(mockResponse(200, {}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const tenantOp: Operation = {
+      id: 'GET /tenant',
+      method: 'get',
+      path: '/tenant',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const noop: Operation = {
+      id: 'GET /noop',
+      method: 'get',
+      path: '/noop',
+      parameters: [],
+      requestBodySchema: null,
+      responseSchema: null,
+    };
+    const tenant: WorkflowNode = { id: 'tenant', operationId: 'GET /tenant', credentialId: null, fieldValues: {} };
+    // Same fully-resolvable mapped override as the enabled-case test above,
+    // but with the toggle left off (undefined) — a leftover/previously
+    // configured override must stay completely inert.
+    const b: WorkflowNode = {
+      id: 'b',
+      operationId: 'GET /noop',
+      credentialId: 'cred-1',
+      fieldValues: {},
+      credentialExtraParamOverrides: {
+        audience: { source: 'mapped', fromNodeId: 'tenant', fromResponseFieldPath: 'audience' },
+      },
+    };
+    const credentialsById = new Map<string, Credential>([
+      [
+        'cred-1',
+        {
+          id: 'cred-1',
+          name: 'Test',
+          type: 'oauth2_clientCredentials',
+          tokenUrl: 'http://auth.test/token',
+          clientId: 'client-id',
+          clientSecret: 'client-secret',
+          extraTokenParams: { audience: 'api://configured' },
+          clientAuthMethod: 'body',
+        },
+      ],
+    ]);
+
+    // No connection either — with the override inert, nothing orders b after tenant.
+    await executeChain(
+      { nodes: [tenant, b], connections: [] },
+      new Map([
+        ['GET /tenant', tenantOp],
+        ['GET /noop', noop],
+      ]),
+      credentialsById,
+      { baseUrl: 'http://example.test' }
+    );
+
+    const [, bInit] = fetchMock.mock.calls.find(([url]) => url === 'http://example.test/noop')!;
+    expect(bInit.headers.Authorization).toBe('Bearer token-for-api://configured');
+
+    const tokenCalls = fetchMock.mock.calls.filter(([url]) => url === 'http://auth.test/token');
+    expect(tokenCalls).toHaveLength(1);
   });
 
   it('records a failed oauth2 token fetch as a normal failed RunStep, not an uncaught rejection', async () => {

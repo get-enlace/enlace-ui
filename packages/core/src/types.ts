@@ -93,6 +93,39 @@ export interface WorkflowNode {
   rawPath?: RawBody | null;
   rawQuery?: RawBody | null;
   rawBody?: RawBody | null;
+  /**
+   * Per-node overrides of an oauth2 credential's `extraTokenParams`
+   * (`oauth2_clientCredentials` / `oauth2_password` only — no effect on
+   * any other credential type), keyed by the same param name, resolved
+   * the same way a mapped `FieldValue` in `fieldValues` is: from a static
+   * value, or from an ancestor node's captured response.
+   *
+   * Deliberately layered *on top of* the credential's own
+   * `extraTokenParams` at request time rather than stored on the shared
+   * `Credential` itself — a `Credential` is collection-level and may be
+   * reused by several nodes (even across workflows), so a `fromNodeId`
+   * living there wouldn't reliably resolve everywhere it's used. Scoping
+   * the override to the node also means it deliberately bypasses
+   * engine/credentials.ts's token cache entirely (fetches a fresh token
+   * every time, never caches or reuses it, never mutates the stored
+   * credential) — correct, not just simpler, since a value pulled from a
+   * node's response can differ from one run to the next.
+   *
+   * Only takes effect at all when `credentialExtraParamOverridesEnabled`
+   * is `true` — see that flag's own comment below for why this map's
+   * contents alone are never enough to activate an override.
+   */
+  credentialExtraParamOverrides?: Record<string, FieldValue>;
+  /**
+   * Master switch for `credentialExtraParamOverrides` above — toggled off
+   * (the default), the map is inert: ignored by both `buildDependencyGraph`
+   * (no implied "runs after" edge) and `buildRequest` (no merge, normal
+   * cached token), *even if* it holds entries from a previous session with
+   * the toggle on. Turning the toggle off deliberately doesn't clear the
+   * map, so flipping it back on restores whatever was configured — this is
+   * a visibility/activation switch, not a delete action.
+   */
+  credentialExtraParamOverridesEnabled?: boolean;
 }
 
 /**

@@ -158,8 +158,22 @@ async function fetchCachedOAuth2Token(
  * token-endpoint round-trip (cached after the first — see above); every
  * other type resolves synchronously in practice but still returns a
  * Promise so chainExecutor.ts has one uniform call site.
+ *
+ * `extraTokenParamOverrides` — already resolved to plain strings by the
+ * caller (see chainExecutor.ts's `buildRequest`, which resolves each
+ * node's `credentialExtraParamOverrides` FieldValues against captured
+ * responses) — only affects the two oauth2 grants below, layered on top
+ * of the credential's own `extraTokenParams` (an override wins on a key
+ * both sides set). Passing this deliberately skips `fetchCachedOAuth2Token`
+ * entirely: the resulting token is fetched fresh and never written to
+ * `tokenCache`, since a value pulled from a node's response can differ
+ * from one run to the next — caching it would risk serving another node
+ * (or a later run) a token minted for the wrong params.
  */
-export async function resolveCredentialInjection(credential: Credential): Promise<CredentialInjection> {
+export async function resolveCredentialInjection(
+  credential: Credential,
+  extraTokenParamOverrides?: Record<string, string>
+): Promise<CredentialInjection> {
   switch (credential.type) {
     case 'bearer':
       return { headers: { Authorization: `Bearer ${credential.token}` } };
@@ -173,6 +187,7 @@ export async function resolveCredentialInjection(credential: Credential): Promis
       const params: Record<string, string> = { grant_type: 'client_credentials' };
       if (credential.scope) params.scope = credential.scope;
       applyExtraTokenParams(params, credential.extraTokenParams);
+      applyExtraTokenParams(params, extraTokenParamOverrides);
       // clientAuthMethod picks where clientId/clientSecret go on *this*
       // token request — 'basic' as an Authorization header (see
       // requestOAuth2Token), 'body' as form params alongside grant_type.
@@ -186,7 +201,9 @@ export async function resolveCredentialInjection(credential: Credential): Promis
         params.client_id = credential.clientId;
         params.client_secret = credential.clientSecret;
       }
-      const accessToken = await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
+      const accessToken = extraTokenParamOverrides
+        ? (await requestOAuth2Token(credential.tokenUrl, params, basicAuth)).accessToken
+        : await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
     case 'oauth2_password': {
@@ -200,6 +217,7 @@ export async function resolveCredentialInjection(credential: Credential): Promis
       };
       if (credential.scope) params.scope = credential.scope;
       applyExtraTokenParams(params, credential.extraTokenParams);
+      applyExtraTokenParams(params, extraTokenParamOverrides);
       const hasClientAuth = Boolean(credential.clientId && credential.clientSecret);
       const basicAuth =
         hasClientAuth && credential.clientAuthMethod === 'basic'
@@ -209,7 +227,9 @@ export async function resolveCredentialInjection(credential: Credential): Promis
         params.client_id = credential.clientId!;
         params.client_secret = credential.clientSecret!;
       }
-      const accessToken = await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
+      const accessToken = extraTokenParamOverrides
+        ? (await requestOAuth2Token(credential.tokenUrl, params, basicAuth)).accessToken
+        : await fetchCachedOAuth2Token(credential.id, credential.tokenUrl, params, basicAuth);
       return { headers: { Authorization: `Bearer ${accessToken}` } };
     }
     case 'cookie':

@@ -197,6 +197,22 @@ export interface WorkflowState {
   /** Batch version of setFieldValue — sets several field paths in one `set()`, so a Raw->Form conversion (which can touch many leaves at once, see utils/bodyTemplate.ts) doesn't trigger a render per leaf. */
   mergeFieldValues: (nodeId: string, values: Record<string, FieldValue>) => void;
   /**
+   * Sets (or, passing `null`, clears) one override in a node's
+   * `credentialExtraParamOverrides` — see that field's own comment on
+   * `WorkflowNode` in `@get-enlace/core`'s types.ts. Only meaningful when
+   * the node's attached credential is `oauth2_clientCredentials` /
+   * `oauth2_password` and declares an `extraTokenParams` key by this name;
+   * otherwise it's inert (still stored, never read at request time).
+   */
+  setCredentialExtraParamOverride: (nodeId: string, key: string, value: FieldValue | null) => void;
+  /**
+   * Master switch for `credentialExtraParamOverrides` — see that flag's own
+   * comment on `WorkflowNode` in `@get-enlace/core`'s types.ts. Toggling off
+   * leaves the map's contents untouched; it just stops being consulted at
+   * request-build time (and stops implying a "runs after" dependency edge).
+   */
+  setCredentialExtraParamOverridesEnabled: (nodeId: string, enabled: boolean) => void;
+  /**
    * Sets or clears a file field: updates `fieldValues` with a `file` marker
    * (or removes it) and keeps the real `File` only in `uploadedFiles`.
    */

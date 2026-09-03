@@ -33,4 +33,29 @@ describe('computeAncestors', () => {
 
     expect(computeAncestors([a, b], [], 'b')).toEqual(new Set());
   });
+
+  it('treats a mapped credentialExtraParamOverrides entry as an implied connection even with no explicit edge drawn', () => {
+    const a = node('a');
+    const b: WorkflowNode = {
+      ...node('b'),
+      credentialExtraParamOverridesEnabled: true,
+      credentialExtraParamOverrides: {
+        audience: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'tenant.audience' },
+      },
+    };
+
+    expect(computeAncestors([a, b], [], 'b')).toEqual(new Set(['a']));
+  });
+
+  it('ignores a mapped credentialExtraParamOverrides entry while credentialExtraParamOverridesEnabled is off', () => {
+    const a = node('a');
+    const b: WorkflowNode = {
+      ...node('b'),
+      credentialExtraParamOverrides: {
+        audience: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'tenant.audience' },
+      },
+    };
+
+    expect(computeAncestors([a, b], [], 'b')).toEqual(new Set());
+  });
 });

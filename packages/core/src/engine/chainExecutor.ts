@@ -224,7 +224,36 @@ export async function buildRequest(
   if (node.credentialId) {
     const credential = credentialsById.get(node.credentialId);
     if (credential) {
-      const injection = await resolveCredentialInjection(credential);
+      // Two gates, both must pass: the map is only even consulted while
+      // `credentialExtraParamOverridesEnabled` is true (toggled off, it's
+      // inert regardless of what it holds — see that flag's own comment on
+      // WorkflowNode), and even then, this stays `undefined` rather than an
+      // empty object unless at least one entry actually resolved to a
+      // value (a row can exist with nothing usable yet — no response field
+      // picked, or its source node hasn't produced that field).
+      // resolveCredentialInjection treats "was I passed anything at all" as
+      // "skip the cache", so either gate failing must fall through to
+      // `undefined` — that's what lets the credential's own configured
+      // extraTokenParams value (and its cached token) keep working
+      // untouched — see credentialExtraParamOverrides's own comment on
+      // WorkflowNode for why this deliberately isn't stored on Credential
+      // itself.
+      let extraTokenParamOverrides: Record<string, string> | undefined;
+      if (node.credentialExtraParamOverridesEnabled) {
+        for (const [key, fieldValue] of Object.entries(node.credentialExtraParamOverrides ?? {})) {
+          const value = resolveFieldValue(
+            fieldValue,
+            `credential.extraTokenParams.${key}`,
+            node.id,
+            stepsByNodeId,
+            uploadedFiles
+          );
+          if (value === undefined) continue;
+          extraTokenParamOverrides ??= {};
+          extraTokenParamOverrides[key] = String(value);
+        }
+      }
+      const injection = await resolveCredentialInjection(credential, extraTokenParamOverrides);
       Object.assign(headers, injection.headers);
       for (const [key, value] of Object.entries(injection.query ?? {})) {
         query.set(key, value);

@@ -26,6 +26,8 @@ export interface GraphSlice {
   setCredential: (nodeId: string, credentialId: string | null) => void;
   setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
   mergeFieldValues: (nodeId: string, values: Record<string, FieldValue>) => void;
+  setCredentialExtraParamOverride: (nodeId: string, key: string, value: FieldValue | null) => void;
+  setCredentialExtraParamOverridesEnabled: (nodeId: string, enabled: boolean) => void;
   setUploadedFile: (nodeId: string, fieldPath: string, file: File | null) => void;
   setRequestMode: (nodeId: string, mode: 'form' | 'raw') => void;
   setRawPath: (nodeId: string, rawPath: RawBody | null) => void;
@@ -109,7 +111,29 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
               changed = true;
             }
           }
-          return changed ? { ...n, fieldValues } : n;
+
+          // Same dangling-reference cleanup as fieldValues above, but a
+          // mapped override has no "static" fallback that makes sense here
+          // (there's no value to fall back to but the credential's own,
+          // which just means dropping the override entirely) — see
+          // credentialExtraParamOverrides's own comment on WorkflowNode.
+          let credentialExtraParamOverrides = n.credentialExtraParamOverrides;
+          if (credentialExtraParamOverrides) {
+            const next = { ...credentialExtraParamOverrides };
+            let overridesChanged = false;
+            for (const [key, fv] of Object.entries(next)) {
+              if (fv.source === 'mapped' && fv.fromNodeId === nodeId) {
+                delete next[key];
+                overridesChanged = true;
+              }
+            }
+            if (overridesChanged) {
+              credentialExtraParamOverrides = next;
+              changed = true;
+            }
+          }
+
+          return changed ? { ...n, fieldValues, credentialExtraParamOverrides } : n;
         });
 
       // Drop the node from any group; dissolve groups left with < 2 members.
@@ -159,6 +183,37 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       return {
         uploadedFiles,
         nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, fieldValues: { ...n.fieldValues, ...values } } : n)),
+      };
+    }),
+
+  // `null` clears the override (falls back to the credential's own
+  // extraTokenParams value); a FieldValue sets/replaces it. See
+  // WorkflowNode.credentialExtraParamOverrides's own comment in types.ts
+  // for why this lives per-node rather than on the shared Credential.
+  setCredentialExtraParamOverride: (nodeId, key, value) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) => {
+          if (n.id !== nodeId) return n;
+          const credentialExtraParamOverrides = { ...n.credentialExtraParamOverrides };
+          if (value) credentialExtraParamOverrides[key] = value;
+          else delete credentialExtraParamOverrides[key];
+          return { ...n, credentialExtraParamOverrides };
+        }),
+      };
+    }),
+
+  // Deliberately leaves credentialExtraParamOverrides untouched either way —
+  // this is a visibility/activation switch, not a delete action (see
+  // WorkflowNode.credentialExtraParamOverridesEnabled's own comment).
+  setCredentialExtraParamOverridesEnabled: (nodeId, enabled) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) =>
+          n.id === nodeId ? { ...n, credentialExtraParamOverridesEnabled: enabled } : n
+        ),
       };
     }),
 

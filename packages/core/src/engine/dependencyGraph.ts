@@ -40,6 +40,20 @@ export function buildDependencyGraph(
     }
   }
 
+  // Mapped credentialExtraParamOverrides — same "mapping implies its source
+  // must run first" rule as fieldValues above, see WorkflowNode's own
+  // comment on why this lives per-node rather than on the shared Credential.
+  // Skipped entirely while the override is toggled off: an inert map
+  // shouldn't force an ordering edge that only matters once it's live.
+  for (const node of nodes) {
+    if (!node.credentialExtraParamOverridesEnabled) continue;
+    for (const fieldValue of Object.values(node.credentialExtraParamOverrides ?? {})) {
+      if (fieldValue.source === 'mapped' && byId.has(fieldValue.fromNodeId)) {
+        dependsOn.get(node.id)!.add(fieldValue.fromNodeId);
+      }
+    }
+  }
+
   return dependsOn;
 }
 

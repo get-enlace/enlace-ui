@@ -53,6 +53,8 @@ export function NodeConfig() {
     setCredential,
     setFieldValue,
     mergeFieldValues,
+    setCredentialExtraParamOverride,
+    setCredentialExtraParamOverridesEnabled,
     setUploadedFile,
     setRequestMode,
     setRawPath,
@@ -126,6 +128,14 @@ export function NodeConfig() {
   const hasRequestToggle =
     !isMultipart && (pathFields.length > 0 || queryFields.length > 0 || Boolean(operation.requestBodySchema));
   const selectedCredential = credentials.find((c) => c.id === node.credentialId) ?? null;
+  // Only these two grant types have extraTokenParams at all — see
+  // WorkflowNode.credentialExtraParamOverrides's own comment on why this
+  // stays a per-node override rather than living on the shared Credential.
+  const extraParamKeys =
+    selectedCredential?.type === 'oauth2_clientCredentials' || selectedCredential?.type === 'oauth2_password'
+      ? Object.keys(selectedCredential.extraTokenParams ?? {})
+      : [];
+  const overridesEnabled = node.credentialExtraParamOverridesEnabled ?? false;
 
   function switchToRaw() {
     if (!node || !operation) return;
@@ -402,6 +412,104 @@ export function NodeConfig() {
     );
   }
 
+  /**
+   * One row per key the attached oauth2 credential declares in its
+   * `extraTokenParams`, always visible while `overridesEnabled` (the
+   * section's own toggle) is on — three states: "Default" (no entry in
+   * `credentialExtraParamOverrides`, falls through to whatever the
+   * credential itself has configured), "Mapped" (pulled from an ancestor
+   * node's response), "Static" (a literal value typed here, scoped to this
+   * node only — for when you want a different value per node without
+   * editing the shared credential).
+   */
+  function renderCredentialParamOverride(key: string) {
+    const override = node!.credentialExtraParamOverrides?.[key];
+    const mode = override?.source ?? 'default';
+    const isMapped = override?.source === 'mapped';
+    const sourceNode = isMapped ? ancestorNodes.find((n) => n.id === override.fromNodeId) : undefined;
+    const sourceOperation = sourceNode ? operations.find((o) => o.id === sourceNode.operationId) : undefined;
+    const responseFields = sourceOperation ? flattenResponseFields(sourceOperation) : [];
+
+    return (
+      <div key={key} className="node-config__field">
+        <label>{key}</label>
+
+        <div className={`node-config__field-row${isMapped ? ' node-config__field-row--mapped' : ''}`}>
+          <select
+            className="node-config__source-select"
+            value={mode}
+            aria-label={`Source for extra param ${key}`}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next === 'default') {
+                setCredentialExtraParamOverride(node!.id, key, null);
+              } else if (next === 'static') {
+                setCredentialExtraParamOverride(node!.id, key, { source: 'static', value: '' });
+              } else if (next === 'mapped' && ancestorNodes[0]) {
+                setCredentialExtraParamOverride(node!.id, key, {
+                  source: 'mapped',
+                  fromNodeId: ancestorNodes[0].id,
+                  fromResponseFieldPath: '',
+                });
+              }
+            }}
+          >
+            <option value="default">Default</option>
+            <option value="mapped" disabled={ancestorNodes.length === 0}>
+              Mapped
+            </option>
+            <option value="static">Static</option>
+          </select>
+
+          {override?.source === 'static' && (
+            <input
+              type="text"
+              aria-label={`Static value for extra param ${key}`}
+              value={String(override.value ?? '')}
+              onChange={(e) => setCredentialExtraParamOverride(node!.id, key, { source: 'static', value: e.target.value })}
+            />
+          )}
+
+          {override?.source === 'mapped' && (
+            <>
+              <select
+                aria-label={`Map extra param ${key} from node`}
+                value={override.fromNodeId}
+                onChange={(e) =>
+                  setCredentialExtraParamOverride(node!.id, key, { ...override, fromNodeId: e.target.value })
+                }
+              >
+                {ancestorNodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {nodeLabels.get(n.id)}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={`Map extra param ${key} from response field`}
+                value={override.fromResponseFieldPath}
+                onChange={(e) =>
+                  setCredentialExtraParamOverride(node!.id, key, {
+                    ...override,
+                    fromResponseFieldPath: e.target.value,
+                  })
+                }
+              >
+                <option value="">Select field...</option>
+                {responseFields.map((rf) => (
+                  <option key={rf.path} value={rf.path} disabled={!rf.supported} title={rf.reason}>
+                    {rf.path}
+                    {!rf.supported ? ' (unsupported)' : ''}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <aside className="node-config">
       {/* Operation verb+path is the pane header (no separate "Inspector" title).
@@ -461,6 +569,27 @@ export function NodeConfig() {
           </ul>
         )}
       </div>
+
+      {extraParamKeys.length > 0 && (
+        <section className="node-config__section">
+          <div className="node-config__request-header">
+            <h4 className="node-config__section-title">Override credential extra params?</h4>
+            <label className="body-mode-switch" title="Override this node's oauth2 credential's extra token params.">
+              <span className="body-mode-switch__label">{overridesEnabled ? 'On' : 'Off'}</span>
+              <input
+                type="checkbox"
+                checked={overridesEnabled}
+                onChange={(e) => setCredentialExtraParamOverridesEnabled(node!.id, e.target.checked)}
+                aria-label="Override credential extra params"
+              />
+              <span className="body-mode-switch__track">
+                <span className="body-mode-switch__thumb" />
+              </span>
+            </label>
+          </div>
+          {overridesEnabled && extraParamKeys.map(renderCredentialParamOverride)}
+        </section>
+      )}
 
       <div className="node-config__request-header">
         <h3>Request</h3>

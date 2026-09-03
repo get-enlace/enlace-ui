@@ -156,6 +156,191 @@ describe('NodeConfig', () => {
     expect(screen.getByRole('button', { name: 'Credential' })).toHaveClass('node-config__cred-lock--set');
   });
 
+  describe('credential extra params', () => {
+    const oauth2Credential = {
+      id: 'cred-oauth2',
+      name: 'staging-oauth2',
+      type: 'oauth2_clientCredentials' as const,
+      tokenUrl: 'http://auth.test/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      clientAuthMethod: 'body' as const,
+      extraTokenParams: { audience: 'api://default' },
+    };
+
+    it("doesn't render the section when no credential, or a non-oauth2 credential, is attached", () => {
+      useWorkflowStore.setState({
+        nodes: [makeNode({ credentialId: 'cred-bearer' })],
+        selectedNodeId: 'node-1',
+        credentials: [{ id: 'cred-bearer', name: 'bearer', type: 'bearer', token: 'x' }],
+      });
+      const { rerender } = render(<NodeConfig />);
+      expect(screen.queryByRole('heading', { name: 'Credential extra params' })).not.toBeInTheDocument();
+
+      useWorkflowStore.setState({ nodes: [makeNode({ credentialId: null })] });
+      rerender(<NodeConfig />);
+      expect(screen.queryByRole('heading', { name: 'Credential extra params' })).not.toBeInTheDocument();
+    });
+
+    it("doesn't render the section for an oauth2 credential with no extraTokenParams configured", () => {
+      useWorkflowStore.setState({
+        nodes: [makeNode({ credentialId: 'cred-oauth2' })],
+        selectedNodeId: 'node-1',
+        credentials: [{ ...oauth2Credential, extraTokenParams: undefined }],
+      });
+      render(<NodeConfig />);
+      expect(screen.queryByRole('heading', { name: 'Credential extra params' })).not.toBeInTheDocument();
+    });
+
+    it('shows the toggle off by default, with no field rows', () => {
+      useWorkflowStore.setState({
+        nodes: [makeNode({ credentialId: 'cred-oauth2' })],
+        selectedNodeId: 'node-1',
+        credentials: [oauth2Credential],
+      });
+      render(<NodeConfig />);
+
+      expect(screen.getByRole('heading', { name: 'Override credential extra params?' })).toBeInTheDocument();
+      const toggle = screen.getByRole('checkbox', { name: 'Override credential extra params' });
+      expect(toggle).not.toBeChecked();
+      expect(screen.queryByText((_, el) => el?.tagName === 'LABEL' && el.textContent === 'audience')).not.toBeInTheDocument();
+    });
+
+    it("stays off, with no rows, even when the node's overrideMap already has data — a leftover override is inert until toggled on", () => {
+      useWorkflowStore.setState({
+        nodes: [
+          makeNode({
+            credentialId: 'cred-oauth2',
+            credentialExtraParamOverrides: { audience: { source: 'static', value: 'api://leftover' } },
+          }),
+        ],
+        selectedNodeId: 'node-1',
+        credentials: [oauth2Credential],
+      });
+      render(<NodeConfig />);
+
+      expect(screen.getByRole('checkbox', { name: 'Override credential extra params' })).not.toBeChecked();
+      expect(screen.queryByText((_, el) => el?.tagName === 'LABEL' && el.textContent === 'audience')).not.toBeInTheDocument();
+    });
+
+    it('turning the toggle on reveals one row per extraTokenParams key, defaulting to "Default"', async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        nodes: [makeNode({ credentialId: 'cred-oauth2' })],
+        selectedNodeId: 'node-1',
+        credentials: [oauth2Credential],
+      });
+      render(<NodeConfig />);
+
+      await user.click(screen.getByRole('checkbox', { name: 'Override credential extra params' }));
+
+      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverridesEnabled).toBe(true);
+      const row = fieldRow('audience');
+      expect(row.getByRole('combobox', { name: 'Source for extra param audience' })).toHaveValue('default');
+    });
+
+    it('switching a row to Mapped defaults to the first ancestor with no response field selected, and stores it', async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        nodes: [
+          makeNode({ id: 'a', operationId: 'GET /pet/{petId}', credentialId: null }),
+          makeNode({ id: 'node-1', credentialId: 'cred-oauth2', credentialExtraParamOverridesEnabled: true }),
+        ],
+        connections: [{ fromNodeId: 'a', toNodeId: 'node-1' }],
+        selectedNodeId: 'node-1',
+        credentials: [oauth2Credential],
+      });
+      render(<NodeConfig />);
+
+      const row = fieldRow('audience');
+      await user.selectOptions(row.getByRole('combobox', { name: 'Source for extra param audience' }), 'mapped');
+
+      expect(useWorkflowStore.getState().nodes[1].credentialExtraParamOverrides).toEqual({
+        audience: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: '' },
+      });
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Map extra param audience from response field' }), 'name');
+      expect(useWorkflowStore.getState().nodes[1].credentialExtraParamOverrides).toEqual({
+        audience: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'name' },
+      });
+    });
+
+    it('disables the Mapped option with no ancestor node to map from', () => {
+      useWorkflowStore.setState({
+        nodes: [makeNode({ credentialId: 'cred-oauth2', credentialExtraParamOverridesEnabled: true })],
+        selectedNodeId: 'node-1',
+        credentials: [oauth2Credential],
+      });
+      render(<NodeConfig />);
+
+      const row = fieldRow('audience');
+      expect(row.getByRole('option', { name: 'Mapped' })).toBeDisabled();
+    });
+
+    it('switching a row to Static shows a text input and stores what is typed', async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        nodes: [makeNode({ credentialId: 'cred-oauth2', credentialExtraParamOverridesEnabled: true })],
+        selectedNodeId: 'node-1',
+        credentials: [oauth2Credential],
+      });
+      render(<NodeConfig />);
+
+      const row = fieldRow('audience');
+      await user.selectOptions(row.getByRole('combobox', { name: 'Source for extra param audience' }), 'static');
+      await user.type(screen.getByRole('textbox', { name: 'Static value for extra param audience' }), 'api://custom');
+
+      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverrides).toEqual({
+        audience: { source: 'static', value: 'api://custom' },
+      });
+    });
+
+    it('switching a row back to Default clears the override entirely', async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        nodes: [
+          makeNode({
+            credentialId: 'cred-oauth2',
+            credentialExtraParamOverridesEnabled: true,
+            credentialExtraParamOverrides: { audience: { source: 'static', value: 'api://custom' } },
+          }),
+        ],
+        selectedNodeId: 'node-1',
+        credentials: [oauth2Credential],
+      });
+      render(<NodeConfig />);
+
+      const row = fieldRow('audience');
+      await user.selectOptions(row.getByRole('combobox', { name: 'Source for extra param audience' }), 'default');
+
+      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverrides).toEqual({});
+    });
+
+    it('turning the toggle back off hides the rows without clearing the stored overrides', async () => {
+      const user = userEvent.setup();
+      useWorkflowStore.setState({
+        nodes: [
+          makeNode({
+            credentialId: 'cred-oauth2',
+            credentialExtraParamOverridesEnabled: true,
+            credentialExtraParamOverrides: { audience: { source: 'static', value: 'api://custom' } },
+          }),
+        ],
+        selectedNodeId: 'node-1',
+        credentials: [oauth2Credential],
+      });
+      render(<NodeConfig />);
+
+      await user.click(screen.getByRole('checkbox', { name: 'Override credential extra params' }));
+
+      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverridesEnabled).toBe(false);
+      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverrides).toEqual({
+        audience: { source: 'static', value: 'api://custom' },
+      });
+      expect(screen.queryByText((_, el) => el?.tagName === 'LABEL' && el.textContent === 'audience')).not.toBeInTheDocument();
+    });
+  });
+
   it('coerces a static integer field to a real number in the store', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({ nodes: [makeNode()], selectedNodeId: 'node-1' });
