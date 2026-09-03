@@ -78,7 +78,7 @@ export function BreakpointConnectionEdge({
             disabled={isRunning}
             // Counter-scaled against the same --rf-zoom CSS var Canvas.tsx
             // maintains, same trick as .react-flow__handle::after in
-            // styles.css — without it this shrinks along with the canvas and
+            // styles/canvas.css — without it this shrinks along with the canvas and
             // becomes nearly unclickable at a zoomed-out cluttered canvas's
             // minZoom floor.
             style={{

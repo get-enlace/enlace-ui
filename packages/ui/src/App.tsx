@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useWorkflowStore } from './store/workflowStore.js';
-import { OperationList } from './components/OperationList.js';
-import { Canvas } from './components/Canvas.js';
-import { NodeInspector } from './components/NodeInspector.js';
-import { DebugPane } from './components/DebugPane.js';
-import { ChromeSettingsMenu } from './components/ChromeSettingsMenu.js';
-import { WorkflowSwitcher } from './components/WorkflowSwitcher.js';
-import { RunControls } from './components/RunControls.js';
-import { InspectorShell, INSPECTOR_DEFAULT_WIDTH } from './components/InspectorShell.js';
+import {
+  Canvas,
+  ChromeSettingsMenu,
+  DebugPane,
+  InspectorShell,
+  INSPECTOR_DEFAULT_WIDTH,
+  NodeInspector,
+  OperationList,
+  RunControls,
+  WorkflowSwitcher,
+} from './components/index.js';
 
 export default function App() {
   const {

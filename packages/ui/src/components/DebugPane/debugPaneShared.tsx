@@ -1,4 +1,4 @@
-import type { RunStepRequest, RunStepResponse } from '../types.js';
+import type { RunStepRequest, RunStepResponse } from '../../types.js';
 
 /** An apiKey-in-query credential has no header to redact — its secret lives in `url` itself, named in `redactQueryParams` (see types.ts). Malformed/relative URLs fall back to the raw string rather than throwing inside the debug pane. */
 export function redactUrl(url: string, paramNames: string[] | undefined): string {

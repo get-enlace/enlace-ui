@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DebugPane } from './DebugPane.js';
-import { useWorkflowStore } from '../store/workflowStore.js';
-import type { RunStep } from '../types.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
+import type { RunStep } from '../../types.js';
 
 function makeStep(overrides: Partial<RunStep> = {}): RunStep {
   return {

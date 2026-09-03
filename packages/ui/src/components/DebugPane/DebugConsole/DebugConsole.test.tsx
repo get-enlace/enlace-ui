@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { acceptCompletion, completionStatus, startCompletion } from '@codemirror/autocomplete';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../../store/workflowStore.js';
 import {
   DebugConsole,
   buildConsoleInputExtensions,
@@ -16,8 +16,8 @@ import {
   getConsoleCompletions,
   handleConsoleEnter,
   resolveConsoleFocus,
-} from './DebugConsole.js';
-import type { Operation, RunStep, WorkflowNode } from '../types.js';
+} from './index.js';
+import type { Operation, RunStep, WorkflowNode } from '../../../types.js';
 
 function node(id: string, operationId = 'GET /customers/{id}'): WorkflowNode {
   return { id, operationId, credentialId: null, fieldValues: {} };

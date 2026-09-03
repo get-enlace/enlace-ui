@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
 import { buildNodeLabels } from '@get-enlace/core';
-import { DebugConsole } from './DebugConsole.js';
+import { DebugConsole } from './DebugConsole/index.js';
 import { ResultsList, summarizeResultsStatus } from './ResultsList.js';
 
 export interface DebugPaneProps {

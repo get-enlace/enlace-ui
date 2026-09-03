@@ -786,7 +786,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         uploadedFiles,
         // Streams progress into the store as each node settles, instead of
         // only setting `runResult` once at the very end — see
-        // components/DebugPane.tsx, which renders `runResult.steps` live.
+        // components/DebugPane/, which renders `runResult.steps` live.
         onEvent: (event) => {
           set((state) => ({
             stepStatusByNodeId: { ...state.stepStatusByNodeId, [event.nodeId]: event.status },

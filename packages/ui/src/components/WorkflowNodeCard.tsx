@@ -1,6 +1,7 @@
 import { Handle, Position, useStore, type NodeProps } from 'reactflow';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import type { Operation, RunStepStatus, WorkflowNode } from '../types.js';
+import { DeleteNodeIcon, LeaveGroupIcon, STATUS_BADGE_GLYPH } from './chromeIcons.js';
 
 export interface WorkflowNodeData {
   node: WorkflowNode;
@@ -27,50 +28,6 @@ export interface WorkflowNodeData {
   /** Set when this node belongs to a canvas group — drives the leave-group control. */
   groupId?: string;
   groupName?: string;
-}
-
-// A small badge at the card's top-left corner (the remove button already
-// owns top-right) — only for the statuses worth calling out at a glance on
-// the canvas itself, without opening the Debugger tab. Text content is the
-// glyph; styling (color, per status) lives in styles.css.
-// Note: failed is `!`, not an `×`/`✕` — the remove button on the opposite
-// corner is already an `×`, so a red-circle-with-an-X badge would read as
-// a second "cancel/close" affordance rather than a failure indicator.
-const STATUS_BADGE_GLYPH: Partial<Record<RunStepStatus, string>> = {
-  'in-flight': '●',
-  paused: '⏸',
-  completed: '✓',
-  failed: '!',
-};
-
-/** Nude corner chrome — same 10×10 stroke weight for leave-group and delete. */
-function LeaveGroupIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-      <path
-        d="M2 2h4v6H2M6 5h3M7.5 3.5 9 5 7.5 6.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function DeleteNodeIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-      <path
-        d="M2.5 2.5 7.5 7.5M7.5 2.5 2.5 7.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
@@ -101,13 +58,13 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
     // Shell wraps the fieldset so the × can pin to the true top-right of the
     // card. Absolute children of a <fieldset> (especially with a <legend>)
     // sit below the legend/padding in some engines, which left a gap under
-    // the top border — see the remove-btn rule in styles.css.
+    // the top border — see the remove-btn rule in styles/canvas.css.
     <div className="workflow-node-shell">
       {/* A real <fieldset>/<legend> — same as OperationList's cards — so the
           browser cuts the operationId's gap in the top border itself, rather
           than us hand-positioning a label over it. Method color lives only on
           the verb badge; the card chrome is neutral until a run status paints
-          a border (see styles.css's workflow-node--{in-flight,paused,failed}). */}
+          a border (see styles/canvas.css's workflow-node--{in-flight,paused,failed}). */}
       <fieldset
         className={`workflow-node${selected ? ' workflow-node--selected' : ''}${status ? ` workflow-node--${status}` : ''}${groupId ? ' workflow-node--grouped' : ''}`}
       >

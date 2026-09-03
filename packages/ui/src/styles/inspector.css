@@ -1,0 +1,179 @@
+/* --- Node inspector --- */
+
+.node-inspector--empty {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.node-inspector__hint {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-style: italic;
+  margin: 0 0 14px;
+}
+
+.node-inspector__hint code {
+  font-family: var(--font-mono);
+  font-style: normal;
+  background: var(--color-topbar-bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.node-inspector__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.node-inspector__field label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.node-inspector__field-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+/* Custom file drop — hide the native "Choose file" chrome; empty = centered
+   upload icon, filled = filename + inline trash. Same padding/height as
+   sibling text inputs (6px 8px + 13px type). */
+.node-inspector__file-drop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-topbar-bg);
+  color: var(--color-text-muted);
+  overflow: hidden;
+}
+
+.node-inspector__file-drop--filled {
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.node-inspector__file-drop--disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.node-inspector__file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+
+.node-inspector__file-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  color: var(--color-text-muted);
+}
+
+.node-inspector__file-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-inspector__file-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2em;
+  height: 1.2em;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.node-inspector__file-clear:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+
+.node-inspector__file-clear:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.node-inspector__source-select {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 7.5rem;
+}
+
+.node-inspector__field-row select,
+.node-inspector__field-row input,
+.node-inspector__field-row textarea,
+.node-inspector label select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  background: var(--color-topbar-bg);
+  color: var(--color-text);
+}
+
+/* Source mode stays compact so the value / map controls get the remaining width. */
+.node-inspector__field-row .node-inspector__source-select {
+  flex: 0 0 auto;
+}
+
+/* JSON is more readable monospaced — array fields are the only textarea. */
+.node-inspector__field-row textarea {
+  font-family: var(--font-mono);
+  resize: vertical;
+}
+
+.node-inspector__field-row select:focus,
+.node-inspector__field-row input:focus,
+.node-inspector__field-row textarea:focus {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 1px var(--color-focus);
+}
+
+.node-inspector__field--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.node-inspector__field--disabled label {
+  font-style: italic;
+}
+

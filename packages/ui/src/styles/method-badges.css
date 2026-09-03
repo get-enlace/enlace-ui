@@ -1,0 +1,31 @@
+/* --- Method badges: solid pills, Swagger's palette --- */
+
+.method-badge {
+  display: inline-block;
+  min-width: 52px;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: #1b1b1b;
+}
+
+.method-badge--get {
+  background: var(--color-get);
+}
+.method-badge--post {
+  background: var(--color-post);
+}
+.method-badge--put {
+  background: var(--color-put);
+}
+.method-badge--patch {
+  background: var(--color-patch);
+}
+.method-badge--delete {
+  background: var(--color-delete);
+  color: #fff;
+}
+

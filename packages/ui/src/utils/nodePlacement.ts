@@ -5,7 +5,7 @@ export interface Position {
 
 /**
  * Collision box for a canvas card. Sized near a typical rendered card
- * (min-width 180 / max-width 280 in styles.css, plus legend/summary), not
+ * (min-width 180 / max-width 280 in styles/canvas.css, plus legend/summary), not
  * at the absolute max — oversized boxes made drag-end snaps jump too far.
  */
 export const NODE_CARD_SIZE = { width: 240, height: 100 } as const;

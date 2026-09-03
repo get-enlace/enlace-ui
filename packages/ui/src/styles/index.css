@@ -1,0 +1,15 @@
+/* Split from the former monolithic styles.css — import order matters
+ * (tokens first; surface sheets are independent otherwise).
+ */
+
+@import './tokens.css';
+@import './chrome.css';
+@import './layout.css';
+@import './method-badges.css';
+@import './operations.css';
+@import './canvas.css';
+@import './inspector.css';
+@import './credentials.css';
+@import './debug.css';
+@import './raw-body.css';
+@import './modal.css';

@@ -1,6 +1,7 @@
 import { Handle, Position, useStore, type NodeProps } from 'reactflow';
 import { useWorkflowStore } from '../store/workflowStore.js';
 import type { HttpMethod, NodeGroup, RunStepStatus } from '../types.js';
+import { LeaveGroupIcon, STATUS_BADGE_GLYPH } from './chromeIcons.js';
 
 export interface GroupMemberSummary {
   nodeId: string;
@@ -21,15 +22,6 @@ export interface GroupNodeData {
   members?: GroupMemberSummary[];
 }
 
-/** Same glyphs as WorkflowNodeCard — collapsed members are hidden, so this
- *  is the only place their run state can surface on the canvas. */
-const STATUS_BADGE_GLYPH: Partial<Record<RunStepStatus, string>> = {
-  'in-flight': '●',
-  paused: '⏸',
-  completed: '✓',
-  failed: '!',
-};
-
 /** Prefer the status that most needs attention during/after a run. */
 function aggregateMemberStatus(members: GroupMemberSummary[]): RunStepStatus | undefined {
   const priority: RunStepStatus[] = ['failed', 'paused', 'in-flight', 'completed'];
@@ -44,21 +36,6 @@ function aggregateMemberStatus(members: GroupMemberSummary[]): RunStepStatus | u
  * Collapsed = style B mini cluster (method + path rows); members stay real
  * WorkflowNodes, just hidden while collapsed.
  */
-
-function LeaveGroupIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-      <path
-        d="M2 2h4v6H2M6 5h3M7.5 3.5 9 5 7.5 6.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 export function GroupNodeCard({ data, id }: NodeProps<GroupNodeData>) {
   const { group, width, height, memberCount, members = [] } = data;

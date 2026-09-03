@@ -46,11 +46,11 @@ export interface RawBodyEditorProps {
 // `json()` only supplies the parser/language — it applies no color on its
 // own; without a `syntaxHighlighting` extension the doc renders as flat,
 // unstyled text regardless of language support. Colors reuse the app's
-// existing method-badge palette (styles.css) rather than a generic
-// code-theme, so the editor reads as part of the same system: property
-// names in the same blue as a GET badge, string values in the same green
-// as a POST badge, numbers/booleans in PUT's orange, null in the
-// cookie-credential purple, punctuation muted.
+// existing method-badge palette (styles/method-badges.css) rather than a
+// generic code-theme, so the editor reads as part of the same system:
+// property names in the same blue as a GET badge, string values in the
+// same green as a POST badge, numbers/booleans in PUT's orange, null in
+// the cookie-credential purple, punctuation muted.
 const jsonHighlightStyle = HighlightStyle.define([
   { tag: t.propertyName, color: 'var(--color-get)' },
   { tag: t.string, color: 'var(--color-post)' },

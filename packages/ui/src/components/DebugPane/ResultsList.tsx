@@ -1,24 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CyclicWorkflowError, topologicalSort } from '@get-enlace/core';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
 import { buildNodeLabels } from '@get-enlace/core';
 import { redactRequest, RequestPanel, ResponsePanel } from './debugPaneShared.js';
-import type { Operation, RunStep, RunStepRequest, RunStepStatus, WorkflowNode } from '../types.js';
+import { RUN_STATUS_GLYPH } from '../chromeIcons.js';
+import type { Operation, RunStep, RunStepRequest, RunStepStatus, WorkflowNode } from '../../types.js';
 
-// Kept in visual lockstep with WorkflowNodeCard.tsx's STATUS_BADGE_GLYPH.
-const STATUS_ICON: Record<RunStepStatus, string> = {
-  pending: '○',
-  'in-flight': '●',
-  paused: '⏸',
-  completed: '✓',
-  failed: '!',
-  skipped: '–',
-};
 
 function StatusIcon({ status }: { status: RunStepStatus }) {
   return (
     <span className={`debugger-row__status-icon debugger-row__status-icon--${status}`} aria-label={status}>
-      {STATUS_ICON[status]}
+      {RUN_STATUS_GLYPH[status]}
     </span>
   );
 }
@@ -288,7 +280,7 @@ export function summarizeResultsStatus(
   };
   const active = order.filter((status) => (counts.get(status) ?? 0) > 0);
   return {
-    text: active.map((status) => `${counts.get(status)} ${STATUS_ICON[status]}`).join(' · '),
+    text: active.map((status) => `${counts.get(status)} ${RUN_STATUS_GLYPH[status]}`).join(' · '),
     title: active.map((status) => `${counts.get(status)} ${words[status]}`).join(' · '),
   };
 }
