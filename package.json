@@ -2,7 +2,7 @@
   "name": "enlace",
   "private": true,
   "version": "0.1.0",
-  "description": "Enlace — a visual, chained-execution canvas that plugs into an existing OpenAPI-documented API. This repo hosts @get-enlace/ui plus an example API for local testing. Adapters (Express, ...) live in github.com/get-enlace/enlace-js.",
+  "description": "Enlace — a visual, chained-execution canvas that plugs into an existing OpenAPI-documented API. This repo hosts @get-enlace/core (portable engine), @get-enlace/ui (canvas), plus an example API for local testing. Adapters (Express, ...) live in github.com/get-enlace/enlace-js.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -22,10 +22,11 @@
     "dev:no-auth": "cross-env ENLACE_EXAMPLE_NO_AUTH=1 tsx watch examples/sample-api/server.ts",
     "start": "npm run dev",
     "start:no-auth": "npm run dev:no-auth",
-    "build": "npm run build:ui",
+    "build": "npm run build:core && npm run build:ui",
+    "build:core": "npm run build --workspace @get-enlace/core",
     "build:ui": "npm run build --workspace @get-enlace/ui",
-    "typecheck": "tsc --noEmit",
-    "test": "npm run test --workspace @get-enlace/ui && vitest run",
+    "typecheck": "npm run typecheck --workspace @get-enlace/core && tsc --noEmit",
+    "test": "npm run test --workspace @get-enlace/core && npm run test --workspace @get-enlace/ui && vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:e2e-ui": "playwright test"
   },

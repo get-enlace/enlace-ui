@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../../packages/enlace-ui/src/types.js';
+import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../../packages/ui/src/types.js';
 
 // Avoids canvas drag-and-drop (see playwright.config.ts). Imports a
 // collection with POST /products, configures the declared oauth2Password

@@ -2,7 +2,7 @@
 // the enlace-ui bundle only if it's missing, so the very first run doesn't
 // require a separate manual `npm run build:ui` step (skipping the
 // blank-page trap: examples/sample-api/enlace.ts serves whatever's in
-// packages/enlace-ui/dist/, resolved via node_modules — and there's
+// packages/ui/dist/, resolved via node_modules — and there's
 // nothing there until this runs at least once). Subsequent runs no-op —
 // this does not rebuild on every `npm start`/`npm run dev`, only the first.
 import { existsSync } from 'node:fs';
@@ -11,14 +11,14 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const marker = path.join(__dirname, '../packages/enlace-ui/dist/index.html');
+const marker = path.join(__dirname, '../packages/ui/dist/index.html');
 
 if (existsSync(marker)) {
   process.exit(0);
 }
 
-console.log('No built enlace-ui bundle found — building it once (this only happens on first run)...');
-const result = spawnSync('npm', ['run', 'build:ui'], {
+console.log('No built enlace-ui bundle found — building core + UI once (this only happens on first run)...');
+const result = spawnSync('npm', ['run', 'build'], {
   cwd: path.join(__dirname, '..'),
   stdio: 'inherit',
   shell: true,

@@ -1,0 +1,31 @@
+{
+  "name": "@get-enlace/core",
+  "private": true,
+  "version": "0.0.8",
+  "description": "Enlace's portable chain-execution engine — spec parsing, dependency graph, credential injection, and executeChain. No React/DOM. Workspace-only today (bundled into @get-enlace/ui; later CLI). Not published.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/get-enlace/enlace-ui.git",
+    "directory": "packages/core"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

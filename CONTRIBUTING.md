@@ -12,16 +12,16 @@ npm start        # sample API + adapter + canvas, one process
 npm run dev --workspace @get-enlace/ui   # canvas with hot reload, for iterating on the UI itself
                                            # -> http://localhost:5173
 
-npm test              # unit tests (mocked fetch, no real server)
+npm test              # unit tests: @get-enlace/core (Node) then @get-enlace/ui (jsdom), then root
 npm run test:e2e       # real HTTP e2e tests against examples/sample-api's enlace.ts
 npm run test:e2e-ui    # Playwright smoke test (needs `npx playwright install --with-deps chromium` once)
 npm run typecheck
-npm run build          # builds enlace-ui (vite)
+npm run build          # builds @get-enlace/core then @get-enlace/ui (vite)
 ```
 
-`npm start`'s `predev` hook builds `@get-enlace/ui`'s bundle automatically
-on first run if it's missing; run `npm run build:ui` manually after editing
-canvas code outside the hot-reload dev server.
+`npm start`'s `predev` hook builds the UI bundle automatically on first run
+if it's missing (`npm run build` — core then UI); run `npm run build:ui`
+manually after editing canvas code outside the hot-reload dev server.
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the codebase is designed —
 useful context before making a non-trivial change.
@@ -32,12 +32,13 @@ useful context before making a non-trivial change.
   real e2e suite, and the Playwright smoke test.
 - **`.github/workflows/main.yml`** — one pipeline, every push to `main`.
   `deploy-dev` always runs first: builds, publishes `@get-enlace/ui@dev` to
-  GitHub Packages, tags the build. `deploy-prod` then queues right behind it
-  (`needs: deploy-dev`) — gated behind the `production` environment's
-  required-reviewer approval, it pauses until someone approves it, then
-  publishes whatever version is currently committed in
-  `packages/enlace-ui/package.json` to public npmjs.org, tags the release,
-  and bumps the patch version for next time — same shape as
+  GitHub Packages, tags the build. (`@get-enlace/core` is a private
+  workspace package, bundled into the UI — not published.) `deploy-prod`
+  then queues right behind it (`needs: deploy-dev`) — gated behind the
+  `production` environment's required-reviewer approval, it pauses until
+  someone approves it, then publishes whatever version is currently
+  committed in `packages/ui/package.json` to public npmjs.org, tags the
+  release, and bumps the patch version for next time — same shape as
   `enlace-js`/`enlace-dotnet`'s own `deploy-prod` jobs. No separate
   tag-push trigger. `notify-downstream-dev` / `notify-downstream-prod` each
   fire independently right after their own publish job succeeds (split in

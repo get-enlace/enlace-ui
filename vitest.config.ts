@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     // No root-level test files exist right now (all engine/UI tests moved
-    // into packages/enlace-ui, run via its own `npm test`) — this is just
+    // into packages/ui, run via its own `npm test`) — this is just
     // a home for future root-scoped tests (e.g. examples/sample-api), so
     // an empty run shouldn't fail CI.
     passWithNoTests: true,

@@ -6,7 +6,7 @@
 // serving — no execution endpoint at all), so that's all this proves.
 // The parallel-execution / cyclic-dependency / referential-validation
 // scenarios previously covered here now live in
-// packages/enlace-ui/src/engine/chainExecutor.test.ts, since that's where
+// packages/core/src/engine/chainExecutor.test.ts, since that's where
 // execution actually runs (client-side, mocked fetch, no live server
 // needed to prove it).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

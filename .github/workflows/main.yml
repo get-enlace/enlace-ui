@@ -36,13 +36,9 @@ jobs:
       - run: npm test
       - run: npm run build
 
-      # This repo now produces a single package, @get-enlace/ui — the
-      # Express adapter (@get-enlace/express) moved to its own repo
-      # (github.com/get-enlace/enlace-js), which has its own dev-publish
-      # workflow, so there's nothing to keep in lockstep here anymore.
       - name: Compute dev build version
         id: version
-        run: echo "dev_version=$(node -p "require('./packages/enlace-ui/package.json').version")-dev.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+        run: echo "dev_version=$(node -p "require('./packages/ui/package.json').version")-dev.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
       - name: Bump to the dev version
         run: npm pkg set version=${{ steps.version.outputs.dev_version }} --workspace @get-enlace/ui
@@ -54,7 +50,6 @@ jobs:
         run: npm publish --workspace @get-enlace/ui --tag dev
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # Only reached if publish succeeded. Plain tag push — no GitHub
       # Release is created, matching "no release, only tag". No
       # retry/re-run handling: a genuine version collision (e.g. a manual
@@ -102,13 +97,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      # Whatever's already committed in package.json is what gets
-      # published — semver bump type (patch/minor/major) is a human call,
-      # decided by editing packages/enlace-ui/package.json before this
-      # runs, not guessed by CI.
+      # Whatever's already committed in packages/ui/package.json is what
+      # gets published — semver bump type (patch/minor/major) is a human
+      # call, decided by editing that file before this runs, not guessed
+      # by CI.
       - name: Read current version
         id: current
-        run: echo "version=$(node -p "require('./packages/enlace-ui/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p "require('./packages/ui/package.json').version")" >> "$GITHUB_OUTPUT"
 
       # A dedicated setup-node call, pointed at npmjs.org instead of GitHub
       # Packages — the documented way to publish to a different registry
@@ -145,8 +140,8 @@ jobs:
         run: git tag "v${{ steps.current.outputs.version }}"
 
       # Stages the next release as a patch bump on top of what was just
-      # published. Edit packages/enlace-ui/package.json by hand before the
-      # next prod release if it actually needs a bigger (minor/major) bump.
+      # published. Edit packages/ui/package.json by hand before the next
+      # prod release if it actually needs a bigger (minor/major) bump.
       - name: Compute next patch version
         id: next
         run: |
@@ -159,12 +154,11 @@ jobs:
       - name: Bump to next version
         run: |
           npm pkg set version="${{ steps.next.outputs.version }}" --workspace @get-enlace/ui
-          git add packages/enlace-ui/package.json
+          git add packages/ui/package.json
 
       - name: Commit version bump
         run: |
-          git commit -m "chore(enlace-ui): bump to ${{ steps.next.outputs.version }} after v${{ steps.current.outputs.version }} release"
-
+          git commit -m "chore(ui): bump to ${{ steps.next.outputs.version }} after v${{ steps.current.outputs.version }} release"
       - name: Push commit and tag
         run: git push origin HEAD:main "v${{ steps.current.outputs.version }}"
 

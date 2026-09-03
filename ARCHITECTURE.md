@@ -14,13 +14,13 @@
                      ┌───────────────────────────────────┐
                      │   Browser (all execution here)    │
                      │                                   │
-                     │  UI package (one codebase, JS):   │
+                     │  @get-enlace/ui (React canvas):   │
                      │   - Canvas (nodes, connections)   │
                      │   - Node inspector (fields, creds)│
-                     │   - Execution engine (in-browser):│
+                     │   - Debug pane                    │
+                     │   uses @get-enlace/core:          │
                      │       resolve order, resolve      │
                      │       field values, fetch() calls │
-                     │   - Debug pane                    │
                      └───────────────┬───────────────────┘
                                      │
              ┌───────────────────────┼──────────────────────────┐
@@ -44,10 +44,11 @@ The **target API** being tested can be written in any language — the browser o
 
 | Package | Language | Repo | Responsibility |
 |---|---|---|---|
-| `enlace-ui` (`@get-enlace/ui`) | JS (framework-agnostic bundle) | `get-enlace/enlace-ui` (this repo) | Canvas, inspector, debug pane, in-browser execution logic. Built once, shipped as static assets consumed by every adapter. |
+| `core` (`@get-enlace/core`) | JS (Node ≥18, no React/DOM) | `get-enlace/enlace-ui` (this repo) | Spec parsing, dependency graph, credential injection, `executeChain`. Private workspace package (not published); bundled into the UI today, later a headless CLI. |
+| `ui` (`@get-enlace/ui`) | JS (framework-agnostic bundle) | `get-enlace/enlace-ui` (this repo) | Canvas, inspector, debug pane. Depends on `@get-enlace/core` at build time. Built once, shipped as static assets consumed by every adapter. |
 | `enlace-express` (`@get-enlace/express`) | Node/TS | [`get-enlace/enlace-js`](https://github.com/get-enlace/enlace-js) | Serves the UI bundle, resolves the OpenAPI document. |
 
-`@get-enlace/ui` lives in this repo (`packages/enlace-ui`), alongside a
+Both packages live in this repo (`packages/core`, `packages/ui`), alongside a
 sample API and dev harness (`examples/sample-api`) for trying Enlace
 without wiring up anything of your own — that harness mounts the canvas
 via a small local copy of `@get-enlace/express`'s mount function
@@ -67,7 +68,7 @@ Additional adapters and packaging changes are tracked in the workspace-level `RO
 
 ## 4. Data Model
 
-Core types, used identically inside the UI package regardless of adapter:
+Core types (owned by `@get-enlace/core`, re-exported by the UI), used identically regardless of adapter:
 
 ```
 Operation (derived from the spec, not stored — read fresh each load) {
@@ -167,7 +168,7 @@ A field may be mapped from **any ancestor** in the connection graph, not just th
 
 1. User hits **Run** in the browser.
 2. The dependency graph is the union of explicit `connections` and mapping-implied dependencies (a node mapping a field from another node's response must run after it, connection or not) — `computeExecutionLevels` (Kahn's algorithm) still runs once up front purely as a `CyclicWorkflowError` check before anything fires.
-3. Execution itself is **per-node, readiness-driven**, not batched by level: each node fires the instant every node it depends on has *completed*, independent of whatever else is or isn't still in flight elsewhere in the graph. Independent nodes with no pending dependencies still become ready and fire together in the same pass — exactly what a level would produce whenever nothing is gating anything — but a node is never held back waiting on an unrelated sibling that merely happens to share an ancestor (e.g. `A -> B` and `A -> C` in the same wave: a slow `B` never delays `C`, or anything depending only on `C`). This generalization is what lets a breakpoint on one connection gate exactly the node(s) downstream of it without incorrectly gating unrelated concurrent branches (see below) — see `packages/enlace-ui/src/engine/chainExecutor.ts`'s `executeChain`.
+3. Execution itself is **per-node, readiness-driven**, not batched by level: each node fires the instant every node it depends on has *completed*, independent of whatever else is or isn't still in flight elsewhere in the graph. Independent nodes with no pending dependencies still become ready and fire together in the same pass — exactly what a level would produce whenever nothing is gating anything — but a node is never held back waiting on an unrelated sibling that merely happens to share an ancestor (e.g. `A -> B` and `A -> C` in the same wave: a slow `B` never delays `C`, or anything depending only on `C`). This generalization is what lets a breakpoint on one connection gate exactly the node(s) downstream of it without incorrectly gating unrelated concurrent branches (see below) — see `packages/core/src/engine/chainExecutor.ts`'s `executeChain`.
 4. A node whose dependencies are all satisfied but sits behind a **breakpoint** — armed on a `WorkflowConnection` via the red marker on its connector (Canvas.tsx's `BreakpointConnectionEdge`; never on a mapping edge) — pauses instead of firing, and its fully-resolved request (the same resolution a real fire would do) is built and reported as a preview without being sent. A paused run stays "in progress": `executeChain`'s returned promise doesn't settle until every paused/in-flight node does. Three controls drive it from there (`RunControl`, captured by `store/workflowStore.ts`'s `run()` as `activeControl`, exposed as one global set of buttons in `App.tsx`'s header — not per node/row — since Continue/Stop act on the whole run regardless and Step just needs one target, resolved from the selected node if it's paused or else the first paused node): **Continue** releases every node paused right now (a later breakpoint further down the graph still pauses); **Step** releases one specific paused node; **Stop** admits nothing further and settles every still-pending/paused node to `'skipped'`, though anything already in flight still runs to completion.
 5. For each node's request, once it's ready to fire (i.e. not paused):
    - Resolve `fieldValues` — static values used directly; mapped values pulled from the actual captured response of the referenced upstream node.
@@ -178,7 +179,7 @@ A field may be mapped from **any ancestor** in the connection graph, not just th
 7. The bottom pane has two tabs (`DebugPane.tsx`): **Run Output** renders each step as its request/response actually settles, not only once the whole run finishes, unaffected by whether any breakpoint is armed; **Debugger** pre-populates a row for every node before Run even starts (in dependency order, for display only), overlaid with live status (pending/in-flight/paused/completed/failed/skipped) and an aggregate breakdown ("2 completed · 1 paused · 1 pending") rather than one global run status — a run can be simultaneously executing one branch and gated on another. Both consume the same `store/workflowStore.ts`'s `run()`, which streams `executeChain`'s per-node events into `runResult`/`stepStatusByNodeId`/`previewRequestByNodeId` incrementally. The Debugger tab auto-switches into view the instant execution actually reaches an armed breakpoint.
 8. **Run** and **Debug** are two separate buttons, not one whose behavior silently depends on whatever's armed — `run()` only honors `armedBreakpoints` (and only sets `activeControl` at all) when called as `run({ useBreakpoints: true })`; a plain "Run" ignores every armed breakpoint outright, so having debug points set up never forces a stop-and-inspect run.
 
-Verified with a concurrency-counter unit test (not just an order assertion) proving independent branches genuinely overlap in flight, a fan-out test proving a node fires as soon as its own dependency settles regardless of an unrelated slower sibling, and dedicated coverage for pause/continue/step/stop (including that Stop's admission-halt applies globally, not just to nodes downstream of whatever triggered it) — see `packages/enlace-ui/src/engine/chainExecutor.test.ts`.
+Verified with a concurrency-counter unit test (not just an order assertion) proving independent branches genuinely overlap in flight, a fan-out test proving a node fires as soon as its own dependency settles regardless of an unrelated slower sibling, and dedicated coverage for pause/continue/step/stop (including that Stop's admission-halt applies globally, not just to nodes downstream of whatever triggered it) — see `packages/core/src/engine/chainExecutor.test.ts`.
 
 ## 6. Frontend Structure
 
