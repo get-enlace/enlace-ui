@@ -81,8 +81,8 @@ export function buildSchemaExample(schema: Schema | null | undefined): unknown {
  * the flat form generator can't cleanly represent: a polymorphic
  * oneOf/anyOf/allOf, or an array of objects (form mode edits an array as
  * one opaque JSON-text blob, with no way to map a response value into a
- * specific item's field). Drives the Node Inspector's "suggest Raw mode"
- * banner — see NodeInspector.tsx.
+ * specific item's field). Drives the Node Config's "suggest Raw mode"
+ * banner — see NodeConfig.tsx.
  */
 export function hasUnrepresentableShape(schema: Schema | null | undefined): boolean {
   if (!schema) return false;

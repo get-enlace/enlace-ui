@@ -27,7 +27,7 @@
   overflow-x: hidden;
 }
 
-/* Right column: resize + mid-seam collapse around NodeInspector. */
+/* Right column: resize + mid-seam collapse around NodeConfig. */
 .inspector-shell {
   position: relative;
   display: flex;

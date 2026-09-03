@@ -4,7 +4,7 @@ const DEFAULT_WIDTH = 240; // match ops list column for a balanced first paint
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 560;
 
-export interface InspectorShellProps {
+export interface NodeConfigShellProps {
   children: ReactNode;
   onCollapse: () => void;
   /** Reports width so the parent grid column can match. */
@@ -12,10 +12,10 @@ export interface InspectorShellProps {
 }
 
 /**
- * Right-column chrome around NodeInspector: left-edge collapse (mid-seam)
+ * Right-column chrome around NodeConfig: left-edge collapse (mid-seam)
  * and drag-resize. Width is owned here and pushed up for the app grid.
  */
-export function InspectorShell({ children, onCollapse, onWidthChange }: InspectorShellProps) {
+export function NodeConfigShell({ children, onCollapse, onWidthChange }: NodeConfigShellProps) {
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -57,15 +57,15 @@ export function InspectorShell({ children, onCollapse, onWidthChange }: Inspecto
         onPointerDown={onResizePointerDown}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize inspector"
+        aria-label="Resize node config"
         title="Drag to resize"
       />
       <button
         type="button"
         className="inspector-shell__collapse"
         onClick={onCollapse}
-        title="Hide inspector"
-        aria-label="Hide inspector"
+        title="Hide node config"
+        aria-label="Hide node config"
       >
         ›
       </button>
@@ -74,4 +74,4 @@ export function InspectorShell({ children, onCollapse, onWidthChange }: Inspecto
   );
 }
 
-export { DEFAULT_WIDTH as INSPECTOR_DEFAULT_WIDTH };
+export { DEFAULT_WIDTH as NODE_CONFIG_DEFAULT_WIDTH };

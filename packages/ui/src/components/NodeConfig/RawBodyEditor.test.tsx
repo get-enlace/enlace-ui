@@ -17,7 +17,7 @@ const ops: Operation[] = [
   { id: 'GET /orders/{id}', method: 'get', path: '/orders/{id}', parameters: [], requestBodySchema: null, responseSchema: null },
 ];
 const opsById = new Map(ops.map((o) => [o.id, o]));
-// The real caller (NodeInspector) computes this across the *whole* workflow, but for these
+// The real caller (NodeConfig) computes this across the *whole* workflow, but for these
 // tests the ancestor set given to each node's render is the whole workflow anyway.
 const labelsFor = (nodes: WorkflowNode[]) => buildNodeLabels(nodes, opsById);
 

@@ -42,7 +42,7 @@ function TrashIcon() {
   );
 }
 
-export function NodeInspector() {
+export function NodeConfig() {
   const {
     nodes,
     connections,

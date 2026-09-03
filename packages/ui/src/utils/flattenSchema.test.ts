@@ -132,7 +132,7 @@ describe('flattenRequestFields', () => {
     // resolveFieldValue/setByPath (chainExecutor.ts) copy a mapped value
     // through untyped regardless of shape, so there's no technical reason
     // to single out arrays or object leaves here — supported is the only
-    // flag NodeInspector.tsx checks to gate "Map from...".
+    // flag NodeConfig.tsx checks to gate "Map from...".
     const operation = makeOperation({
       requestBodySchema: {
         type: 'object',

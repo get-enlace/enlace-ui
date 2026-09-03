@@ -76,7 +76,7 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
         )}
         {/* Drag from one box's right handle to another's left handle to
             establish execution ORDER (a WorkflowConnection) — separate from
-            field mapping (data source), which stays in the Node Inspector's
+            field mapping (data source), which stays in the Node Config's
             "map from..." picker. onConnect is wired up in Canvas.tsx. */}
         <Handle type="target" position={Position.Left} title="Drop here to connect" />
         <div className="workflow-node__header">

@@ -166,7 +166,7 @@ export function CredentialsPanel({ showTrigger = true, open, onOpenChange }: Cre
                   already exists — header title alone marks add vs edit. */}
               {credentials.length === 0 && !isAdding && (
                 <p className="credentials-drawer__empty">
-                  No credentials yet. Add one, then attach it to a node via the lock icon in the inspector.
+                  No credentials yet. Add one, then attach it to a node via the lock icon in the node config.
                 </p>
               )}
 

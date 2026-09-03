@@ -213,7 +213,7 @@ interface WorkflowState {
    * (or removes it) and keeps the real `File` only in `uploadedFiles`.
    */
   setUploadedFile: (nodeId: string, fieldPath: string, file: File | null) => void;
-  /** Toggles a node's request editor between the flat form and Raw JSON — see NodeInspector.tsx for the Form<->Raw conversion this surrounds. */
+  /** Toggles a node's request editor between the flat form and Raw JSON — see NodeConfig.tsx for the Form<->Raw conversion this surrounds. */
   setRequestMode: (nodeId: string, mode: 'form' | 'raw') => void;
   setRawPath: (nodeId: string, rawPath: RawBody | null) => void;
   setRawQuery: (nodeId: string, rawQuery: RawBody | null) => void;

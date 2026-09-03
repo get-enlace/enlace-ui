@@ -35,11 +35,11 @@ export interface RawBodyEditorProps {
    * blocking the store update alone would leave a keystroke visibly
    * "stick" in the editor with no way for it to ever resync back to the
    * true (unchanged) `rawBody.template`, since the resync effect below
-   * only fires when that prop actually changes. See NodeInspector.tsx,
+   * only fires when that prop actually changes. See NodeConfig.tsx,
    * the only caller, for why this is ever true (a run in progress).
    */
   readOnly?: boolean;
-  /** When false, skip the per-editor "{{" tip — NodeInspector shows one shared hint under Request. */
+  /** When false, skip the per-editor "{{" tip — NodeConfig shows one shared hint under Request. */
   showHint?: boolean;
 }
 

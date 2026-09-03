@@ -73,7 +73,7 @@
    min-width: min-content quirk) same as .workflow-node/.operation-list__item
    above — this exists purely so `disabled` can lock every plain input/
    select/button in the inspector in one place while a run is in progress
-   (see NodeInspector.tsx and workflowStore.ts's isLocked); :disabled below
+   (see NodeConfig.tsx and workflowStore.ts's isLocked); :disabled below
    just dims it to match, same as a native disabled input already looks. */
 .node-inspector__fieldset {
   border: none;
