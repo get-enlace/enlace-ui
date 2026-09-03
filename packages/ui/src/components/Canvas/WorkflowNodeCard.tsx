@@ -1,7 +1,7 @@
 import { Handle, Position, useStore, type NodeProps } from 'reactflow';
-import { useWorkflowStore } from '../store/workflowStore.js';
-import type { Operation, RunStepStatus, WorkflowNode } from '../types.js';
-import { DeleteNodeIcon, LeaveGroupIcon, STATUS_BADGE_GLYPH } from './chromeIcons.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
+import type { Operation, RunStepStatus, WorkflowNode } from '../../types.js';
+import { DeleteNodeIcon, LeaveGroupIcon, STATUS_BADGE_GLYPH } from '../chromeIcons.js';
 
 export interface WorkflowNodeData {
   node: WorkflowNode;

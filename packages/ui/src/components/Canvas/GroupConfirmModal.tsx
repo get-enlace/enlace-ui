@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal } from './Modal.js';
+import { Modal } from '../Modal.js';
 
 export type GroupConfirmMode =
   | { kind: 'create'; withNodeLabel: string }

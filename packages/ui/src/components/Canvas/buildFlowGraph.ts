@@ -7,8 +7,8 @@ import {
   sortGroupMemberIds,
 } from '../../utils/groupGeometry.js';
 import { collapsedGroupSize } from '../../utils/nodePlacement.js';
-import type { GroupMemberSummary, GroupNodeData } from '../GroupNodeCard.js';
-import type { WorkflowNodeData } from '../WorkflowNodeCard.js';
+import type { GroupMemberSummary, GroupNodeData } from './GroupNodeCard.js';
+import type { WorkflowNodeData } from './WorkflowNodeCard.js';
 
 export function collapsedMemberIdSet(groups: NodeGroup[]): Set<string> {
   const ids = new Set<string>();

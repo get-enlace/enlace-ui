@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { Canvas } from './Canvas/index.js';
-import { useWorkflowStore } from '../store/workflowStore.js';
-import type { Operation } from '../types.js';
+import { Canvas } from './index.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
+import type { Operation } from '../../types.js';
 
 const petOperation: Operation = {
   id: 'POST /pet',

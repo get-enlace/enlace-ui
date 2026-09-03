@@ -1,7 +1,7 @@
 import { Handle, Position, useStore, type NodeProps } from 'reactflow';
-import { useWorkflowStore } from '../store/workflowStore.js';
-import type { HttpMethod, NodeGroup, RunStepStatus } from '../types.js';
-import { LeaveGroupIcon, STATUS_BADGE_GLYPH } from './chromeIcons.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
+import type { HttpMethod, NodeGroup, RunStepStatus } from '../../types.js';
+import { LeaveGroupIcon, STATUS_BADGE_GLYPH } from '../chromeIcons.js';
 
 export interface GroupMemberSummary {
   nodeId: string;

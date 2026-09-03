@@ -22,10 +22,10 @@ import {
   nudgeOutsideFrame,
   type GroupDropTarget,
 } from '../../utils/groupGeometry.js';
-import { BreakpointConnectionEdge } from '../BreakpointConnectionEdge.js';
-import { GroupConfirmModal } from '../GroupConfirmModal.js';
-import { GroupNodeCard } from '../GroupNodeCard.js';
-import { WorkflowNodeCard } from '../WorkflowNodeCard.js';
+import { BreakpointConnectionEdge } from './BreakpointConnectionEdge.js';
+import { GroupConfirmModal } from './GroupConfirmModal.js';
+import { GroupNodeCard } from './GroupNodeCard.js';
+import { WorkflowNodeCard } from './WorkflowNodeCard.js';
 import { buildFlowEdges, buildFlowNodes, collapsedMemberIdSet } from './buildFlowGraph.js';
 import { pendingFromDropTarget, suggestGroupName, type PendingGroup } from './pendingGroup.js';
 
