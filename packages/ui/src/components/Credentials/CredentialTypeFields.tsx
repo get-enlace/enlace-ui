@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { openLoginUrl } from '../utils/credentialDraft.js';
-import type { NewCredential } from '../types.js';
+import { openLoginUrl } from '../../utils/credentialDraft.js';
+import type { NewCredential } from '../../types.js';
 
 interface FieldsProps<T> {
   draft: T;

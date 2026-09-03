@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWorkflowStore } from '../store/workflowStore.js';
-import { CredentialsPanel } from './CredentialsPanel.js';
+import { CredentialsPanel } from './Credentials/index.js';
 import { WorkflowFileMenu, type WorkflowFileMenuHandle } from './WorkflowFileMenu.js';
 
 /**

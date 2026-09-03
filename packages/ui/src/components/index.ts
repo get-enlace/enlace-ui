@@ -1,6 +1,7 @@
 /**
  * Group by UI surface, not by tech type.
- * Surfaces: Canvas/, DebugPane/, NodeConfig/; App imports via this barrel only.
+ * Surfaces: Canvas/, Credentials/, DebugPane/, NodeConfig/;
+ * App imports via this barrel only.
  * Siblings inside a surface import each other directly (avoid barrel cycles).
  */
 export { Canvas } from './Canvas/index.js';

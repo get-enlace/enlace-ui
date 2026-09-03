@@ -1,5 +1,5 @@
-import { CREDENTIAL_TYPE_LABELS, isDraftComplete, maskedPreview, openLoginUrl, toDraft } from '../utils/credentialDraft.js';
-import type { Credential } from '../types.js';
+import { CREDENTIAL_TYPE_LABELS, isDraftComplete, maskedPreview, openLoginUrl, toDraft } from '../../utils/credentialDraft.js';
+import type { Credential } from '../../types.js';
 
 export interface CredentialCardProps {
   credential: Credential;

@@ -3,9 +3,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { CredentialForm } from './CredentialForm.js';
-import { emptyDraft } from '../utils/credentialDraft.js';
+import { emptyDraft } from '../../utils/credentialDraft.js';
 import { __clearCredentialTokenCacheForTests } from '@get-enlace/core';
-import type { NewCredential } from '../types.js';
+import type { NewCredential } from '../../types.js';
 
 function mockTokenResponse(status: number, body: unknown) {
   return {

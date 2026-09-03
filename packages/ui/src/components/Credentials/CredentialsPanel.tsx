@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
 import { CredentialCard } from './CredentialCard.js';
 import { CredentialForm } from './CredentialForm.js';
 import { DeclaredCredentialsList } from './DeclaredCredentialsList.js';
-import { emptyDraft, isDraftComplete, toDraft } from '../utils/credentialDraft.js';
+import { emptyDraft, isDraftComplete, toDraft } from '../../utils/credentialDraft.js';
 import type { DeclaredCredential } from '@get-enlace/core';
-import type { Credential, NewCredential } from '../types.js';
+import type { Credential, NewCredential } from '../../types.js';
 
 export interface CredentialsPanelProps {
   /** When false, the panel is drawer-only — a parent (settings menu) opens it. */

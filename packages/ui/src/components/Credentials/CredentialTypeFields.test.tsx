@@ -10,7 +10,7 @@ import {
   OAuth2PasswordFields,
   CookieFields,
 } from './CredentialTypeFields.js';
-import type { NewCredential } from '../types.js';
+import type { NewCredential } from '../../types.js';
 
 describe('BearerFields', () => {
   function Harness() {

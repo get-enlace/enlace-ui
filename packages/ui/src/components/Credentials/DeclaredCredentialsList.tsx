@@ -1,4 +1,4 @@
-import { CREDENTIAL_TYPE_LABELS } from '../utils/credentialDraft.js';
+import { CREDENTIAL_TYPE_LABELS } from '../../utils/credentialDraft.js';
 import type { DeclaredCredential } from '@get-enlace/core';
 
 export interface DeclaredCredentialsListProps {

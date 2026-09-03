@@ -7,10 +7,10 @@ import {
   OAuth2PasswordFields,
   CookieFields,
 } from './CredentialTypeFields.js';
-import { CREDENTIAL_TYPE_LABELS, credentialNeedsVerification, emptyDraft, isDraftComplete } from '../utils/credentialDraft.js';
+import { CREDENTIAL_TYPE_LABELS, credentialNeedsVerification, emptyDraft, isDraftComplete } from '../../utils/credentialDraft.js';
 import { resolveCredentialInjection } from '@get-enlace/core';
-import { randomId } from '../utils/randomId.js';
-import type { Credential, CredentialType, NewCredential } from '../types.js';
+import { randomId } from '../../utils/randomId.js';
+import type { Credential, CredentialType, NewCredential } from '../../types.js';
 
 export interface CredentialFormProps {
   draft: NewCredential;

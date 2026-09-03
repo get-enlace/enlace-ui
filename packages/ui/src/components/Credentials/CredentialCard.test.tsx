@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CredentialCard } from './CredentialCard.js';
-import type { Credential } from '../types.js';
+import type { Credential } from '../../types.js';
 
 const bearerCredential: Credential = { id: 'c1', name: 'staging', type: 'bearer', token: 'super-secret-token' };
 const apiKeyCredential: Credential = {
