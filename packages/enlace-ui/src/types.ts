@@ -180,6 +180,7 @@ export type CredentialStub =
       tokenUrl: string;
       clientId?: string;
       scope?: string;
+      extraTokenParams?: Record<string, string>;
       clientAuthMethod?: OAuth2ClientAuthMethod;
     }
   | {
@@ -191,6 +192,7 @@ export type CredentialStub =
       username?: string;
       clientId?: string;
       scope?: string;
+      extraTokenParams?: Record<string, string>;
       clientAuthMethod?: OAuth2ClientAuthMethod;
     }
   | { id: string; name: string; fromSecurityScheme?: string; type: 'cookie'; loginUrl?: string };
@@ -316,6 +318,12 @@ export interface OAuth2ClientCredentialsCredential extends CredentialBase {
   clientId: string;
   clientSecret: string;
   scope?: string;
+  /**
+   * Extra form-body params on the token request (e.g. `audience`, `resource`,
+   * vendor-specific claims). Never overrides grant_type / scope / client_* /
+   * username / password — those stay first-class fields.
+   */
+  extraTokenParams?: Record<string, string>;
   clientAuthMethod: OAuth2ClientAuthMethod;
 }
 
@@ -339,6 +347,8 @@ export interface OAuth2PasswordCredential extends CredentialBase {
   clientId?: string;
   clientSecret?: string;
   scope?: string;
+  /** Same meaning as OAuth2ClientCredentialsCredential.extraTokenParams. */
+  extraTokenParams?: Record<string, string>;
   clientAuthMethod: OAuth2ClientAuthMethod;
 }
 

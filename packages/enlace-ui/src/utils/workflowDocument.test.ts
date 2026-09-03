@@ -47,6 +47,7 @@ const allCredentials: Credential[] = [
     clientId: 'client-id',
     clientSecret: 'client-secret',
     scope: 'orders',
+    extraTokenParams: { audience: 'api://orders' },
     clientAuthMethod: 'basic',
   },
   {
@@ -151,6 +152,7 @@ describe('serializeCollection', () => {
         tokenUrl: 'https://auth.test/token',
         clientId: 'client-id',
         scope: 'orders',
+        extraTokenParams: { audience: 'api://orders' },
         clientAuthMethod: 'basic',
       },
       {

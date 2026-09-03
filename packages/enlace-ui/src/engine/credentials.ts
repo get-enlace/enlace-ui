@@ -49,6 +49,33 @@ const inFlightRequests = new Map<string, Promise<string>>();
 const EXPIRY_BUFFER_MS = 30_000;
 const DEFAULT_TOKEN_TTL_SECONDS = 300;
 
+/**
+ * Token-request body keys owned by first-class credential fields / the
+ * grant itself — extras must not clobber them (use the dedicated Scope /
+ * client auth fields instead).
+ */
+const RESERVED_TOKEN_PARAM_KEYS = new Set([
+  'grant_type',
+  'scope',
+  'client_id',
+  'client_secret',
+  'username',
+  'password',
+]);
+
+/** Merge optional user extras into the token form body, skipping blanks and reserved keys. */
+export function applyExtraTokenParams(
+  params: Record<string, string>,
+  extras: Record<string, string> | undefined
+): void {
+  if (!extras) return;
+  for (const [rawKey, value] of Object.entries(extras)) {
+    const key = rawKey.trim();
+    if (!key || !value || RESERVED_TOKEN_PARAM_KEYS.has(key)) continue;
+    params[key] = value;
+  }
+}
+
 /** POSTs a `grant_type`-agnostic token request — the two grants below only differ in which params they put in `params` and whether `basicAuth` is set. */
 async function requestOAuth2Token(
   tokenUrl: string,
@@ -142,6 +169,7 @@ export async function resolveCredentialInjection(credential: Credential): Promis
     case 'oauth2_clientCredentials': {
       const params: Record<string, string> = { grant_type: 'client_credentials' };
       if (credential.scope) params.scope = credential.scope;
+      applyExtraTokenParams(params, credential.extraTokenParams);
       // clientAuthMethod picks where clientId/clientSecret go on *this*
       // token request — 'basic' as an Authorization header (see
       // requestOAuth2Token), 'body' as form params alongside grant_type.
@@ -168,6 +196,7 @@ export async function resolveCredentialInjection(credential: Credential): Promis
         password: credential.password,
       };
       if (credential.scope) params.scope = credential.scope;
+      applyExtraTokenParams(params, credential.extraTokenParams);
       const hasClientAuth = Boolean(credential.clientId && credential.clientSecret);
       const basicAuth =
         hasClientAuth && credential.clientAuthMethod === 'basic'

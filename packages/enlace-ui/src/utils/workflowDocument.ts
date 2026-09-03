@@ -331,6 +331,7 @@ function serializeCredentialStub(credential: Credential): CredentialStub {
         tokenUrl: credential.tokenUrl,
         ...(credential.clientId ? { clientId: credential.clientId } : {}),
         ...(credential.scope ? { scope: credential.scope } : {}),
+        ...spreadExtraTokenParams(credential.extraTokenParams),
         clientAuthMethod: credential.clientAuthMethod,
       };
     case 'oauth2_password':
@@ -341,6 +342,7 @@ function serializeCredentialStub(credential: Credential): CredentialStub {
         ...(credential.username ? { username: credential.username } : {}),
         ...(credential.clientId ? { clientId: credential.clientId } : {}),
         ...(credential.scope ? { scope: credential.scope } : {}),
+        ...spreadExtraTokenParams(credential.extraTokenParams),
         clientAuthMethod: credential.clientAuthMethod,
       };
     case 'cookie':
@@ -375,6 +377,7 @@ function serializeFullCredential(credential: Credential): Credential {
         clientId: credential.clientId,
         clientSecret: credential.clientSecret,
         ...(credential.scope ? { scope: credential.scope } : {}),
+        ...spreadExtraTokenParams(credential.extraTokenParams),
         clientAuthMethod: credential.clientAuthMethod,
       };
     case 'oauth2_password':
@@ -387,6 +390,7 @@ function serializeFullCredential(credential: Credential): Credential {
         ...(credential.clientId ? { clientId: credential.clientId } : {}),
         ...(credential.clientSecret ? { clientSecret: credential.clientSecret } : {}),
         ...(credential.scope ? { scope: credential.scope } : {}),
+        ...spreadExtraTokenParams(credential.extraTokenParams),
         clientAuthMethod: credential.clientAuthMethod,
       };
     case 'cookie':
@@ -415,6 +419,7 @@ export function hydrateCredential(stub: CredentialStub): Credential {
         clientId: stub.clientId ?? '',
         clientSecret: '',
         ...(stub.scope ? { scope: stub.scope } : {}),
+        ...spreadExtraTokenParams(stub.extraTokenParams),
         clientAuthMethod: stub.clientAuthMethod ?? 'basic',
       };
     case 'oauth2_password':
@@ -427,6 +432,7 @@ export function hydrateCredential(stub: CredentialStub): Credential {
         ...(stub.clientId ? { clientId: stub.clientId } : {}),
         clientSecret: '',
         ...(stub.scope ? { scope: stub.scope } : {}),
+        ...spreadExtraTokenParams(stub.extraTokenParams),
         clientAuthMethod: stub.clientAuthMethod ?? 'basic',
       };
     case 'cookie':
@@ -628,6 +634,7 @@ function parseCredentialStub(
           tokenUrl: typeof raw.tokenUrl === 'string' ? raw.tokenUrl : '',
           ...(typeof raw.clientId === 'string' ? { clientId: raw.clientId } : {}),
           ...(typeof raw.scope === 'string' ? { scope: raw.scope } : {}),
+          ...spreadExtraTokenParams(parseExtraTokenParams(raw.extraTokenParams)),
           clientAuthMethod: parseClientAuthMethod(raw.clientAuthMethod),
         },
         secretsDiscarded,
@@ -641,6 +648,7 @@ function parseCredentialStub(
           ...(typeof raw.username === 'string' ? { username: raw.username } : {}),
           ...(typeof raw.clientId === 'string' ? { clientId: raw.clientId } : {}),
           ...(typeof raw.scope === 'string' ? { scope: raw.scope } : {}),
+          ...spreadExtraTokenParams(parseExtraTokenParams(raw.extraTokenParams)),
           clientAuthMethod: parseClientAuthMethod(raw.clientAuthMethod),
         },
         secretsDiscarded,
@@ -701,6 +709,7 @@ function parseFullCredential(raw: unknown, index: number): { credential: Credent
           clientId: stringValue('clientId'),
           clientSecret: stringValue('clientSecret'),
           ...(typeof raw.scope === 'string' ? { scope: raw.scope } : {}),
+          ...spreadExtraTokenParams(parseExtraTokenParams(raw.extraTokenParams)),
           clientAuthMethod: parseClientAuthMethod(raw.clientAuthMethod),
         },
       };
@@ -715,6 +724,7 @@ function parseFullCredential(raw: unknown, index: number): { credential: Credent
           ...(typeof raw.clientId === 'string' ? { clientId: raw.clientId } : {}),
           ...(typeof raw.clientSecret === 'string' ? { clientSecret: raw.clientSecret } : {}),
           ...(typeof raw.scope === 'string' ? { scope: raw.scope } : {}),
+          ...spreadExtraTokenParams(parseExtraTokenParams(raw.extraTokenParams)),
           clientAuthMethod: parseClientAuthMethod(raw.clientAuthMethod),
         },
       };
@@ -727,6 +737,23 @@ function parseFullCredential(raw: unknown, index: number): { credential: Credent
 
 function parseClientAuthMethod(raw: unknown): OAuth2ClientAuthMethod {
   return raw === 'body' ? 'body' : 'basic';
+}
+
+function parseExtraTokenParams(raw: unknown): Record<string, string> | undefined {
+  if (!isRecord(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof key === 'string' && key.trim() && typeof value === 'string') {
+      out[key] = value;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function spreadExtraTokenParams(
+  params: Record<string, string> | undefined
+): { extraTokenParams: Record<string, string> } | Record<string, never> {
+  return params && Object.keys(params).length > 0 ? { extraTokenParams: { ...params } } : {};
 }
 
 function parseSpecHint(raw: unknown, nodes: WorkflowNode[]): CollectionWorkflow['specHint'] {
