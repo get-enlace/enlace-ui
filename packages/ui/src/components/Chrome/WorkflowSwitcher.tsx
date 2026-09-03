@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
 
 /**
  * Chrome-center workflow name. Click the name to rename; the chevron is a

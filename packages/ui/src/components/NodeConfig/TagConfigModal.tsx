@@ -95,7 +95,7 @@ export function TagConfigModal({
       <label className="tag-config-modal__field">
         Request
         {ancestorNodes.length === 0 ? (
-          <p className="node-inspector__hint">No upstream nodes reachable from here yet — connect this node from another on the canvas first.</p>
+          <p className="node-config__hint">No upstream nodes reachable from here yet — connect this node from another on the canvas first.</p>
         ) : (
           <select value={sourceNodeId} onChange={(e) => setSourceNodeId(e.target.value)}>
             <option value="" disabled>

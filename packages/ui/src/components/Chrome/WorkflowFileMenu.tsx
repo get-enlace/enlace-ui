@@ -1,11 +1,11 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
 import {
   collectionFilename,
   formatUnknownOperationsError,
   parseCollection,
   serializeCollection,
-} from '../utils/workflowDocument.js';
+} from '../../utils/workflowDocument.js';
 import {
   decryptCollection,
   encryptCollection,
@@ -13,8 +13,8 @@ import {
   isEncryptionSupported,
   type EncryptedCollectionEnvelope,
 } from '@get-enlace/core';
-import type { CollectionWarnings, EnlaceCollection } from '../types.js';
-import { Modal } from './Modal.js';
+import type { CollectionWarnings, EnlaceCollection } from '../../types.js';
+import { Modal } from '../Modal.js';
 
 const MIN_PASSWORD_LENGTH = 8;
 

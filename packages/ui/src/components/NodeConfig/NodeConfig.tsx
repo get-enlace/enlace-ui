@@ -113,8 +113,8 @@ export function NodeConfig() {
 
   if (!node || !operation) {
     return (
-      <aside className="node-inspector node-inspector--empty">
-        <p className="node-inspector__empty-msg">Select a node to configure it.</p>
+      <aside className="node-config node-config--empty">
+        <p className="node-config__empty-msg">Select a node to configure it.</p>
       </aside>
     );
   }
@@ -212,7 +212,7 @@ export function NodeConfig() {
       return (
         <div
           key={field.path}
-          className={`node-inspector__field${disabled ? ' node-inspector__field--disabled' : ''}`}
+          className={`node-config__field${disabled ? ' node-config__field--disabled' : ''}`}
           title={field.reason}
         >
           <label>
@@ -222,16 +222,16 @@ export function NodeConfig() {
             {disabled ? ' (unsupported)' : ''}
           </label>
           <div
-            className={`node-inspector__file-drop${fileName ? ' node-inspector__file-drop--filled' : ''}${disabled ? ' node-inspector__file-drop--disabled' : ''}`}
+            className={`node-config__file-drop${fileName ? ' node-config__file-drop--filled' : ''}${disabled ? ' node-config__file-drop--disabled' : ''}`}
           >
             {fileName ? (
               <>
-                <span className="node-inspector__file-name" title={fileName}>
+                <span className="node-config__file-name" title={fileName}>
                   {fileName}
                 </span>
                 <button
                   type="button"
-                  className="node-inspector__file-clear"
+                  className="node-config__file-clear"
                   disabled={disabled}
                   aria-label={`Clear ${field.path}`}
                   onClick={() => setUploadedFile(node!.id, field.path, null)}
@@ -245,7 +245,7 @@ export function NodeConfig() {
                 <input
                   key="empty"
                   type="file"
-                  className="node-inspector__file-input"
+                  className="node-config__file-input"
                   disabled={disabled}
                   aria-label={field.path}
                   onChange={(e) => {
@@ -253,7 +253,7 @@ export function NodeConfig() {
                     setUploadedFile(node!.id, field.path, file);
                   }}
                 />
-                <span className="node-inspector__file-prompt" aria-hidden="true">
+                <span className="node-config__file-prompt" aria-hidden="true">
                   <UploadIcon />
                 </span>
               </>
@@ -266,7 +266,7 @@ export function NodeConfig() {
     return (
       <div
         key={field.path}
-        className={`node-inspector__field${disabled ? ' node-inspector__field--disabled' : ''}`}
+        className={`node-config__field${disabled ? ' node-config__field--disabled' : ''}`}
         title={field.reason}
       >
         <label>
@@ -276,9 +276,9 @@ export function NodeConfig() {
           {disabled ? ' (unsupported)' : ''}
         </label>
 
-        <div className={`node-inspector__field-row${isMapped ? ' node-inspector__field-row--mapped' : ''}`}>
+        <div className={`node-config__field-row${isMapped ? ' node-config__field-row--mapped' : ''}`}>
           <select
-            className="node-inspector__source-select"
+            className="node-config__source-select"
             disabled={disabled}
             value={isMapped ? 'mapped' : 'static'}
             aria-label={`Source for ${field.path}`}
@@ -403,18 +403,18 @@ export function NodeConfig() {
   }
 
   return (
-    <aside className="node-inspector">
+    <aside className="node-config">
       {/* Operation verb+path is the pane header (no separate "Inspector" title).
           Credential lock stays here — it's about this operation, not chrome. */}
       {isRunning && (
-        <p className="node-inspector__banner">Workflow is running — editing is locked until it finishes.</p>
+        <p className="node-config__banner">Workflow is running — editing is locked until it finishes.</p>
       )}
-      <fieldset className="node-inspector__fieldset" disabled={isRunning}>
-      <div className="node-inspector__header" ref={credPickerRef}>
-        <div className="node-inspector__op-title">
+      <fieldset className="node-config__fieldset" disabled={isRunning}>
+      <div className="node-config__header" ref={credPickerRef}>
+        <div className="node-config__op-title">
           <button
             type="button"
-            className={`node-inspector__cred-lock${selectedCredential ? ' node-inspector__cred-lock--set' : ''}`}
+            className={`node-config__cred-lock${selectedCredential ? ' node-config__cred-lock--set' : ''}`}
             aria-label="Credential"
             aria-expanded={credPickerOpen}
             aria-haspopup="listbox"
@@ -424,16 +424,16 @@ export function NodeConfig() {
             <LockIcon />
           </button>
           <span className={`method-badge method-badge--${operation.method}`}>{operation.method.toUpperCase()}</span>
-          <h2 className="node-inspector__path">{operation.path}</h2>
+          <h2 className="node-config__path">{operation.path}</h2>
         </div>
         {credPickerOpen && (
-          <ul className="node-inspector__cred-menu" role="listbox" aria-label="Available credentials">
+          <ul className="node-config__cred-menu" role="listbox" aria-label="Available credentials">
             <li role="presentation">
               <button
                 type="button"
                 role="option"
                 aria-selected={!selectedCredential}
-                className={`node-inspector__cred-option${!selectedCredential ? ' node-inspector__cred-option--active' : ''}`}
+                className={`node-config__cred-option${!selectedCredential ? ' node-config__cred-option--active' : ''}`}
                 onClick={() => {
                   setCredential(node.id, null);
                   setCredPickerOpen(false);
@@ -448,7 +448,7 @@ export function NodeConfig() {
                   type="button"
                   role="option"
                   aria-selected={selectedCredential?.id === c.id}
-                  className={`node-inspector__cred-option${selectedCredential?.id === c.id ? ' node-inspector__cred-option--active' : ''}`}
+                  className={`node-config__cred-option${selectedCredential?.id === c.id ? ' node-config__cred-option--active' : ''}`}
                   onClick={() => {
                     setCredential(node.id, c.id);
                     setCredPickerOpen(false);
@@ -462,7 +462,7 @@ export function NodeConfig() {
         )}
       </div>
 
-      <div className="node-inspector__request-header">
+      <div className="node-config__request-header">
         <h3>Request</h3>
         {hasRequestToggle && (
           <label
@@ -485,22 +485,22 @@ export function NodeConfig() {
       {/* Form mode: path/query/header "Map from..." needs an upstream node.
           Raw mode: tag chips in the editors have their own empty-state messaging. */}
       {ancestorNodes.length === 0 && bodyMode === 'form' && fields.length > 0 && (
-        <p className="node-inspector__hint">
+        <p className="node-config__hint">
           Connect this node from another on the canvas (drag box to box) to enable "Map from...".
         </p>
       )}
 
-      {switchError && <p className="node-inspector__error">{switchError}</p>}
+      {switchError && <p className="node-config__error">{switchError}</p>}
 
       {bodyMode === 'raw' && (
-        <p className="node-inspector__hint">
+        <p className="node-config__hint">
           Type <code>{'{{'}</code> inside a string to map a value from an upstream response.
         </p>
       )}
 
       {pathFields.length > 0 && (
-        <section className="node-inspector__section">
-          <h4 className="node-inspector__section-title">Path variables</h4>
+        <section className="node-config__section">
+          <h4 className="node-config__section-title">Path variables</h4>
           {bodyMode === 'form' ? (
             pathFields.map(renderField)
           ) : node.rawPath ? (
@@ -517,8 +517,8 @@ export function NodeConfig() {
       )}
 
       {queryFields.length > 0 && (
-        <section className="node-inspector__section">
-          <h4 className="node-inspector__section-title">Query params</h4>
+        <section className="node-config__section">
+          <h4 className="node-config__section-title">Query params</h4>
           {bodyMode === 'form' ? (
             queryFields.map(renderField)
           ) : node.rawQuery ? (
@@ -535,18 +535,18 @@ export function NodeConfig() {
       )}
 
       {headerFields.length > 0 && (
-        <section className="node-inspector__section">
-          <h4 className="node-inspector__section-title">Headers</h4>
+        <section className="node-config__section">
+          <h4 className="node-config__section-title">Headers</h4>
           {headerFields.map(renderField)}
         </section>
       )}
 
       {operation.requestBodySchema && (
-        <section className="node-inspector__section node-inspector__body">
-          <h4 className="node-inspector__section-title">Body</h4>
+        <section className="node-config__section node-config__body">
+          <h4 className="node-config__section-title">Body</h4>
 
           {bodyMode === 'form' && hasUnrepresentableShape(operation.requestBodySchema) ? (
-            <p className="node-inspector__banner">
+            <p className="node-config__banner">
               This body has a shape the form can't fully represent (arrays of objects or polymorphic fields).{' '}
               <button type="button" onClick={switchToRaw}>
                 Switch to Raw

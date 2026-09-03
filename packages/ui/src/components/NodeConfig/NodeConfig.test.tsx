@@ -148,12 +148,12 @@ describe('NodeConfig', () => {
     render(<NodeConfig />);
 
     const lock = screen.getByRole('button', { name: 'Credential' });
-    expect(lock).not.toHaveClass('node-inspector__cred-lock--set');
+    expect(lock).not.toHaveClass('node-config__cred-lock--set');
     await user.click(lock);
     await user.click(screen.getByRole('option', { name: 'staging' }));
 
     expect(useWorkflowStore.getState().nodes[0].credentialId).toBe('cred-1');
-    expect(screen.getByRole('button', { name: 'Credential' })).toHaveClass('node-inspector__cred-lock--set');
+    expect(screen.getByRole('button', { name: 'Credential' })).toHaveClass('node-config__cred-lock--set');
   });
 
   it('coerces a static integer field to a real number in the store', async () => {

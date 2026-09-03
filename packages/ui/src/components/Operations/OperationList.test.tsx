@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { OperationList } from './OperationList.js';
-import type { Operation } from '../types.js';
+import type { Operation } from '../../types.js';
 
 function makeOperation(overrides: Partial<Operation>): Operation {
   return {

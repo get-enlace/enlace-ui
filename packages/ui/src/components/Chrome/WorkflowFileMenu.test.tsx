@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WorkflowFileMenu } from './WorkflowFileMenu.js';
-import { useWorkflowStore } from '../store/workflowStore.js';
-import { serializeCollection } from '../utils/workflowDocument.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
+import { serializeCollection } from '../../utils/workflowDocument.js';
 import { encryptCollection } from '@get-enlace/core';
-import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../types.js';
+import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../../types.js';
 
 function resetStore() {
   useWorkflowStore.setState({

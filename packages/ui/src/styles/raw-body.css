@@ -3,7 +3,7 @@
  * overlays the canvas is CredentialsPanel's edge-anchored drawer instead —
  * see the note above .credentials-drawer__backdrop). */
 
-.node-inspector__body {
+.node-config__body {
   margin-top: 12px;
 }
 
@@ -75,18 +75,18 @@
    select/button in the inspector in one place while a run is in progress
    (see NodeConfig.tsx and workflowStore.ts's isLocked); :disabled below
    just dims it to match, same as a native disabled input already looks. */
-.node-inspector__fieldset {
+.node-config__fieldset {
   border: none;
   margin: 0;
   padding: 0;
   min-width: 0;
 }
 
-.node-inspector__fieldset:disabled {
+.node-config__fieldset:disabled {
   opacity: 0.6;
 }
 
-.node-inspector__banner {
+.node-config__banner {
   background: var(--color-warning-bg, rgba(252, 161, 48, 0.12));
   border: 1px solid var(--color-warning);
   border-radius: 4px;
@@ -96,7 +96,7 @@
   margin-bottom: 10px;
 }
 
-.node-inspector__banner button {
+.node-config__banner button {
   margin-left: 4px;
   background: transparent;
   border: none;
@@ -107,7 +107,7 @@
   font-size: 12px;
 }
 
-.node-inspector__error {
+.node-config__error {
   color: var(--color-error);
   font-size: 12px;
   margin-bottom: 10px;
@@ -134,7 +134,7 @@
 
 /* Rejects edits at the CodeMirror level regardless (see RawBodyEditor.tsx's
    readOnly prop) — this is just the matching visual cue, same dimmed
-   treatment as .node-inspector--locked's native form controls. */
+   treatment as .node-config--locked's native form controls. */
 .raw-body-editor__codemirror--readonly {
   opacity: 0.6;
   cursor: not-allowed;

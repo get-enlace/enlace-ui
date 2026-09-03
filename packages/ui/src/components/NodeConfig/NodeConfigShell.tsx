@@ -51,9 +51,9 @@ export function NodeConfigShell({ children, onCollapse, onWidthChange }: NodeCon
   }, []);
 
   return (
-    <div className="inspector-shell">
+    <div className="node-config-shell">
       <div
-        className="inspector-shell__resize"
+        className="node-config-shell__resize"
         onPointerDown={onResizePointerDown}
         role="separator"
         aria-orientation="vertical"
@@ -62,7 +62,7 @@ export function NodeConfigShell({ children, onCollapse, onWidthChange }: NodeCon
       />
       <button
         type="button"
-        className="inspector-shell__collapse"
+        className="node-config-shell__collapse"
         onClick={onCollapse}
         title="Hide node config"
         aria-label="Hide node config"

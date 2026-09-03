@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChromeSettingsMenu } from './ChromeSettingsMenu.js';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
 
 describe('ChromeSettingsMenu', () => {
   beforeEach(() => {

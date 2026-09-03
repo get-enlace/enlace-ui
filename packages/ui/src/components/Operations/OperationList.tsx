@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Operation } from '../types.js';
+import type { Operation } from '../../types.js';
 
 interface Props {
   operations: Operation[];

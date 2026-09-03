@@ -75,7 +75,7 @@ export default function App() {
         </div>
       </header>
       <div
-        className={`app__body${showNodeConfig ? '' : ' app__body--inspector-collapsed'}`}
+        className={`app__body${showNodeConfig ? '' : ' app__body--node-config-collapsed'}`}
         style={
           showNodeConfig
             ? { gridTemplateColumns: `240px minmax(240px, 1fr) ${nodeConfigWidth}px` }
