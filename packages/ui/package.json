@@ -1,7 +1,7 @@
 {
   "name": "@get-enlace/ui",
   "private": false,
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Enlace's canvas UI — spec loading, canvas, inspector, and debug pane. Chain execution comes from workspace @get-enlace/core (bundled at build). Runs entirely in the browser. Early dev preview: no persistence yet, install via the `dev` dist-tag on GitHub Packages.",
   "license": "MIT",
   "repository": {

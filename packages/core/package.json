@@ -1,7 +1,7 @@
 {
   "name": "@get-enlace/core",
   "private": true,
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Enlace's portable chain-execution engine — spec parsing, dependency graph, credential injection, and executeChain. No React/DOM. Workspace-only today (bundled into @get-enlace/ui; later CLI). Not published.",
   "license": "MIT",
   "repository": {
