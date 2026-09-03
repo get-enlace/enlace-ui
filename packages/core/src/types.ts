@@ -78,11 +78,44 @@ export interface RawBody {
  * dispatched by engine/nodeHandlers.ts's handler registry (`chainExecutor.ts`
  * only knows this contract, never a kind's specifics). `'operation'` is
  * every node from before this field existed: it fires an HTTP call
- * described by `operationId`. `'wait'` is the first non-HTTP preset (see
- * ARCHITECTURE.md's "Preset nodes" section) — a pure pacing step with no
- * request/response of its own.
+ * described by `operationId`. `'presets'` packages an ordered run of one or
+ * more presets (`presets`) as one executable unit in the main graph — see
+ * `Preset` below; this is the *only* way a preset ever reaches the canvas,
+ * even a single Wait (see utils/workflowDocument.ts and the store's
+ * `addPresetsNode`). `'wait'` never appears as a real top-level node's
+ * `kind` — it exists only as the synthetic kind engine/nodeHandlers.ts's
+ * `presetAsNode` gives each preset it runs, so the same per-kind handler
+ * registry can dispatch it exactly like a top-level node would.
  */
-export type WorkflowNodeKind = 'operation' | 'wait';
+export type WorkflowNodeKind = 'operation' | 'wait' | 'presets';
+
+/**
+ * The kind a single preset inside a `kind: 'presets'` node's `presets` list
+ * can be. Today just `'wait'` — a union point for the next preset (Assert)
+ * once it lands.
+ */
+export type PresetKind = 'wait';
+
+/**
+ * One preset entry inside a `kind: 'presets'` node's `presets` list — a
+ * smaller, self-contained sibling of `WorkflowNode` for the presets a
+ * collection can hold (presets only, never `'operation'`). `id` is unique
+ * only within the collection's own `presets` array (used for reorder/remove
+ * and as the synthetic node id a preset runs under — see
+ * engine/nodeHandlers.ts's `presetsNodeHandler`, which reuses the exact same
+ * per-kind handler each preset's `kind` would use standalone). Deliberately
+ * not itself a `WorkflowNode`: a preset has no `credentialId`/`fieldValues`/
+ * graph position of its own, and — per the issue's "Inside the collection:
+ * presets only, linear order only" — never participates in
+ * `WorkflowConnection`/the main dependency graph individually; only the
+ * collection as a whole does.
+ */
+export interface Preset {
+  id: string;
+  kind: PresetKind;
+  /** `kind: 'wait'` only — same meaning as `WorkflowNode.durationMs`. */
+  durationMs: number;
+}
 
 export interface WorkflowNode {
   id: string; // unique per canvas instance
@@ -108,9 +141,23 @@ export interface WorkflowNode {
   /**
    * `kind: 'wait'` only — how long the node pauses execution, in
    * milliseconds, once its dependencies are satisfied and no breakpoint
-   * gates it. Ignored by every other kind.
+   * gates it. Ignored by every other kind. In practice only ever set on the
+   * synthetic per-preset `WorkflowNode` engine/nodeHandlers.ts's
+   * `presetAsNode` builds internally — no real top-level node carries it.
    */
   durationMs?: number;
+  /**
+   * `kind: 'presets'` only — the ordered presets this node runs as one
+   * unit once its own dependencies are satisfied (see `Preset` and
+   * engine/nodeHandlers.ts's `presetsNodeHandler`). Empty/absent means an
+   * empty collection — a valid, if useless, state (nothing to run, settles
+   * immediately) rather than an error, same as a group with no members
+   * being cleaned up elsewhere rather than rejected here. In practice the
+   * canvas never creates one empty — dropping a preset from the palette
+   * always creates a collection with that one preset already in it (see
+   * store/slices/graphSlice.ts's `addPresetsNode`).
+   */
+  presets?: Preset[];
   /**
    * Optional (not required) so every pre-existing `WorkflowNode` literal
    * (fixtures, older in-memory state) keeps compiling/behaving unchanged —
@@ -267,6 +314,13 @@ export interface CollectionWorkflow {
   nodePositions: Record<string, { x: number; y: number }>;
   /** Canvas groups — same tier as `nodePositions`. */
   groups: NodeGroup[];
+  /**
+   * Collapsed/expanded chrome for `kind: 'presets'` nodes, keyed by node id —
+   * same tier as `nodePositions`/`groups`. Optional so a collection from
+   * before presets existed parses unchanged; an absent entry (including for
+   * every collection predating this field) means expanded.
+   */
+  presetsCollapsed?: Record<string, boolean>;
 }
 
 export type CollectionSecretsMode = 'stripped' | 'included';
@@ -527,6 +581,18 @@ export interface RunStep {
   timestampStart: string;
   timestampEnd: string;
   error?: string;
+  /**
+   * `kind: 'presets'` nodes only — one settled `RunStep` per internal preset,
+   * in order, produced by running each through the exact handler its own
+   * `kind` would use standalone (see engine/nodeHandlers.ts's
+   * `presetsNodeHandler`). The collection's own `request`/`response`/`error`
+   * above are a synthetic aggregate (a made-up `request.method: 'PRESETS'`,
+   * no `response`, `error` set the instant any sub-step's own `error` did) —
+   * the collection is one executable unit in the graph (§4/§5 of
+   * ARCHITECTURE.md), but Results still shows per-preset detail underneath
+   * that one row via this array. Absent/undefined for every other kind.
+   */
+  subSteps?: RunStep[];
 }
 
 export interface RunResult {

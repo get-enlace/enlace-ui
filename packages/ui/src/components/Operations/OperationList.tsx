@@ -80,7 +80,11 @@ export function OperationList({ operations }: Props) {
     <aside className="operation-list">
       {/* Deliberately not a <ul>/<li> like the Operations list below — a
           single fixed preset today, and the two lists' `listitem` roles
-          would otherwise collide in "how many operations matched" counts. */}
+          would otherwise collide in "how many operations matched" counts.
+          Only real presets live here — there's no "collection" item to
+          drag; dropping any preset onto the canvas always creates/uses a
+          `kind: 'presets'` collection, even for just this one (see
+          Canvas.tsx's onDrop). */}
       <section className="preset-list">
         <h2>Presets</h2>
         <div

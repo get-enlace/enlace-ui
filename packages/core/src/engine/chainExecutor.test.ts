@@ -1378,6 +1378,107 @@ describe('executeChain — wait nodes', () => {
   });
 });
 
+function presetsNode(id: string, presets: WorkflowNode['presets']): WorkflowNode {
+  return { id, kind: 'presets', credentialId: null, fieldValues: {}, presets };
+}
+
+describe('executeChain — presets nodes', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('runs every preset in order and settles as one aggregate step with per-preset subSteps', async () => {
+    const g = presetsNode('g', [
+      { id: 's1', kind: 'wait', durationMs: 5 },
+      { id: 's2', kind: 'wait', durationMs: 5 },
+    ]);
+
+    const result = await executeChain({ nodes: [g], connections: [] }, new Map(), new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    expect(result.steps).toHaveLength(1);
+    const step = result.steps[0];
+    expect(step.nodeId).toBe('g');
+    expect(step.request.method).toBe('PRESETS');
+    expect(step.response).toBeUndefined();
+    expect(step.error).toBeUndefined();
+    expect(step.subSteps).toHaveLength(2);
+    expect(step.subSteps?.map((s) => s.request.method)).toEqual(['WAIT', 'WAIT']);
+  });
+
+  it('settles an empty presets collection immediately with no sub-steps', async () => {
+    const g = presetsNode('g', []);
+    const result = await executeChain({ nodes: [g], connections: [] }, new Map(), new Map(), {
+      baseUrl: 'http://example.test',
+    });
+    expect(result.steps[0].subSteps).toEqual([]);
+    expect(result.steps[0].error).toBeUndefined();
+  });
+
+  it('gates a downstream node exactly like any other node', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const g = presetsNode('g', [{ id: 's1', kind: 'wait', durationMs: 5 }]);
+    const a = node('a');
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'g', toNodeId: 'a' }];
+    const operationsById = new Map([['a', op('a', '/a')]]);
+
+    const result = await executeChain({ nodes: [a, g], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'g']);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('Stop mid-collection resolves promptly (the in-progress preset is cut short, and no further preset starts)', async () => {
+    const g = presetsNode('g', [
+      { id: 's1', kind: 'wait', durationMs: 60_000 },
+      { id: 's2', kind: 'wait', durationMs: 60_000 },
+    ]);
+
+    let control: RunControl | undefined;
+    const resultPromise = executeChain({ nodes: [g], connections: [] }, new Map(), new Map(), {
+      baseUrl: 'http://example.test',
+      onControl: (c) => (control = c),
+    });
+
+    await flushMicrotasks();
+    control!.stop();
+    // Hangs (and fails on the test's own timeout) if Stop didn't actually
+    // cut the in-progress preset's sleep short.
+    const result = await resultPromise;
+
+    const step = result.steps.find((s) => s.nodeId === 'g');
+    expect(step?.subSteps).toHaveLength(1); // s2 never started
+  });
+
+  it('pauses a presets node at an armed breakpoint like any other node, with no preview request ever emitted for it', async () => {
+    const a = node('a');
+    const g = presetsNode('g', [{ id: 's1', kind: 'wait', durationMs: 5 }]);
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'a', toNodeId: 'g' }];
+    const operationsById = new Map([['a', op('a', '/a')]]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, {})));
+
+    const events: RunEvent[] = [];
+    let control: RunControl | undefined;
+    const resultPromise = executeChain({ nodes: [a, g], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      armedBreakpoints: new Set([connectionKey('a', 'g')]),
+      onEvent: (e) => events.push(e),
+      onControl: (c) => (control = c),
+    });
+
+    await flushMicrotasks();
+    expect(events.find((e) => e.nodeId === 'g')?.status).toBe('paused');
+    expect(events.some((e) => e.nodeId === 'g' && e.request)).toBe(false);
+
+    control!.continue();
+    const result = await resultPromise;
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'g']);
+  });
+});
+
 describe('getByPath', () => {
   it('resolves nested and array paths', () => {
     const obj = { order: { items: [{ id: 'abc' }] } };

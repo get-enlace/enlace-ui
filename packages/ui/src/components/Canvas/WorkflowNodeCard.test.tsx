@@ -126,20 +126,6 @@ describe('WorkflowNodeCard', () => {
     expect(screen.getByText('GET')).toBeInTheDocument();
   });
 
-  it('renders a wait node with distinct chrome — no method badge, no legend, a duration label', () => {
-    renderCard({
-      node: { id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 2000 },
-      operation: undefined,
-      selected: false,
-      label: 'Wait 2s',
-    });
-
-    expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--wait');
-    expect(screen.getByText('Wait 2s')).toBeInTheDocument();
-    expect(document.querySelector('.method-badge')).not.toBeInTheDocument();
-    expect(document.querySelector('legend')).not.toBeInTheDocument();
-  });
-
   it('applies the --selected modifier class when selected', () => {
     renderCard({ node: makeNode(), operation: makeOperation(), selected: true });
     expect(document.querySelector('.workflow-node')).toHaveClass('workflow-node--selected');

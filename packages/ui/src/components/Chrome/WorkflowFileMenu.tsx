@@ -78,6 +78,7 @@ export const WorkflowFileMenu = forwardRef<WorkflowFileMenuHandle, WorkflowFileM
     const connections = useWorkflowStore((s) => s.connections);
     const nodePositions = useWorkflowStore((s) => s.nodePositions);
     const groups = useWorkflowStore((s) => s.groups);
+    const presetsCollapsed = useWorkflowStore((s) => s.presetsCollapsed);
     const credentials = useWorkflowStore((s) => s.credentials);
     const specInfo = useWorkflowStore((s) => s.specInfo);
     const workflowName = useWorkflowStore((s) => s.workflowName);
@@ -131,6 +132,7 @@ export const WorkflowFileMenu = forwardRef<WorkflowFileMenuHandle, WorkflowFileM
         connections,
         nodePositions,
         groups,
+        presetsCollapsed,
         credentials,
         specInfo,
       });

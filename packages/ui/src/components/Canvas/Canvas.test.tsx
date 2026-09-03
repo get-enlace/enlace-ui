@@ -45,7 +45,7 @@ describe('Canvas', () => {
     expect(useWorkflowStore.getState().nodes[0].operationId).toBe('POST /pet');
   });
 
-  it('adds a wait node to the store when the Wait preset is dropped onto the canvas', () => {
+  it('adds a presets collection seeded with one Wait preset when the Wait preset is dropped onto the canvas', () => {
     const { container } = render(<Canvas />);
     const canvas = container.querySelector('.canvas')!;
 
@@ -57,8 +57,10 @@ describe('Canvas', () => {
 
     const nodes = useWorkflowStore.getState().nodes;
     expect(nodes).toHaveLength(1);
-    expect(nodes[0].kind).toBe('wait');
+    expect(nodes[0].kind).toBe('presets');
     expect(nodes[0].operationId).toBeUndefined();
+    expect(nodes[0].presets).toHaveLength(1);
+    expect(nodes[0].presets![0]).toMatchObject({ kind: 'wait' });
   });
 
   it('does nothing when the drop carries no operation id (e.g. a stray file drop)', () => {

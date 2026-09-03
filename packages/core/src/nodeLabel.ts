@@ -1,4 +1,4 @@
-import type { Operation, WorkflowNode } from './types.js';
+import type { Preset, Operation, WorkflowNode } from './types.js';
 
 /**
  * Renders a millisecond duration the way a person would type it — whole
@@ -14,8 +14,30 @@ export function formatWaitDuration(durationMs: number): string {
   return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)}s`;
 }
 
+/** One `Preset`'s own short label — same wording a standalone node of that kind would get. */
+export function formatPresetLabel(preset: Preset): string {
+  switch (preset.kind) {
+    case 'wait':
+      return `Wait ${formatWaitDuration(preset.durationMs)}`;
+  }
+}
+
+/**
+ * A presets collection's short summary — e.g. `Wait 2s · Wait 1s` — shared
+ * by the collapsed canvas card (its whole identity, per the issue's
+ * "chevron, step count, short summary") and the node label. An empty
+ * collection is a valid, if useless, state (see `WorkflowNode.presets`'s own
+ * comment) — named plainly rather than left blank; in practice the canvas
+ * never creates one empty.
+ */
+export function formatPresetsSummary(presets: Preset[]): string {
+  return presets.length > 0 ? presets.map(formatPresetLabel).join(' · ') : 'Empty';
+}
+
 function operationName(node: WorkflowNode, operationsById: Map<string, Operation>): string {
-  if (node.kind === 'wait') return `Wait ${formatWaitDuration(node.durationMs ?? 0)}`;
+  // 'wait' never appears as a real top-level node's kind (see
+  // WorkflowNodeKind's own comment) — only 'operation' and 'presets' do.
+  if (node.kind === 'presets') return `Presets: ${formatPresetsSummary(node.presets ?? [])}`;
   const operation = node.operationId ? operationsById.get(node.operationId) : undefined;
   return operation?.operationId ?? operation?.id ?? node.operationId ?? node.id;
 }

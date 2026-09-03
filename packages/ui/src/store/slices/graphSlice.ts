@@ -3,7 +3,7 @@ import { connectionKey } from '@get-enlace/core';
 import { findOpenPosition } from '../../utils/nodePlacement.js';
 import { expandedGroupFrame, sortGroupMemberIds } from '../../utils/groupGeometry.js';
 import { randomId } from '../../utils/randomId.js';
-import type { FieldValue, NodeGroup, RawBody, WorkflowConnection, WorkflowNode } from '../../types.js';
+import type { FieldValue, Preset, NodeGroup, RawBody, WorkflowConnection, WorkflowNode } from '../../types.js';
 import {
   defaultPosition,
   isLocked,
@@ -19,9 +19,31 @@ export interface GraphSlice {
   groups: NodeGroup[];
   selectedNodeId: string | null;
   uploadedFiles: Record<string, File>;
+  /**
+   * View-only chrome for `kind: 'presets'` nodes — collapsed (small diamond)
+   * vs expanded (preset list box). Same tier as
+   * `nodePositions`/`NodeGroup.collapsed`: never part of the executed
+   * `Workflow`, round-tripped in `.enlace` exports alongside
+   * `nodePositions`. Absent entry means expanded (a freshly-dropped
+   * collection starts open so its one preset is immediately visible/editable).
+   */
+  presetsCollapsed: Record<string, boolean>;
   addNode: (operationId: string, position?: Position) => string;
-  addWaitNode: (position?: Position, durationMs?: number) => string;
-  setNodeDurationMs: (nodeId: string, durationMs: number) => void;
+  /**
+   * The only way a preset reaches the canvas — always creates a
+   * `kind: 'presets'` collection, seeded with `initialPreset` when given
+   * (the palette always passes one; nothing ever drops an empty collection).
+   * Even a single preset renders with the collection's collapsed-diamond /
+   * expanded-box chrome, never as a standalone graph node.
+   */
+  addPresetsNode: (position?: Position, initialPreset?: Omit<Preset, 'id'>) => string;
+  /** Appends one preset to a collection's ordered `presets` list. No-op if `presetsNodeId` isn't a presets node. */
+  addPreset: (presetsNodeId: string, preset: Omit<Preset, 'id'>) => void;
+  removePreset: (presetsNodeId: string, presetId: string) => void;
+  /** Swaps a preset with its immediate up/down neighbor — "linear order only", no arbitrary jumps. A no-op at either end of the list. */
+  movePreset: (presetsNodeId: string, presetId: string, direction: 'up' | 'down') => void;
+  setPresetDurationMs: (presetsNodeId: string, presetId: string, durationMs: number) => void;
+  setPresetsCollapsed: (presetsNodeId: string, collapsed: boolean) => void;
   updateNodePosition: (nodeId: string, position: Position, options?: { avoidOverlap?: boolean }) => void;
   removeNode: (nodeId: string) => void;
   selectNode: (nodeId: string | null) => void;
@@ -53,7 +75,7 @@ export interface GraphSlice {
 }
 
 /** Default duration for a freshly-dropped Wait preset — 1s is long enough to be a deliberate pause without being annoying to test with, and short enough to trim on the spot. */
-const DEFAULT_WAIT_DURATION_MS = 1000;
+export const DEFAULT_WAIT_DURATION_MS = 1000;
 
 export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> = (set, get) => ({
   nodes: [],
@@ -62,6 +84,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
   groups: [],
   selectedNodeId: null,
   uploadedFiles: {},
+  presetsCollapsed: {},
 
   addNode: (operationId, position) => {
     if (isLocked(get())) return '';
@@ -79,16 +102,11 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
     return id;
   },
 
-  addWaitNode: (position, durationMs) => {
+  addPresetsNode: (position, initialPreset) => {
     if (isLocked(get())) return '';
     const id = randomId();
-    const node: WorkflowNode = {
-      id,
-      kind: 'wait',
-      credentialId: null,
-      fieldValues: {},
-      durationMs: durationMs ?? DEFAULT_WAIT_DURATION_MS,
-    };
+    const presets: Preset[] = initialPreset ? [{ ...initialPreset, id: randomId() }] : [];
+    const node: WorkflowNode = { id, kind: 'presets', credentialId: null, fieldValues: {}, presets };
     set((state) => {
       const desired = position ?? defaultPosition(state.nodes.length);
       const obstacles = Object.values(state.nodePositions);
@@ -101,10 +119,58 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
     return id;
   },
 
-  setNodeDurationMs: (nodeId, durationMs) =>
+  addPreset: (presetsNodeId, preset) =>
     set((state) => {
       if (isLocked(state)) return state;
-      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, durationMs } : n)) };
+      const presetsNode = state.nodes.find((n) => n.id === presetsNodeId);
+      if (!presetsNode || presetsNode.kind !== 'presets') return state;
+      const newPreset: Preset = { ...preset, id: randomId() };
+      return {
+        nodes: state.nodes.map((n) =>
+          n.id === presetsNodeId ? { ...n, presets: [...(n.presets ?? []), newPreset] } : n
+        ),
+      };
+    }),
+
+  removePreset: (presetsNodeId, presetId) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) =>
+          n.id === presetsNodeId ? { ...n, presets: (n.presets ?? []).filter((p) => p.id !== presetId) } : n
+        ),
+      };
+    }),
+
+  movePreset: (presetsNodeId, presetId, direction) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      const presetsNode = state.nodes.find((n) => n.id === presetsNodeId);
+      if (!presetsNode?.presets) return state;
+      const index = presetsNode.presets.findIndex((p) => p.id === presetId);
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (index < 0 || targetIndex < 0 || targetIndex >= presetsNode.presets.length) return state;
+      const presets = [...presetsNode.presets];
+      [presets[index], presets[targetIndex]] = [presets[targetIndex], presets[index]];
+      return { nodes: state.nodes.map((n) => (n.id === presetsNodeId ? { ...n, presets } : n)) };
+    }),
+
+  setPresetDurationMs: (presetsNodeId, presetId, durationMs) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) =>
+          n.id === presetsNodeId
+            ? { ...n, presets: (n.presets ?? []).map((p) => (p.id === presetId ? { ...p, durationMs } : p)) }
+            : n
+        ),
+      };
+    }),
+
+  setPresetsCollapsed: (presetsNodeId, collapsed) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return { presetsCollapsed: { ...state.presetsCollapsed, [presetsNodeId]: collapsed } };
     }),
 
   updateNodePosition: (nodeId, position, options) =>
@@ -126,6 +192,9 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       if (isLocked(state)) return state;
       const nodePositions = { ...state.nodePositions };
       delete nodePositions[nodeId];
+
+      const presetsCollapsed = { ...state.presetsCollapsed };
+      delete presetsCollapsed[nodeId];
 
       const uploadedFiles = { ...state.uploadedFiles };
       const prefix = `${nodeId}::`;
@@ -177,6 +246,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       return {
         nodes,
         nodePositions,
+        presetsCollapsed,
         uploadedFiles,
         groups,
         connections: state.connections.filter((c) => c.fromNodeId !== nodeId && c.toNodeId !== nodeId),

@@ -7,6 +7,7 @@ import type {
   CredentialType,
   EnlaceCollection,
   FieldValue,
+  Preset,
   NodeGroup,
   Operation,
   RawBody,
@@ -36,6 +37,8 @@ export interface SerializeWorkflowInput {
   connections: WorkflowConnection[];
   nodePositions: Record<string, { x: number; y: number }>;
   groups?: NodeGroup[];
+  /** Collapsed/expanded chrome for presets nodes — same tier as `groups`. See `WorkflowState.presetsCollapsed`. */
+  presetsCollapsed?: Record<string, boolean>;
   credentials: Credential[];
   specInfo?: { title?: string; version?: string } | null;
   /** Override for tests — defaults to `new Date().toISOString()`. */
@@ -77,6 +80,7 @@ export function serializeCollection(input: SerializeWorkflowInput): EnlaceCollec
           Object.entries(input.nodePositions).map(([id, pos]) => [id, { x: pos.x, y: pos.y }])
         ),
         groups: sanitizeGroups(input.groups ?? [], new Set(nodes.map((n) => n.id))),
+        presetsCollapsed: sanitizePresetsCollapsed(input.presetsCollapsed ?? {}, nodes),
       },
     ],
   };
@@ -163,6 +167,23 @@ export function parseCollection(
     groups = sanitizeGroups(groups, new Set(nodes.map((n) => n.id)));
   }
 
+  let presetsCollapsed: Record<string, boolean> = {};
+  if (workflowValue.presetsCollapsed !== undefined) {
+    if (!isRecord(workflowValue.presetsCollapsed)) {
+      return { ok: false, error: 'Collection workflow "presetsCollapsed" must be an object when present.' };
+    }
+    for (const [id, collapsed] of Object.entries(workflowValue.presetsCollapsed)) {
+      if (isUnsafeKey(id)) {
+        return { ok: false, error: `Collection workflow has an invalid presetsCollapsed node id "${id}".` };
+      }
+      if (typeof collapsed !== 'boolean') {
+        return { ok: false, error: `Collection workflow has an invalid presetsCollapsed value for node "${id}".` };
+      }
+      presetsCollapsed[id] = collapsed;
+    }
+    presetsCollapsed = sanitizePresetsCollapsed(presetsCollapsed, nodes);
+  }
+
   const credentials: Array<CredentialStub | Credential> = [];
   let unexpectedSecretsDiscarded = false;
   for (let i = 0; i < value.credentials.length; i++) {
@@ -195,6 +216,7 @@ export function parseCollection(
     connections,
     nodePositions,
     groups,
+    presetsCollapsed,
   };
   const collection: EnlaceCollection = {
     format: ENLACE_COLLECTION_FORMAT,
@@ -240,6 +262,7 @@ export function hydrateCollection(collection: EnlaceCollection): {
   connections: WorkflowConnection[];
   nodePositions: Record<string, { x: number; y: number }>;
   groups: NodeGroup[];
+  presetsCollapsed: Record<string, boolean>;
   credentials: Credential[];
 } {
   const workflow = collection.workflows[0];
@@ -251,6 +274,7 @@ export function hydrateCollection(collection: EnlaceCollection): {
       Object.entries(workflow.nodePositions).map(([id, pos]) => [id, { x: pos.x, y: pos.y }])
     ),
     groups: sanitizeGroups(workflow.groups ?? [], new Set(nodes.map((n) => n.id))),
+    presetsCollapsed: sanitizePresetsCollapsed(workflow.presetsCollapsed ?? {}, nodes),
     credentials: hydrateCredentials(collection),
   };
 }
@@ -307,19 +331,16 @@ export function referencedIncompleteCredentials(
 }
 
 function serializeNode(node: WorkflowNode): WorkflowNode {
-  // Wait carries none of the operation-only fields below (operationId,
-  // requestMode, raw*, credential overrides) — writing them anyway would
-  // round-trip meaningless stray keys. `kind` itself is only ever written
-  // for a non-'operation' node — absent means 'operation', exactly as
-  // today's on-disk shape already does, so no existing collection needs
-  // migrating.
-  if (node.kind === 'wait') {
+  // A presets collection carries none of the operation-only fields below
+  // (operationId, requestMode, raw*, credential overrides) — writing them
+  // anyway would round-trip meaningless stray keys.
+  if (node.kind === 'presets') {
     return {
       id: node.id,
-      kind: 'wait',
+      kind: 'presets',
       credentialId: null,
       fieldValues: {},
-      durationMs: node.durationMs ?? 0,
+      presets: (node.presets ?? []).map((p) => ({ ...p })),
     };
   }
 
@@ -484,15 +505,14 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
     return `Enlace collection has an invalid node at index ${index}.`;
   }
 
-  // 'wait' is the only kind besides the default 'operation' — it needs no
-  // operationId at all, just a non-negative duration. Every node without
-  // this exact `kind` falls through to the 'operation' shape below,
-  // exactly as before this field existed — no migration for old exports.
-  if (raw.kind === 'wait') {
-    if (typeof raw.durationMs !== 'number' || !Number.isFinite(raw.durationMs) || raw.durationMs < 0) {
-      return `Enlace collection wait node "${raw.id}" has an invalid durationMs.`;
-    }
-    return { id: raw.id, kind: 'wait', credentialId: null, fieldValues: {}, durationMs: raw.durationMs };
+  // 'presets' packages an ordered list of presets as one executable unit —
+  // needs no operationId at all, just its own `presets` array to validate.
+  // Every node without this exact `kind` falls through to the 'operation'
+  // shape below, exactly as before this field existed.
+  if (raw.kind === 'presets') {
+    const presets = parsePresetsList(raw.presets, raw.id);
+    if (typeof presets === 'string') return presets;
+    return { id: raw.id, kind: 'presets', credentialId: null, fieldValues: {}, presets };
   }
 
   if (typeof raw.operationId !== 'string') {
@@ -522,6 +542,34 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
     }
   }
   return node;
+}
+
+function parsePresetsList(raw: unknown, presetsNodeId: string): Preset[] | string {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) return `Enlace collection presets node "${presetsNodeId}" has an invalid "presets" array.`;
+  const presets: Preset[] = [];
+  const seenIds = new Set<string>();
+  for (let i = 0; i < raw.length; i++) {
+    const preset = raw[i];
+    if (!isRecord(preset) || typeof preset.id !== 'string' || isUnsafeKey(preset.id)) {
+      return `Enlace collection presets node "${presetsNodeId}" has an invalid preset at index ${i}.`;
+    }
+    if (seenIds.has(preset.id)) {
+      return `Enlace collection presets node "${presetsNodeId}" has a duplicate preset id "${preset.id}".`;
+    }
+    // Only 'wait' exists today — every other value is rejected outright
+    // rather than silently dropped, since a preset from a newer format this
+    // version doesn't understand shouldn't quietly vanish from the collection.
+    if (preset.kind !== 'wait') {
+      return `Enlace collection presets node "${presetsNodeId}" has an unknown preset kind "${String(preset.kind)}".`;
+    }
+    if (typeof preset.durationMs !== 'number' || !Number.isFinite(preset.durationMs) || preset.durationMs < 0) {
+      return `Enlace collection presets node "${presetsNodeId}" preset "${preset.id}" has an invalid durationMs.`;
+    }
+    seenIds.add(preset.id);
+    presets.push({ id: preset.id, kind: 'wait', durationMs: preset.durationMs });
+  }
+  return presets;
 }
 
 function parseFieldValues(raw: unknown, nodeId: string): Record<string, FieldValue> | string {
@@ -629,6 +677,19 @@ function sanitizeGroups(groups: NodeGroup[], knownNodeIds: Set<string>): NodeGro
       position: { x: g.position.x, y: g.position.y },
     }))
     .filter((g) => g.nodeIds.length >= 2);
+}
+
+/** Drop entries for anything that isn't an actual `kind: 'presets'` node in `nodes` — same dangling-reference cleanup as `sanitizeGroups`. */
+function sanitizePresetsCollapsed(
+  presetsCollapsed: Record<string, boolean>,
+  nodes: WorkflowNode[]
+): Record<string, boolean> {
+  const presetsNodeIds = new Set(nodes.filter((n) => n.kind === 'presets').map((n) => n.id));
+  const out: Record<string, boolean> = {};
+  for (const [id, collapsed] of Object.entries(presetsCollapsed)) {
+    if (presetsNodeIds.has(id)) out[id] = collapsed;
+  }
+  return out;
 }
 
 function parseCredentialStub(

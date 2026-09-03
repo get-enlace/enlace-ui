@@ -22,6 +22,7 @@ export const createDocumentSlice: StateCreator<WorkflowState, [], [], DocumentSl
       connections: next.connections,
       nodePositions: next.nodePositions,
       groups: next.groups,
+      presetsCollapsed: next.presetsCollapsed,
       credentials: next.credentials,
       uploadedFiles: {},
       workflowName,
