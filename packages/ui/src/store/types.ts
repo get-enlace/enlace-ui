@@ -3,6 +3,7 @@ import type {
   Credential,
   EnlaceCollection,
   FieldValue,
+  Preset,
   NewCredential,
   NodeGroup,
   Operation,
@@ -102,6 +103,13 @@ export interface WorkflowState {
    * exports (see utils/workflowDocument.ts). See types.ts's `NodeGroup`.
    */
   groups: NodeGroup[];
+  /**
+   * Collapsed/expanded chrome for `kind: 'presets'` nodes, keyed by node id —
+   * same tier as `nodePositions`/`groups`: canvas-only, never part of the
+   * executed `Workflow`, round-tripped in `.enlace` exports. Absent entry
+   * means expanded.
+   */
+  presetsCollapsed: Record<string, boolean>;
   credentials: Credential[];
   /**
    * In-memory File blobs for `FieldValue` entries with `source: 'file'`.
@@ -176,15 +184,26 @@ export interface WorkflowState {
    */
   addNode: (operationId: string, position?: Position) => string;
   /**
-   * Adds a Wait preset node — a pure pacing step, no `operationId`/spec
-   * operation involved (see `WorkflowNodeKind` in `@get-enlace/core`'s
-   * types.ts). `durationMs` defaults to a sensible starting point; the
-   * inspector (`WaitNodeConfig`) is where it actually gets tuned. Same
-   * `isLocked`/placement behavior as `addNode`.
+   * The only way a preset reaches the canvas — always creates a
+   * `kind: 'presets'` collection node (see `WorkflowNodeKind`/`Preset` in
+   * `@get-enlace/core`'s types.ts), seeded with `initialPreset` when given.
+   * The palette always passes one (e.g. dragging Wait passes
+   * `{ kind: 'wait', durationMs: DEFAULT_WAIT_DURATION_MS }`); nothing ever
+   * drops an empty collection. Even a single preset renders with the
+   * collection's collapsed-diamond/expanded-box chrome, never as a
+   * standalone graph node. Same `isLocked`/placement behavior as `addNode`.
    */
-  addWaitNode: (position?: Position, durationMs?: number) => string;
-  /** Sets a Wait node's pause duration, in milliseconds. No-op for any other kind. */
-  setNodeDurationMs: (nodeId: string, durationMs: number) => void;
+  addPresetsNode: (position?: Position, initialPreset?: Omit<Preset, 'id'>) => string;
+  /** Appends one preset to a collection's ordered `presets` list. No-op if `presetsNodeId` isn't a presets node. */
+  addPreset: (presetsNodeId: string, preset: Omit<Preset, 'id'>) => void;
+  /** Removes one preset from a collection by its preset id. */
+  removePreset: (presetsNodeId: string, presetId: string) => void;
+  /** Swaps a preset with its immediate up/down neighbor — "linear order only" (see the issue this implements), no arbitrary reordering. A no-op at either end of the list. */
+  movePreset: (presetsNodeId: string, presetId: string, direction: 'up' | 'down') => void;
+  /** Sets one preset's `durationMs` (currently the only editable field any preset has). */
+  setPresetDurationMs: (presetsNodeId: string, presetId: string, durationMs: number) => void;
+  /** Toggles a collection's collapsed (diamond) / expanded (preset-list box) chrome — view-only, see `presetsCollapsed`. */
+  setPresetsCollapsed: (presetsNodeId: string, collapsed: boolean) => void;
   /**
    * Moves a node on the canvas. Purely visual — exempt from `isLocked`.
    * Pass `avoidOverlap: true` when the gesture has settled (drop / drag-end)

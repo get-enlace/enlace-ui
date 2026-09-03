@@ -28,10 +28,10 @@
   background: var(--color-delete);
   color: #fff;
 }
-/* Reused for a Wait node's badge inside a collapsed group's mini-cluster
-   (see buildFlowGraph.ts / GroupNodeCard.tsx) — everywhere else Wait uses
-   its own distinct chrome instead of a method badge at all. */
-.method-badge--wait {
-  background: var(--color-wait);
+/* Reused for a presets node's badge inside a collapsed group's mini-cluster
+   (see buildFlowGraph.ts / GroupNodeCard.tsx) — everywhere else it uses its
+   own distinct chrome instead of a method badge. */
+.method-badge--presets {
+  background: var(--color-presets);
 }
 

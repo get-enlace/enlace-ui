@@ -5,6 +5,7 @@ import { resolveTagsInValue } from '../bodyTags.js';
 import type {
   Credential,
   FieldValue,
+  Preset,
   Operation,
   RunStep,
   RunStepRequest,
@@ -438,7 +439,101 @@ export const waitNodeHandler: NodeHandler = {
   },
 };
 
+/**
+ * Adapts one `Preset` into the `WorkflowNode` shape its own `kind`'s handler
+ * expects — lets `presetsNodeHandler` reuse `nodeHandlers[preset.kind]`
+ * exactly as `chainExecutor.ts` does for a top-level node, instead of
+ * duplicating per-kind execution logic here. The synthetic id is scoped
+ * under the collection's own id (never collides with a real node id, and is
+ * stable across a run so `RunStep.nodeId` on each sub-step is at least
+ * traceable back to which preset produced it).
+ */
+function presetAsNode(presetsNodeId: string, preset: Preset): WorkflowNode {
+  return {
+    id: `${presetsNodeId}::${preset.id}`,
+    kind: preset.kind,
+    credentialId: null,
+    fieldValues: {},
+    durationMs: preset.durationMs,
+  };
+}
+
+/**
+ * The `'presets'` collection kind (see ARCHITECTURE.md's "Preset nodes"
+ * section) — one graph node running an ordered list of `presets` as a
+ * single executable unit. This is the *only* way a preset ever reaches the
+ * canvas: the palette drops a `'presets'` collection even for a single
+ * preset (see store/slices/graphSlice.ts's `addPresetsNode`), so this
+ * handler is exercised on every preset drop, not just a multi-preset one.
+ *
+ * Deliberately reuses `nodeHandlers[preset.kind]` for each preset (via
+ * `presetAsNode`) rather than a parallel per-kind switch here — a preset's
+ * own handler (e.g. `waitNodeHandler`) doesn't need to know it's being
+ * invoked against a synthetic node rather than a real top-level one.
+ * Presets run strictly in order (never concurrently — "linear order only",
+ * per the issue) and stop at the first failure or the instant the run's
+ * abort signal fires, same "no partial recovery, nothing un-runs" rule
+ * `executeChain` itself follows at the top level.
+ *
+ * Settles as one aggregate `RunStep` (`request.method: 'PRESETS'`, no
+ * `response`) with every preset's own settled `RunStep` attached under
+ * `subSteps`, in order — so the collection is one node in the dependency
+ * graph and one row in Results, with per-preset detail available underneath
+ * it, exactly the v1 the issue calls out ("one executable unit with
+ * per-step Results detail") rather than exploding each preset into its own
+ * graph node.
+ */
+export const presetsNodeHandler: NodeHandler = {
+  checkReady(node, ctx) {
+    for (const preset of node.presets ?? []) {
+      const error = nodeHandlers[preset.kind].checkReady(presetAsNode(node.id, preset), ctx);
+      if (error) return error;
+    }
+    return null;
+  },
+  async execute(node, ctx) {
+    const presets = node.presets ?? [];
+    const timestampStart = new Date().toISOString();
+    const subSteps: RunStep[] = [];
+    let error: string | undefined;
+
+    for (const preset of presets) {
+      // A Stop mid-collection behaves like a Stop mid-anything-else:
+      // nothing new starts, but whatever's already running (the current
+      // preset) still finishes — the individual preset handler's own abort
+      // handling (e.g. Wait's sleep) is what actually shortens that, not
+      // this loop.
+      if (ctx.signal.aborted) break;
+      const stepResult = await nodeHandlers[preset.kind].execute(presetAsNode(node.id, preset), ctx);
+      subSteps.push(stepResult);
+      if (stepResult.error) {
+        error = stepResult.error;
+        break;
+      }
+    }
+
+    return {
+      nodeId: node.id,
+      request: {
+        method: 'PRESETS',
+        url: `presets:${presets.length} preset${presets.length === 1 ? '' : 's'}`,
+        headers: {},
+        credentials: 'omit',
+      },
+      subSteps,
+      timestampStart,
+      timestampEnd: new Date().toISOString(),
+      ...(error ? { error } : {}),
+    };
+  },
+  async preview() {
+    // Presets only, no HTTP — nothing to preview ahead of firing.
+    return null;
+  },
+};
+
 export const nodeHandlers: Record<WorkflowNodeKind, NodeHandler> = {
   operation: operationNodeHandler,
   wait: waitNodeHandler,
+  presets: presetsNodeHandler,
 };

@@ -139,7 +139,11 @@
   padding: 10px 14px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-panel-bg);
+  /* Translucent, not solid — see --color-node-bg's own comment (tokens.css):
+     a connector edge routed behind this card (e.g. two group members
+     stacked so the connection has to loop) should stay visible through it
+     rather than vanish, same as it already does behind a presets-node card. */
+  background: var(--color-node-bg);
   min-width: 180px;
   max-width: 280px;
   font-size: 13px;
@@ -339,27 +343,237 @@
   overflow-wrap: anywhere;
 }
 
-/* Wait preset card — deliberately not method-tinted (it isn't an HTTP call):
-   a dashed border in the same neutral --color-wait used by its palette row
-   and .method-badge--wait, so it reads as "not an operation" at a glance
-   even before the run-status border rules above (which still apply on top
-   during a run, same as any other node). */
-.workflow-node--wait {
-  border-style: dashed;
-  border-color: var(--color-wait);
-  background: var(--color-wait-bg);
-}
-
+/* Shared by every place a Wait preset shows its clock icon — the palette
+   row and each preset row inside an expanded presets-node card. */
 .wait-node__icon {
   font-size: 13px;
   line-height: 1;
 }
 
-.wait-node__label {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
+/* --- presets-node: the only chrome a preset dropped from the palette ever
+   renders as (see PresetsNodeCard.tsx) — even a single preset. Distinct
+   visual model from .workflow-node/.node-group — a real diamond marker
+   collapsed, a preset-list box expanded. Not method-tinted, same "this
+   isn't an HTTP call" framing as .workflow-node--wait, its own accent. */
+
+.presets-node {
+  position: relative;
   color: var(--color-text);
+  font-family: var(--font-sans);
+  border: 1px solid var(--color-presets);
+  border-radius: 4px;
+  background: var(--color-presets-bg);
+  font-size: 13px;
+}
+
+.presets-node--collapsed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  min-width: 150px;
+  cursor: pointer;
+}
+
+.presets-node__diamond {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  background: var(--color-presets);
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+
+.presets-node__collapsed-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.presets-node__summary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presets-node--expanded {
+  padding: 8px 10px 10px;
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.presets-node__titlebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  padding-right: 22px; /* room for the in-card × */
+}
+
+.presets-node__chevron {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.presets-node__chevron:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.presets-node__title {
+  font-weight: 600;
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.presets-node__step-count {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  background: var(--color-panel-bg);
+  border-radius: 8px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+.presets-node__empty-hint {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.presets-node__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.presets-node__step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0 4px 14px;
+  font-size: 12px;
+}
+
+/* The issue's "simple vertical order lines — not real connectors/handles":
+   a plain border segment per row, not a React Flow edge/Handle. */
+.presets-node__step-connector {
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid var(--color-presets);
+}
+
+.presets-node__step-label {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.presets-node__step-duration {
+  width: 48px;
+  min-width: 0;
+  font-size: 11px;
+  background: var(--color-panel-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.presets-node__step-move,
+.presets-node__step-remove {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.presets-node__step-move:hover:not(:disabled),
+.presets-node__step-remove:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.presets-node__step-move:disabled,
+.presets-node__step-remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.presets-node__add-step {
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 6px;
+  background: none;
+  border: 1px dashed var(--color-presets);
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.presets-node__add-step:hover:not(:disabled) {
+  color: var(--color-text);
+  border-color: var(--color-focus);
+}
+
+.presets-node__add-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.presets-node--selected {
+  border-width: 2px;
+  border-color: var(--color-focus);
+}
+
+.presets-node--in-flight {
+  animation: workflow-node-pulse 1.1s ease-in-out infinite;
+}
+
+.presets-node--paused {
+  border-color: var(--color-warning);
+  border-width: 2px;
+}
+
+.presets-node--failed {
+  border-color: var(--color-error);
+  border-width: 2px;
+}
+
+.presets-node--completed {
+  border-color: var(--color-post);
+}
+
+.presets-node__status-badge {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-border);
+  z-index: 1;
 }
 
 /* --- Canvas node groups (drop-overlap; collapsed = compact card) --- */

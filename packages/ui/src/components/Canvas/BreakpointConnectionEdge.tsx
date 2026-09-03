@@ -1,4 +1,4 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, getSimpleBezierPath, type EdgeProps } from 'reactflow';
 import { useWorkflowStore } from '../../store/workflowStore.js';
 
 export interface ConnectionEdgeData {
@@ -41,7 +41,18 @@ export function BreakpointConnectionEdge({
   // progress anyway (see ChainExecutorOptions.armedBreakpoints's own doc
   // comment), so disabling the marker here just matches what's already true.
   const isRunning = useWorkflowStore((s) => s.isRunning);
-  const [edgePath, labelX, labelY] = getBezierPath({
+  // getSimpleBezierPath, not the default cubic getBezierPath: the default's
+  // two independent control points each extend outward in their own
+  // handle's facing direction (right from a right-side source, left into a
+  // left-side target) regardless of where the other node actually sits —
+  // once a target ends up left-of / behind its source (e.g. two group
+  // members stacked vertically, right-source to left-target), that produces
+  // a big loop-back "S". The simple (single-control-point) variant still
+  // bows toward that same case but far less severely, and any of that
+  // residual curve stays visible rather than hidden — see .workflow-node's
+  // own comment (canvas.css) on why every node card's background is
+  // translucent, not opaque (enlace-ui grouping feedback, 2026-09-03).
+  const [edgePath, labelX, labelY] = getSimpleBezierPath({
     sourceX,
     sourceY,
     sourcePosition,

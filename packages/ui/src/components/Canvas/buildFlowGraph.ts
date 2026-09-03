@@ -9,6 +9,7 @@ import {
 import { collapsedGroupSize } from '../../utils/nodePlacement.js';
 import type { GroupMemberSummary, GroupNodeData } from './GroupNodeCard.js';
 import type { WorkflowNodeData } from './WorkflowNodeCard.js';
+import type { PresetsNodeData } from './PresetsNodeCard.js';
 
 export function collapsedMemberIdSet(groups: NodeGroup[]): Set<string> {
   const ids = new Set<string>();
@@ -27,6 +28,8 @@ export function buildFlowNodes(args: {
   stepStatusByNodeId: Record<string, RunStepStatus>;
   nodeLabels: Map<string, string>;
   collapsedMemberIds: Set<string>;
+  /** Collapsed/expanded chrome for `kind: 'presets'` nodes — see WorkflowState's `presetsCollapsed`. */
+  presetsCollapsed: Record<string, boolean>;
 }): Node[] {
   const {
     groups,
@@ -37,6 +40,7 @@ export function buildFlowNodes(args: {
     stepStatusByNodeId,
     nodeLabels,
     collapsedMemberIds,
+    presetsCollapsed,
   } = args;
   const result: Node[] = [];
 
@@ -45,11 +49,16 @@ export function buildFlowNodes(args: {
       const size = collapsedGroupSize(g.nodeIds.length);
       const members: GroupMemberSummary[] = sortGroupMemberIds(g.nodeIds, nodePositions).map((nodeId) => {
         const node = nodes.find((n) => n.id === nodeId);
-        if (node?.kind === 'wait') {
+        if (node?.kind === 'presets') {
+          // Plain "Presets (N)" here, not the full per-preset summary
+          // (nodeLabels' `Presets: Wait 1s · Wait 1s · …`) — a collapsed
+          // group's mini-cluster row is a compact single line, and that
+          // summary only grows less readable as presets are added. The full
+          // detail still surfaces via `label`, used as this row's tooltip.
           return {
             nodeId,
-            method: 'wait',
-            path: nodeLabels.get(nodeId) ?? 'Wait',
+            method: 'presets',
+            path: `Presets (${node.presets?.length ?? 0})`,
             label: nodeLabels.get(nodeId) ?? nodeId,
             status: stepStatusByNodeId[nodeId],
           };
@@ -97,6 +106,27 @@ export function buildFlowNodes(args: {
   for (const n of nodes) {
     const hidden = collapsedMemberIds.has(n.id);
     const owningGroup = groupContainingNode(groups, n.id);
+
+    if (n.kind === 'presets') {
+      result.push({
+        id: n.id,
+        type: 'presetsNode',
+        position: nodePositions[n.id] ?? { x: 80, y: 80 },
+        selected: n.id === selectedNodeId,
+        hidden,
+        zIndex: 2,
+        data: {
+          node: n,
+          collapsed: presetsCollapsed[n.id] ?? false,
+          selected: n.id === selectedNodeId,
+          status: stepStatusByNodeId[n.id],
+          groupId: owningGroup?.id,
+          groupName: owningGroup?.name,
+        } satisfies PresetsNodeData,
+      });
+      continue;
+    }
+
     result.push({
       id: n.id,
       type: 'workflowNode',

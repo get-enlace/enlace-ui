@@ -7,7 +7,6 @@ import { hasUnrepresentableShape } from '../../utils/schemaExample.js';
 import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from '../../utils/bodyTemplate.js';
 import { buildNodeLabels } from '@get-enlace/core';
 import { RawBodyEditor } from './RawBodyEditor.js';
-import { WaitNodeConfig } from './WaitNodeConfig.js';
 import { Modal } from '../Modal.js';
 import type { SchemaField } from '../../utils/flattenSchema.js';
 import type { FieldValue } from '../../types.js';
@@ -114,13 +113,17 @@ export function NodeConfig() {
     setCredPickerOpen(false);
   }, [selectedNodeId]);
 
-  // Wait has no operation to inspect at all — a dedicated, much smaller
-  // panel. Checked after every hook above (not as an earlier return) so
-  // this component calls the same hooks in the same order on every render
-  // regardless of which node's selected — switching from a Wait node to an
-  // operation node (or back) must never change the hook count mid-lifetime.
-  if (node?.kind === 'wait') {
-    return <WaitNodeConfig node={node} />;
+  // Presets are edited directly on the collection's expanded canvas card
+  // (duration fields, reorder, add/remove) — no separate inspector panel
+  // duplicating that UI, just a pointer to where the real controls live.
+  if (node?.kind === 'presets') {
+    return (
+      <aside className="node-config node-config--empty">
+        <p className="node-config__empty-msg">
+          Expand this collection on the canvas to add, reorder, or edit its presets.
+        </p>
+      </aside>
+    );
   }
 
   if (!node || !operation) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CyclicWorkflowError, topologicalSort } from '@get-enlace/core';
+import { CyclicWorkflowError, formatWaitDuration, topologicalSort } from '@get-enlace/core';
 import { useWorkflowStore } from '../../store/workflowStore.js';
 import { buildNodeLabels } from '@get-enlace/core';
 import { redactRequest, RequestPanel, ResponsePanel } from './debugPaneShared.js';
@@ -15,10 +15,19 @@ function StatusIcon({ status }: { status: RunStepStatus }) {
   );
 }
 
+/** A presets sub-step's own short label, derived from its settled `RunStep` alone (no `node`/`Preset` needed — see this file's fallback rows, which have neither). */
+function subStepLabel(subStep: RunStep): string {
+  if (subStep.request.method === 'WAIT') {
+    const match = /^wait:(\d+)ms$/.exec(subStep.request.url);
+    return match ? `Wait ${formatWaitDuration(Number(match[1]))}` : 'Wait';
+  }
+  return subStep.request.method;
+}
+
 interface ResultsRowProps {
   nodeId: string;
-  /** `kind: 'wait'` renders as a distinct pacing row — no method badge, no expandable request/response (there is neither). */
-  isWait: boolean;
+  /** `kind: 'presets'` renders as one aggregate row — no method badge, expandable into each settled sub-step (see `RunStep.subSteps`). */
+  isPresets: boolean;
   operation: Operation | undefined;
   label: string;
   status: RunStepStatus;
@@ -32,7 +41,7 @@ interface ResultsRowProps {
 
 function ResultsRow({
   nodeId,
-  isWait,
+  isPresets,
   operation,
   label,
   status,
@@ -43,10 +52,9 @@ function ResultsRow({
   onSelect,
 }: ResultsRowProps) {
   const method = operation?.method ?? step?.request.method.toLowerCase() ?? 'get';
-  // A Wait step has no request/response worth expanding — its "detail" is
-  // just the synthetic "waited Xs" summary itself (see nodeHandlers.ts's
-  // waitNodeHandler).
-  const hasDetail = !isWait && (Boolean(step) || Boolean(previewRequest));
+  // A presets step's detail is its settled sub-steps, once it has any (it
+  // never gets a pause preview — see presetsNodeHandler.preview).
+  const hasDetail = isPresets ? Boolean(step) : Boolean(step) || Boolean(previewRequest);
   const rowRef = useRef<HTMLDetailsElement | HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -58,14 +66,13 @@ function ResultsRow({
     }
   }, [preferOpen]);
 
-  const summary = isWait ? (
+  const summary = isPresets ? (
     <>
       <StatusIcon status={status} />
-      <span className="wait-node__icon" aria-hidden="true">
-        ⏱
-      </span>
+      <span className="presets-node__diamond" aria-hidden="true" />
       <span className="debug-step__url">{label}</span>
-      {status === 'completed' && <span className="status-badge status-badge--ok">waited</span>}
+      {step?.subSteps && <span className="status-badge status-badge--ok">{step.subSteps.length} steps</span>}
+      {step?.error && <span className="debug-step__error">{step.error}</span>}
     </>
   ) : (
     <>
@@ -116,7 +123,21 @@ function ResultsRow({
         {summary}
       </summary>
       <div className="debug-step__panels">
-        {step ? (
+        {isPresets ? (
+          <ul className="presets-node__steps presets-results__sub-steps">
+            {(step?.subSteps ?? []).map((subStep, i) => (
+              <li key={i} className="presets-node__step">
+                <span className="presets-node__step-connector" aria-hidden="true" />
+                <StatusIcon status={subStep.error ? 'failed' : 'completed'} />
+                <span className="presets-node__step-label">{subStepLabel(subStep)}</span>
+                {subStep.error && <span className="debug-step__error">{subStep.error}</span>}
+              </li>
+            ))}
+            {(step?.subSteps?.length ?? 0) === 0 && (
+              <li className="presets-node__empty-hint">No presets ran — this collection is empty.</li>
+            )}
+          </ul>
+        ) : step ? (
           <>
             <RequestPanel request={redactRequest(step.request)} />
             <ResponsePanel response={step.response} error={step.error} />
@@ -223,7 +244,7 @@ export function ResultsList() {
             <ResultsRow
               key={node.id}
               nodeId={node.id}
-              isWait={node.kind === 'wait'}
+              isPresets={node.kind === 'presets'}
               operation={node.operationId ? operationsById.get(node.operationId) : undefined}
               label={nodeLabels.get(node.id) ?? node.operationId ?? node.id}
               status={resolvedStatus}
@@ -245,9 +266,10 @@ export function ResultsList() {
               key={step.nodeId}
               nodeId={step.nodeId}
               // No `node` survives a cleared canvas — the synthetic
-              // `method: 'WAIT'` set by waitNodeHandler is the only signal
-              // left to tell a settled wait step apart from an operation one.
-              isWait={step.request.method === 'WAIT'}
+              // `method: 'PRESETS'` set by presetsNodeHandler is the only
+              // signal left to tell a settled presets step apart from an
+              // operation one.
+              isPresets={step.request.method === 'PRESETS'}
               operation={undefined}
               label={step.request.method}
               status={step.error ? 'failed' : 'completed'}

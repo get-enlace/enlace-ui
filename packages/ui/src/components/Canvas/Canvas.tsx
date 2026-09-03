@@ -14,6 +14,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { buildNodeLabels } from '@get-enlace/core';
 import { useWorkflowStore } from '../../store/workflowStore.js';
+import { DEFAULT_WAIT_DURATION_MS } from '../../store/slices/graphSlice.js';
 import {
   expandedGroupFrame,
   findGroupDropTarget,
@@ -26,10 +27,11 @@ import { BreakpointConnectionEdge } from './BreakpointConnectionEdge.js';
 import { GroupConfirmModal } from './GroupConfirmModal.js';
 import { GroupNodeCard } from './GroupNodeCard.js';
 import { WorkflowNodeCard } from './WorkflowNodeCard.js';
+import { PresetsNodeCard } from './PresetsNodeCard.js';
 import { buildFlowEdges, buildFlowNodes, collapsedMemberIdSet } from './buildFlowGraph.js';
 import { pendingFromDropTarget, suggestGroupName, type PendingGroup } from './pendingGroup.js';
 
-const nodeTypes = { workflowNode: WorkflowNodeCard, nodeGroup: GroupNodeCard };
+const nodeTypes = { workflowNode: WorkflowNodeCard, nodeGroup: GroupNodeCard, presetsNode: PresetsNodeCard };
 const edgeTypes = { connection: BreakpointConnectionEdge };
 
 export function Canvas() {
@@ -45,6 +47,7 @@ function CanvasInner() {
     nodes,
     nodePositions,
     groups,
+    presetsCollapsed,
     connections,
     operations,
     selectedNodeId,
@@ -52,7 +55,7 @@ function CanvasInner() {
     armedBreakpoints,
     isRunning,
     addNode,
-    addWaitNode,
+    addPresetsNode,
     updateNodePosition,
     selectNode,
     connectNodes,
@@ -104,8 +107,19 @@ function CanvasInner() {
         stepStatusByNodeId,
         nodeLabels,
         collapsedMemberIds,
+        presetsCollapsed,
       }),
-    [groups, nodes, nodePositions, operations, selectedNodeId, stepStatusByNodeId, nodeLabels, collapsedMemberIds]
+    [
+      groups,
+      nodes,
+      nodePositions,
+      operations,
+      selectedNodeId,
+      stepStatusByNodeId,
+      nodeLabels,
+      collapsedMemberIds,
+      presetsCollapsed,
+    ]
   );
 
   const flowEdges = useMemo(
@@ -124,9 +138,16 @@ function CanvasInner() {
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      // The palette only ever offers real presets (Wait, later Assert) —
+      // there's no "collection" item to drag. Dropping one always creates a
+      // `kind: 'presets'` collection seeded with that one preset, never a
+      // standalone graph node — see addPresetsNode's own comment.
       const presetKind = e.dataTransfer.getData('text/preset-kind');
       if (presetKind === 'wait') {
-        addWaitNode(screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+        addPresetsNode(screenToFlowPosition({ x: e.clientX, y: e.clientY }), {
+          kind: 'wait',
+          durationMs: DEFAULT_WAIT_DURATION_MS,
+        });
         return;
       }
       const operationId = e.dataTransfer.getData('text/operation-id');
@@ -134,7 +155,7 @@ function CanvasInner() {
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       addNode(operationId, position);
     },
-    [addNode, addWaitNode, screenToFlowPosition]
+    [addNode, addPresetsNode, screenToFlowPosition]
   );
 
   const onConnect = useCallback(

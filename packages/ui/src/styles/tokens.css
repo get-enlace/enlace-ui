@@ -12,6 +12,13 @@
 
   --color-bg: #1b1b1b;
   --color-panel-bg: #202124;
+  /* Same opacity as --color-presets-bg/--color-wait-bg (0.14), same rgb as
+   * --color-panel-bg — an operation node's own card background, kept
+   * translucent like every other canvas card so a connector edge stays
+   * visible passing behind ANY node (never fully hidden by an opaque
+   * card), consistent with this app's "never hide the audit-trail edge"
+   * stance on connection/mapping edges themselves (see ARCHITECTURE.md). */
+  --color-node-bg: rgba(32, 33, 36, 0.14);
   --color-topbar-bg: #17181a;
   --color-border: #3b3b3f;
   --color-text: #e8e8e8;
@@ -40,11 +47,19 @@
   --color-cookie-bg: rgba(167, 139, 250, 0.14);
 
   /* Wait preset's own accent — deliberately a neutral slate, not one of the
-   * HTTP method colors above or --color-cookie: a Wait node isn't a call to
-   * anything, and its chrome should read as "not an HTTP operation" at a
-   * glance (see WorkflowNodeCard.tsx's kind === 'wait' branch). */
+   * HTTP method colors above or --color-cookie: a Wait preset isn't a call
+   * to anything, and its chrome (the palette row, and each preset row
+   * inside an expanded presets-node card) should read as "not an HTTP
+   * operation" at a glance. */
   --color-wait: #8a8f98;
   --color-wait-bg: rgba(138, 143, 152, 0.14);
+
+  /* The presets-collection card's own accent — distinct from every color
+   * above (including --color-wait, since a collection is a packaging
+   * container, not itself a pacing step) so it reads as its own thing on a
+   * busy canvas. */
+  --color-presets: #7c93fd;
+  --color-presets-bg: rgba(124, 147, 253, 0.14);
 }
 
 * {

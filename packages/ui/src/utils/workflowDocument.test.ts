@@ -129,35 +129,49 @@ describe('serializeCollection', () => {
     expect(hydrateCollection(parsed.collection).groups).toEqual([group]);
   });
 
-  it('round-trips a wait node without an operationId, and keeps it out of the operationIds spec hint', () => {
-    const waitNode: WorkflowNode = { id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 2500 };
+  it('round-trips a presets node without an operationId, and keeps it out of the operationIds spec hint', () => {
+    const presetsNode: WorkflowNode = {
+      id: 'w1',
+      kind: 'presets',
+      credentialId: null,
+      fieldValues: {},
+      presets: [{ id: 's1', kind: 'wait', durationMs: 2500 }],
+    };
     const doc = serializeCollection({
-      name: 'Waits',
-      nodes: [node, waitNode],
+      name: 'Presets',
+      nodes: [node, presetsNode],
       connections: [{ fromNodeId: 'n1', toNodeId: 'w1' }],
       nodePositions: { n1: { x: 0, y: 0 }, w1: { x: 100, y: 0 } },
       credentials: [],
       now: () => '2026-09-03T00:00:00.000Z',
     });
 
-    expect(doc.workflows[0].nodes).toEqual([node, waitNode]);
+    expect(doc.workflows[0].nodes).toEqual([node, presetsNode]);
     expect(doc.workflows[0].specHint.operationIds).toEqual(['POST /orders']);
 
     const parsed = parseCollection(doc, { operations: [operation] });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.collection.workflows[0].nodes).toEqual([node, waitNode]);
-    // The wait node's absent operationId must never be flagged as "unknown".
+    expect(parsed.collection.workflows[0].nodes).toEqual([node, presetsNode]);
+    // The presets node's absent operationId must never be flagged as "unknown".
     expect(parsed.warnings.unknownOperationIds).toEqual([]);
   });
 
-  it('rejects a wait node with an invalid durationMs', () => {
+  it('rejects a presets node with an invalid preset durationMs', () => {
     const bad = {
       ...serializeAll(),
       workflows: [
         {
           ...serializeAll().workflows[0],
-          nodes: [{ id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: -5 }],
+          nodes: [
+            {
+              id: 'w1',
+              kind: 'presets',
+              credentialId: null,
+              fieldValues: {},
+              presets: [{ id: 's1', kind: 'wait', durationMs: -5 }],
+            },
+          ],
         },
       ],
     };
@@ -165,6 +179,100 @@ describe('serializeCollection', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/invalid durationMs/);
+  });
+
+  it('round-trips a presets node with ordered presets, and its presetsCollapsed chrome', () => {
+    const presetsNode: WorkflowNode = {
+      id: 'g1',
+      kind: 'presets',
+      credentialId: null,
+      fieldValues: {},
+      presets: [
+        { id: 's1', kind: 'wait', durationMs: 1000 },
+        { id: 's2', kind: 'wait', durationMs: 2000 },
+      ],
+    };
+    const doc = serializeCollection({
+      name: 'Presets',
+      nodes: [presetsNode],
+      connections: [],
+      nodePositions: { g1: { x: 0, y: 0 } },
+      presetsCollapsed: { g1: true },
+      credentials: [],
+      now: () => '2026-09-03T00:00:00.000Z',
+    });
+
+    expect(doc.workflows[0].nodes).toEqual([presetsNode]);
+    expect(doc.workflows[0].presetsCollapsed).toEqual({ g1: true });
+
+    const parsed = parseCollection(doc);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.collection.workflows[0].nodes).toEqual([presetsNode]);
+    expect(parsed.collection.workflows[0].presetsCollapsed).toEqual({ g1: true });
+    const hydrated = hydrateCollection(parsed.collection);
+    expect(hydrated.nodes).toEqual([presetsNode]);
+    expect(hydrated.presetsCollapsed).toEqual({ g1: true });
+  });
+
+  it('drops a presetsCollapsed entry for a node that no longer exists (or is not a presets node)', () => {
+    const doc = serializeCollection({
+      name: 'Presets',
+      nodes: [node],
+      connections: [],
+      nodePositions: { n1: { x: 0, y: 0 } },
+      // Neither key is an actual presets node — 'n1' is an operation node, 'ghost' doesn't exist at all.
+      presetsCollapsed: { n1: true, ghost: false },
+      credentials: [],
+    });
+    expect(doc.workflows[0].presetsCollapsed).toEqual({});
+  });
+
+  it('rejects a presets node with an unknown preset kind or a duplicate preset id', () => {
+    const badKind = {
+      ...serializeAll(),
+      workflows: [
+        {
+          ...serializeAll().workflows[0],
+          nodes: [
+            {
+              id: 'g1',
+              kind: 'presets',
+              credentialId: null,
+              fieldValues: {},
+              presets: [{ id: 's1', kind: 'assert', durationMs: 0 }],
+            },
+          ],
+        },
+      ],
+    };
+    const badKindResult = parseCollection(badKind);
+    expect(badKindResult.ok).toBe(false);
+    if (!badKindResult.ok) expect(badKindResult.error).toMatch(/unknown preset kind/);
+
+    const dup = {
+      ...serializeAll(),
+      workflows: [
+        {
+          ...serializeAll().workflows[0],
+          nodes: [
+            {
+              id: 'g1',
+              kind: 'presets',
+              credentialId: null,
+              fieldValues: {},
+              presets: [
+                { id: 's1', kind: 'wait', durationMs: 100 },
+                { id: 's1', kind: 'wait', durationMs: 200 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const dupResult = parseCollection(dup);
+    expect(dupResult.ok).toBe(false);
+    if (!dupResult.ok) expect(dupResult.error).toMatch(/duplicate preset id/);
   });
 
   it('accepts collections that omit groups (treats as empty)', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildNodeLabels, formatWaitDuration } from './nodeLabel.js';
+import { buildNodeLabels, formatPresetsSummary, formatWaitDuration } from './nodeLabel.js';
 import type { Operation, WorkflowNode } from './types.js';
 
 function makeOperation(overrides: Partial<Operation> = {}): Operation {
@@ -71,17 +71,38 @@ describe('buildNodeLabels', () => {
     expect(labels.get('node-c')).toBe('createOrder');
   });
 
-  it('labels a wait node by its duration, never by operationId (it has none)', () => {
-    const node: WorkflowNode = { id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 2000 };
-    expect(buildNodeLabels([node], new Map()).get('w1')).toBe('Wait 2s');
+  it('labels a presets node by its preset summary', () => {
+    const node: WorkflowNode = {
+      id: 'g1',
+      kind: 'presets',
+      credentialId: null,
+      fieldValues: {},
+      presets: [
+        { id: 's1', kind: 'wait', durationMs: 2000 },
+        { id: 's2', kind: 'wait', durationMs: 500 },
+      ],
+    };
+    expect(buildNodeLabels([node], new Map()).get('g1')).toBe('Presets: Wait 2s · Wait 500ms');
   });
 
-  it('numbers wait nodes that share the same duration, same as repeated operations', () => {
-    const a: WorkflowNode = { id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 500 };
-    const b: WorkflowNode = { id: 'w2', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 500 };
-    const labels = buildNodeLabels([a, b], new Map());
-    expect(labels.get('w1')).toBe('Wait 500ms #1');
-    expect(labels.get('w2')).toBe('Wait 500ms #2');
+  it('labels an empty presets collection plainly rather than blank', () => {
+    const node: WorkflowNode = { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [] };
+    expect(buildNodeLabels([node], new Map()).get('g1')).toBe('Presets: Empty');
+  });
+});
+
+describe('formatPresetsSummary', () => {
+  it('joins each preset\'s own label', () => {
+    expect(
+      formatPresetsSummary([
+        { id: 's1', kind: 'wait', durationMs: 2000 },
+        { id: 's2', kind: 'wait', durationMs: 500 },
+      ])
+    ).toBe('Wait 2s · Wait 500ms');
+  });
+
+  it('names an empty list plainly', () => {
+    expect(formatPresetsSummary([])).toBe('Empty');
   });
 });
 

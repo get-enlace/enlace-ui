@@ -314,28 +314,55 @@ describe('DebugPane (Results)', () => {
     expect(screen.getAllByText('GET /b').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('shows a settled wait node as a synthetic "waited" row, not an expandable request/response', () => {
+  it('shows a settled presets node as one row, expandable into its own sub-steps', async () => {
+    const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 2000 }],
+      nodes: [
+        {
+          id: 'g1',
+          kind: 'presets',
+          credentialId: null,
+          fieldValues: {},
+          presets: [
+            { id: 's1', kind: 'wait', durationMs: 2000 },
+            { id: 's2', kind: 'wait', durationMs: 500 },
+          ],
+        },
+      ],
       runResult: {
         steps: [
           {
-            nodeId: 'w1',
-            request: { method: 'WAIT', url: 'wait:2000ms', headers: {}, credentials: 'omit' },
+            nodeId: 'g1',
+            request: { method: 'PRESETS', url: 'presets:2 presets', headers: {}, credentials: 'omit' },
             timestampStart: '2026-01-01T00:00:00.000Z',
-            timestampEnd: '2026-01-01T00:00:02.000Z',
+            timestampEnd: '2026-01-01T00:00:02.500Z',
+            subSteps: [
+              {
+                nodeId: 'g1::s1',
+                request: { method: 'WAIT', url: 'wait:2000ms', headers: {}, credentials: 'omit' },
+                timestampStart: '2026-01-01T00:00:00.000Z',
+                timestampEnd: '2026-01-01T00:00:02.000Z',
+              },
+              {
+                nodeId: 'g1::s2',
+                request: { method: 'WAIT', url: 'wait:500ms', headers: {}, credentials: 'omit' },
+                timestampStart: '2026-01-01T00:00:02.000Z',
+                timestampEnd: '2026-01-01T00:00:02.500Z',
+              },
+            ],
           },
         ],
       },
-      stepStatusByNodeId: { w1: 'completed' },
+      stepStatusByNodeId: { g1: 'completed' },
     });
     render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
 
-    expect(screen.getByText('Wait 2s')).toBeInTheDocument();
-    expect(screen.getByText('waited')).toBeInTheDocument();
-    // No method badge, and nothing expandable (no <details> chevron) — a
-    // wait step has no request/response worth showing.
+    expect(screen.getByText('Presets: Wait 2s · Wait 500ms')).toBeInTheDocument();
+    expect(screen.getByText('2 steps')).toBeInTheDocument();
     expect(document.querySelector('.method-badge')).not.toBeInTheDocument();
-    expect(document.querySelector('details')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('Presets: Wait 2s · Wait 500ms'));
+    expect(screen.getByText('Wait 2s')).toBeInTheDocument();
+    expect(screen.getByText('Wait 500ms')).toBeInTheDocument();
   });
 });
