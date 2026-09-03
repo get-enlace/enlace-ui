@@ -115,7 +115,7 @@ function flattenObjectSchema(schema: Record<string, any> | null | undefined, pre
   return fields;
 }
 
-/** Request-side fields for the Node Inspector: parameters + fully-flattened body properties. */
+/** Request-side fields for the Node Config: parameters + fully-flattened body properties. */
 export function flattenRequestFields(operation: Operation): SchemaField[] {
   const paramFields: SchemaField[] = operation.parameters.map((p) => {
     const path = `${p.in}.${p.name}`;

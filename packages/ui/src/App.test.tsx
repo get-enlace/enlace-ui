@@ -68,17 +68,17 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Debug' })).not.toBeInTheDocument();
   });
 
-  it('collapses the inspector to a strip and can reopen it', async () => {
+  it('collapses the node config to a strip and can reopen it', async () => {
     const user = userEvent.setup();
     render(<App />);
 
     expect(screen.getByText('Select a node to configure it.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Hide inspector' }));
+    await user.click(screen.getByRole('button', { name: 'Hide node config' }));
     expect(screen.queryByText('Select a node to configure it.')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show inspector' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show node config' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Show inspector' }));
+    await user.click(screen.getByRole('button', { name: 'Show node config' }));
     expect(screen.getByText('Select a node to configure it.')).toBeInTheDocument();
   });
 

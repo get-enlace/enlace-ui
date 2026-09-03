@@ -1,0 +1,747 @@
+/* --- Debug pane ---
+ * A distinctly framed panel, not a loose list floating over the canvas:
+ * its own header (like the sidebars' "OPERATIONS" / "REQUEST FIELDS"),
+ * darker background than the canvas so the seam is unambiguous, and a
+ * fixed header with only the scrollable call list beneath it. Each call is
+ * collapsed by default — the pane shows the call list only; raw
+ * request/response detail appears inline when a row is opened, never
+ * shown loose alongside the list.
+ */
+
+.debug-pane {
+  border-top: 2px solid var(--color-border);
+  background: var(--color-topbar-bg);
+  display: flex;
+  flex-direction: column;
+  height: 140px;
+  position: relative;
+}
+
+.debug-pane--collapsed {
+  height: auto !important;
+  max-height: none;
+}
+
+.debug-pane__resize {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 5px;
+  cursor: ns-resize;
+  z-index: 1;
+}
+
+.debug-pane--collapsed .debug-pane__resize {
+  display: none;
+}
+
+.debug-pane__header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.debug-pane__title {
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.debug-pane__count {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  margin-left: auto;
+}
+
+.debug-pane__clear {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.debug-pane__clear:hover:not(:disabled) {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+.debug-pane__clear:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.debug-pane__tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.debug-pane__tab {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.debug-pane__tab:hover {
+  color: var(--color-text);
+}
+
+.debug-pane__tab--active {
+  background: var(--color-panel-bg);
+  color: var(--color-text);
+}
+
+.debug-pane__toggle {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.debug-pane__toggle:hover {
+  color: var(--color-text);
+}
+
+.debug-pane__toggle-chevron {
+  font-size: 9px;
+  color: var(--color-text-muted);
+}
+
+.results-pause-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-panel-bg);
+  color: var(--color-put);
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 1;
+}
+
+/* Lives in the Debug/Results header — compact, no second chrome row. */
+.results-pause-bar--header {
+  flex: 1;
+  min-width: 0;
+  max-width: 50%;
+  padding: 0;
+  margin: 0 8px;
+  border: none;
+  background: transparent;
+}
+
+.results-pause-bar__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.results-pause-bar__label strong {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.results-pause-bar__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.results-pause-bar__actions .btn--icon {
+  padding: 4px 8px;
+}
+
+.debug-step__panel--preview {
+  flex: 1 1 100%;
+}
+
+
+.debug-pane__body {
+  overflow-y: auto;
+  padding: 4px 16px;
+  font-size: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Pause bar stays pinned; only the step list scrolls. */
+.debug-pane__body.results-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.results-list__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 16px;
+}
+
+.debug-pane__split {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.debug-pane__split--console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+}
+
+.debug-console {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-topbar-bg);
+}
+
+.debug-console__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.debug-console__title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+}
+
+.debug-console__focus {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.debug-console__history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.debug-console__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.debug-console__hint code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.debug-console__entry {
+  margin-bottom: 10px;
+}
+
+.debug-console__query {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.debug-console__entry-focus {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+}
+
+.debug-console__prompt {
+  color: var(--color-focus);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.debug-console__output {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+}
+
+.debug-console__output--error {
+  color: var(--color-error);
+}
+
+.debug-console__input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.debug-console__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.debug-console__input .cm-editor {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: transparent;
+  color: var(--color-text);
+}
+
+.debug-console__input .cm-editor.cm-focused {
+  outline: none;
+}
+
+.debug-console__input .cm-scroller {
+  overflow: hidden;
+}
+
+.debug-console__input .cm-content {
+  padding: 4px 0;
+  caret-color: #fff;
+}
+
+.debug-console__input .cm-line {
+  padding: 0;
+}
+
+.debug-console__input .cm-placeholder {
+  color: var(--color-text-muted);
+  font-style: normal;
+}
+
+.debug-console__input .cm-tooltip-autocomplete {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.debug-pane__status {
+  color: var(--color-text-muted);
+  padding: 10px 0;
+  margin: 0;
+}
+
+.debug-pane__status--error {
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+/* Sits above whatever rows have already settled, not alone — tighter than
+   the base `.debug-pane__status` padding so it reads as a lightweight
+   in-progress hint, not a full-height placeholder block. */
+.debug-pane__status--running {
+  padding: 6px 0;
+  font-size: 11px;
+}
+
+.debug-step {
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px 0;
+}
+
+.debug-step:last-child {
+  border-bottom: none;
+}
+
+.debug-step__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--color-text);
+}
+
+.debug-step__summary::-webkit-details-marker {
+  display: none;
+}
+
+.debug-step__chevron {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.debug-step[open] .debug-step__chevron {
+  transform: rotate(90deg);
+}
+
+.debug-step__url {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.debug-step__error {
+  color: var(--color-error);
+  font-size: 11px;
+}
+
+.status-badge {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.status-badge--ok {
+  background: var(--color-post);
+  color: #1b1b1b;
+}
+
+.status-badge--error {
+  background: var(--color-delete);
+  color: #fff;
+}
+
+
+.debug-step__panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
+  align-items: start;
+  margin-top: 8px;
+}
+
+.debug-step__panels:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.debug-step__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.debug-step__panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+}
+
+/* Inlined beside "Request" — one line so it doesn't stretch this column alone. */
+.debug-step__request-url {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-step__panel-empty {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.debug-step__credentials-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--color-cookie);
+  background: var(--color-cookie-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Headers are secondary to the body — collapsed by default so opening a step lands on the body,
+ * not a scroll past every header first. */
+.debug-headers {
+  margin: 0;
+}
+
+.debug-headers__summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.debug-headers__summary::-webkit-details-marker {
+  display: none;
+}
+
+.debug-headers__summary::before {
+  content: '▸ ';
+}
+
+.debug-headers[open] > .debug-headers__summary::before {
+  content: '▾ ';
+}
+
+.debug-headers__empty {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  margin: 4px 0 0;
+}
+
+.debug-headers__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.debug-headers__table th,
+.debug-headers__table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 2px 8px 2px 0;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  word-break: break-word;
+}
+
+.debug-headers__table td {
+  color: var(--color-text);
+}
+
+.debug-body__label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+.debug-body__empty {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.debug-body__pre {
+  background: #101113;
+  color: #d8dde3;
+  padding: 10px 12px;
+  border-radius: 4px;
+  overflow: auto;
+  max-height: 260px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 0;
+  border: 1px solid var(--color-border);
+}
+
+/* --- Debugger tab (DebuggerTab.tsx) — pre-populated rows for the entire
+ * planned execution order (in dependency order, purely for display —
+ * actual firing is per-node/readiness-driven, not tied to this list),
+ * overlaid with live status. Deliberately its own compact, icon-led look —
+ * not Run Output's boxy side-by-side request/response cards (see
+ * debug-step__panels above): a one-line summary per row, and a single
+ * unified JSON block (the whole request or response object, redacted) when
+ * a row expands. The aggregate status breakdown lives in DebugPane's
+ * header (`.debug-pane__count`) — see summarizeResultsStatus — not in here.
+ * Continue/Step/Stop appear both globally (App.tsx header) and inline on
+ * each paused row (`.debugger-row__controls`) — never in both text and icon
+ * form, always icon-only with a hover title as the accessible name. */
+
+.debugger-row {
+  border-bottom: 1px solid var(--color-border);
+  padding: 7px 0;
+}
+
+.debugger-row--plain {
+  cursor: pointer;
+}
+
+.debugger-row--focused {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 2px 0 0 var(--color-focus);
+}
+
+.debugger-row:last-child {
+  border-bottom: none;
+}
+
+.debugger-row__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text);
+}
+
+details.debugger-row > .debugger-row__summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+details.debugger-row > .debugger-row__summary::-webkit-details-marker {
+  display: none;
+}
+
+.debugger-row__controls {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.debugger-row__controls .btn--icon {
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.debugger-row__chevron {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.debugger-row[open] .debugger-row__chevron {
+  transform: rotate(90deg);
+}
+
+/* A single glyph, not a text pill — the compact alternative to
+   Run Output's .status-badge (see debugPaneShared.tsx). */
+.debugger-row__status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.debugger-row__status-icon--pending {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+.debugger-row__status-icon--in-flight {
+  color: var(--color-get);
+  animation: workflow-node-pulse-badge 1.1s ease-in-out infinite;
+}
+
+.debugger-row__status-icon--paused {
+  color: var(--color-warning);
+}
+
+.debugger-row__status-icon--completed {
+  color: var(--color-post);
+}
+
+.debugger-row__status-icon--failed {
+  color: var(--color-delete);
+}
+
+.debugger-row__status-icon--skipped {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+.debugger-row__detail {
+  margin: 8px 0 0 22px;
+}
+
+.debugger-row__detail-label {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 8px 0 4px;
+}
+
+.debugger-row__detail-label:first-child {
+  margin-top: 0;
+}
+
+.debugger-row__detail-label--preview {
+  color: var(--color-warning);
+}
+
+.debugger-row__json {
+  background: #101113;
+  color: #d8dde3;
+  padding: 10px 12px;
+  border-radius: 4px;
+  overflow: auto;
+  max-height: 260px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 0;
+  border: 1px solid var(--color-border);
+}
+
+.debugger-row__detail-empty {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  margin: 0;
+}
+

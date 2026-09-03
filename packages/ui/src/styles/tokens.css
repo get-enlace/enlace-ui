@@ -1,0 +1,59 @@
+/*
+ * Matches the actual installed Swagger UI (v5) theme — dark background,
+ * method-tinted rows, solid pill-shaped method badges, blue-outlined
+ * section controls — not the old olive-green-topbar look from v2/v3.
+ * System font stacks only, no external font fetch — zero extra
+ * infrastructure to run this UI.
+ */
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', Consolas, Monaco, 'Courier New', monospace;
+
+  --color-bg: #1b1b1b;
+  --color-panel-bg: #202124;
+  --color-topbar-bg: #17181a;
+  --color-border: #3b3b3f;
+  --color-text: #e8e8e8;
+  --color-text-muted: #9aa0a6;
+
+  --color-get: #61affe;
+  --color-get-bg: rgba(97, 175, 254, 0.12);
+  --color-post: #49cc90;
+  --color-post-bg: rgba(73, 204, 144, 0.12);
+  --color-put: #fca130;
+  --color-put-bg: rgba(252, 161, 48, 0.12);
+  --color-patch: #50e3c2;
+  --color-patch-bg: rgba(80, 227, 194, 0.12);
+  --color-delete: #f93e3e;
+  --color-delete-bg: rgba(249, 62, 62, 0.12);
+
+  --color-error: #f93e3e;
+  --color-focus: #61affe;
+  --color-warning: #fca130;
+
+  /* cookie's own accent — every method color above is already
+   * claimed by another credential type (see .credential-badge--* below),
+   * and reusing --color-delete/--color-error here would read as "this
+   * credential type is an error state", which it isn't. */
+  --color-cookie: #a78bfa;
+  --color-cookie-bg: rgba(167, 139, 250, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+

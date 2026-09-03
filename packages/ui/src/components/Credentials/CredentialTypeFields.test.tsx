@@ -1,0 +1,283 @@
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
+import {
+  BearerFields,
+  BasicFields,
+  ApiKeyFields,
+  OAuth2ClientCredentialsFields,
+  OAuth2PasswordFields,
+  CookieFields,
+} from './CredentialTypeFields.js';
+import type { NewCredential } from '../../types.js';
+
+describe('BearerFields', () => {
+  function Harness() {
+    const [draft, setDraft] = useState<NewCredential>({ name: '', type: 'bearer', token: '' });
+    return <BearerFields draft={draft as Extract<NewCredential, { type: 'bearer' }>} setDraft={setDraft} />;
+  }
+
+  it('renders a password-masked token input that updates the draft', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    const input = screen.getByPlaceholderText('bearer token');
+    expect(input).toHaveAttribute('type', 'password');
+
+    await user.type(input, 'secret-token');
+    expect(input).toHaveValue('secret-token');
+  });
+
+  it('toggles the token input between masked and revealed via the eye button, without touching the draft value', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    const input = screen.getByPlaceholderText('bearer token');
+    await user.type(input, 'secret-token');
+    expect(input).toHaveAttribute('type', 'password');
+
+    await user.click(screen.getByRole('button', { name: 'Show Token' }));
+    expect(input).toHaveAttribute('type', 'text');
+    expect(input).toHaveValue('secret-token');
+
+    await user.click(screen.getByRole('button', { name: 'Hide Token' }));
+    expect(input).toHaveAttribute('type', 'password');
+    expect(input).toHaveValue('secret-token');
+  });
+});
+
+describe('BasicFields', () => {
+  function Harness() {
+    const [draft, setDraft] = useState<NewCredential>({ name: '', type: 'basic', username: '', password: '' });
+    return <BasicFields draft={draft as Extract<NewCredential, { type: 'basic' }>} setDraft={setDraft} />;
+  }
+
+  it('renders username and password inputs that update the draft', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.type(screen.getByPlaceholderText('username'), 'alice');
+    await user.type(screen.getByPlaceholderText('password'), 'hunter2');
+
+    expect(screen.getByPlaceholderText('username')).toHaveValue('alice');
+    expect(screen.getByPlaceholderText('password')).toHaveValue('hunter2');
+    expect(screen.getByPlaceholderText('password')).toHaveAttribute('type', 'password');
+  });
+});
+
+describe('ApiKeyFields', () => {
+  function Harness() {
+    const [draft, setDraft] = useState<NewCredential>({
+      name: '',
+      type: 'apiKey',
+      paramName: '',
+      in: 'header',
+      key: '',
+    });
+    return <ApiKeyFields draft={draft as Extract<NewCredential, { type: 'apiKey' }>} setDraft={setDraft} />;
+  }
+
+  it('renders paramName, "Sent in", and key inputs that update the draft', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.type(screen.getByPlaceholderText('e.g. X-API-Key'), 'X-API-Key');
+    await user.selectOptions(screen.getByDisplayValue('Header'), 'query');
+    await user.type(screen.getByPlaceholderText('key value'), 'secret-key');
+
+    expect(screen.getByPlaceholderText('e.g. X-API-Key')).toHaveValue('X-API-Key');
+    expect(screen.getByDisplayValue('Query param')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('key value')).toHaveValue('secret-key');
+  });
+});
+
+describe('OAuth2ClientCredentialsFields', () => {
+  function Harness() {
+    const [draft, setDraft] = useState<NewCredential>({
+      name: '',
+      type: 'oauth2_clientCredentials',
+      tokenUrl: '',
+      clientId: '',
+      clientSecret: '',
+      scope: '',
+      clientAuthMethod: 'basic',
+    });
+    return (
+      <OAuth2ClientCredentialsFields
+        draft={draft as Extract<NewCredential, { type: 'oauth2_clientCredentials' }>}
+        setDraft={setDraft}
+      />
+    );
+  }
+
+  it('shows the client-secret warning', () => {
+    render(<Harness />);
+    expect(screen.getByText(/Only use test\/sandbox credentials/)).toBeInTheDocument();
+  });
+
+  it('renders tokenUrl, clientId, clientSecret, and scope inputs that update the draft', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.type(
+      screen.getByPlaceholderText('https://auth.example.com/oauth/token'),
+      'https://auth.example.com/token'
+    );
+    await user.type(screen.getByPlaceholderText('client id'), 'my-client');
+    await user.type(screen.getByPlaceholderText('client secret'), 'my-secret');
+    await user.type(screen.getByPlaceholderText('scope'), 'read write');
+
+    expect(screen.getByPlaceholderText('https://auth.example.com/oauth/token')).toHaveValue(
+      'https://auth.example.com/token'
+    );
+    expect(screen.getByPlaceholderText('client id')).toHaveValue('my-client');
+    expect(screen.getByPlaceholderText('client secret')).toHaveValue('my-secret');
+    expect(screen.getByPlaceholderText('scope')).toHaveValue('read write');
+  });
+
+  it('lets the user add extra token params onto the draft', async () => {
+    const user = userEvent.setup();
+    let latest: NewCredential | null = null;
+    function HarnessWithDraft() {
+      const [draft, setDraft] = useState<NewCredential>({
+        name: '',
+        type: 'oauth2_clientCredentials',
+        tokenUrl: '',
+        clientId: '',
+        clientSecret: '',
+        scope: '',
+        clientAuthMethod: 'basic',
+      });
+      latest = draft;
+      return (
+        <OAuth2ClientCredentialsFields
+          draft={draft as Extract<NewCredential, { type: 'oauth2_clientCredentials' }>}
+          setDraft={setDraft}
+        />
+      );
+    }
+    render(<HarnessWithDraft />);
+
+    await user.type(screen.getByLabelText('Extra token param name 1'), 'audience');
+    await user.type(screen.getByLabelText('Extra token param value 1'), 'api://orders');
+
+    expect(latest).toMatchObject({
+      type: 'oauth2_clientCredentials',
+      extraTokenParams: { audience: 'api://orders' },
+    });
+  });
+
+  it('defaults clientAuthMethod to Basic and lets it switch to POST body', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    expect(screen.getByDisplayValue('HTTP Basic header (RFC 6749 client_secret_basic)')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByDisplayValue('HTTP Basic header (RFC 6749 client_secret_basic)'), 'body');
+
+    expect(screen.getByDisplayValue('POST body params (client_secret_post)')).toBeInTheDocument();
+  });
+});
+
+describe('OAuth2PasswordFields', () => {
+  function Harness() {
+    const [draft, setDraft] = useState<NewCredential>({
+      name: '',
+      type: 'oauth2_password',
+      tokenUrl: '',
+      username: '',
+      password: '',
+      clientId: '',
+      clientSecret: '',
+      scope: '',
+      clientAuthMethod: 'basic',
+    });
+    return (
+      <OAuth2PasswordFields draft={draft as Extract<NewCredential, { type: 'oauth2_password' }>} setDraft={setDraft} />
+    );
+  }
+
+  it('shows the legacy-grant warning', () => {
+    render(<Harness />);
+    expect(screen.getByText(/Legacy grant type/)).toBeInTheDocument();
+  });
+
+  it('renders tokenUrl, username, and password inputs that update the draft, with clientId/clientSecret/scope marked optional', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.type(
+      screen.getByPlaceholderText('https://auth.example.com/oauth/token'),
+      'https://auth.example.com/token'
+    );
+    await user.type(screen.getByPlaceholderText('resource owner username'), 'alice');
+    await user.type(screen.getByPlaceholderText('resource owner password'), 'hunter2');
+
+    expect(screen.getByPlaceholderText('resource owner username')).toHaveValue('alice');
+    expect(screen.getByPlaceholderText('resource owner password')).toHaveValue('hunter2');
+    expect(screen.getByText('Client ID (optional)')).toBeInTheDocument();
+    expect(screen.getByText('Client secret (optional)')).toBeInTheDocument();
+  });
+
+  it('reveals Password and Client secret independently — toggling one leaves the other masked', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    const passwordInput = screen.getByPlaceholderText('resource owner password');
+    const clientSecretInput = screen.getByPlaceholderText('client secret');
+    expect(passwordInput).toHaveAttribute('type', 'password');
+    expect(clientSecretInput).toHaveAttribute('type', 'password');
+
+    await user.click(screen.getByRole('button', { name: 'Show Password' }));
+
+    expect(passwordInput).toHaveAttribute('type', 'text');
+    expect(clientSecretInput).toHaveAttribute('type', 'password');
+  });
+});
+
+describe('CookieFields', () => {
+  function Harness() {
+    const [draft, setDraft] = useState<NewCredential>({ name: '', type: 'cookie', loginUrl: '' });
+    return <CookieFields draft={draft as Extract<NewCredential, { type: 'cookie' }>} setDraft={setDraft} />;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders a Login page URL input that updates the draft', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    const input = screen.getByPlaceholderText('https://your-app.example.com/auth/login');
+    await user.type(input, 'https://app.test/auth/github');
+    expect(input).toHaveValue('https://app.test/auth/github');
+  });
+
+  it('explains this credential injects nothing itself, with no secret to enter at all', () => {
+    render(<Harness />);
+    expect(screen.getByText(/doesn't add anything to your requests itself/)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/token/)).not.toBeInTheDocument();
+  });
+
+  it('shows no "Open login page" link when loginUrl is empty', () => {
+    render(<Harness />);
+    expect(screen.queryByRole('button', { name: /Open login page/ })).not.toBeInTheDocument();
+  });
+
+  it('"Open login page" appears once a URL is entered, and opens it in a new tab with no popup sizing', async () => {
+    const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<Harness />);
+
+    await user.type(
+      screen.getByPlaceholderText('https://your-app.example.com/auth/login'),
+      'https://app.test/auth/github'
+    );
+    const loginButton = screen.getByRole('button', { name: /Open login page/ });
+
+    await user.click(loginButton);
+    expect(openSpy).toHaveBeenCalledWith('https://app.test/auth/github', '_blank');
+  });
+});

@@ -11,7 +11,7 @@ export interface ModalProps {
 /**
  * The first centered modal in the codebase — everything else that overlays
  * the canvas (CredentialsPanel) is an edge-anchored drawer instead. Reused
- * by TagConfigModal and NodeInspector's Raw->Form conversion warning.
+ * by TagConfigModal and NodeConfig's Raw->Form conversion warning.
  * Backdrop click and Escape both close it, mirroring CredentialsPanel's
  * existing Escape-key handling.
  */

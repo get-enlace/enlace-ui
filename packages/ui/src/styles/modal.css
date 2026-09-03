@@ -1,0 +1,210 @@
+/* --- Modal: the shared centered-dialog shell for TagConfigModal and the
+ * Raw->Form conversion warning. */
+
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  width: 420px;
+  max-width: 92vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal__title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.modal__close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.modal__close:hover {
+  color: var(--color-text);
+}
+
+.modal__body {
+  padding: 14px;
+}
+
+.tag-config-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.tag-config-modal__field select,
+.tag-config-modal__field input {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: var(--color-topbar-bg);
+}
+
+.tag-config-modal__preview {
+  margin-bottom: 12px;
+}
+
+.tag-config-modal__preview-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  margin-bottom: 5px;
+}
+
+.tag-config-modal__preview pre {
+  background: #101113;
+  color: #d8dde3;
+  padding: 8px 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border: 1px solid var(--color-border);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.workflow-export__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.workflow-export__field input {
+  padding: 7px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-topbar-bg);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.workflow-export__credentials {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.workflow-export__credentials legend {
+  padding: 0 4px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workflow-export__credentials label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.workflow-export__credentials label > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.workflow-export__credentials small {
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+.workflow-export__warning {
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--color-warning);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.workflow-export__warning p {
+  margin: 4px 0 10px;
+  color: var(--color-text-muted);
+}
+
+.workflow-export__warning label {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.tag-config-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tag-config-modal__actions button {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--color-topbar-bg);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.tag-config-modal__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tag-config-modal__delete {
+  margin-right: auto;
+  color: var(--color-error) !important;
+  border-color: var(--color-error) !important;
+}
+

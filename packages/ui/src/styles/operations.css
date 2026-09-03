@@ -1,0 +1,161 @@
+/* --- Operation list: method-tinted rows --- */
+
+.operation-list__search {
+  margin: 0 0 10px;
+}
+
+.operation-list__search input {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: var(--color-panel-bg);
+  color: var(--color-text);
+}
+
+.operation-list__empty {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.operation-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Tag groups */
+.operation-list__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.operation-list__group ul {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+
+.operation-list__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 5px 4px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.operation-list__group-header:hover {
+  background: var(--color-hover-bg, rgba(255,255,255,0.05));
+  color: var(--color-text);
+}
+
+.operation-list__group-chevron {
+  font-size: 14px;
+  line-height: 1;
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.operation-list__group-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-list__group-count {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* .operation-list__item is a <fieldset> now (see OperationList.tsx), not a
+   plain <div> — reset the UA defaults (fieldset's own border/padding/margin,
+   its min-width: min-content quirk that would otherwise block the path's
+   ellipsis truncation from shrinking) rather than fight them. */
+.operation-list__item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-panel-bg);
+  cursor: grab;
+  font-size: 13px;
+  transition: box-shadow 0.15s ease;
+}
+
+/* A <legend> — the browser itself cuts the gap in the fieldset's top border
+   and centers the legend on it; no manual position/background needed (the
+   fieldset's own background already shows through the gap). Only rendered
+   when the spec actually declares an operationId (see OperationList.tsx) —
+   not every operation has one. */
+.operation-list__operation-id {
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+/* border-color, not box-shadow: box-shadow draws a uniform ring around the
+   whole border-box, oblivious to the gap the browser cuts into the actual
+   border for the operationId <legend> — it would draw straight through the
+   text instead of respecting the gap the way a real border does. */
+.operation-list__item:hover {
+  border-color: var(--color-focus);
+}
+
+.operation-list__item--get {
+  background: var(--color-get-bg);
+  border-color: rgba(97, 175, 254, 0.3);
+}
+.operation-list__item--post {
+  background: var(--color-post-bg);
+  border-color: rgba(73, 204, 144, 0.3);
+}
+.operation-list__item--put {
+  background: var(--color-put-bg);
+  border-color: rgba(252, 161, 48, 0.3);
+}
+.operation-list__item--patch {
+  background: var(--color-patch-bg);
+  border-color: rgba(80, 227, 194, 0.3);
+}
+.operation-list__item--delete {
+  background: var(--color-delete-bg);
+  border-color: rgba(249, 62, 62, 0.3);
+}
+
+.operation-list__path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  /* Flex items refuse to shrink below their content's intrinsic width by
+     default (min-width: auto) — without this, a long path (e.g.
+     "/pet/{petId}/uploadImage") just overflows past the sidebar's own
+     overflow-x: hidden with no ellipsis, clipping mid-word instead of
+     truncating cleanly. Same pattern as .debug-step__url below. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+

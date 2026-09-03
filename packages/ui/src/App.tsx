@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useWorkflowStore } from './store/workflowStore.js';
-import { OperationList } from './components/OperationList.js';
-import { Canvas } from './components/Canvas.js';
-import { NodeInspector } from './components/NodeInspector.js';
-import { DebugPane } from './components/DebugPane.js';
-import { ChromeSettingsMenu } from './components/ChromeSettingsMenu.js';
-import { WorkflowSwitcher } from './components/WorkflowSwitcher.js';
-import { RunControls } from './components/RunControls.js';
-import { InspectorShell, INSPECTOR_DEFAULT_WIDTH } from './components/InspectorShell.js';
+import {
+  Canvas,
+  ChromeSettingsMenu,
+  DebugPane,
+  NodeConfig,
+  NodeConfigShell,
+  NODE_CONFIG_DEFAULT_WIDTH,
+  OperationList,
+  RunControls,
+  WorkflowSwitcher,
+} from './components/index.js';
 
 export default function App() {
   const {
@@ -25,10 +28,10 @@ export default function App() {
   } = useWorkflowStore();
   // Pure view state (not workflow data) — collapsing a pane doesn't change
   // what gets run, just how much canvas room the user gets to work with.
-  const [showInspector, setShowInspector] = useState(true);
+  const [showNodeConfig, setShowNodeConfig] = useState(true);
   const [showDebugPane, setShowDebugPane] = useState(true);
-  const [inspectorWidth, setInspectorWidth] = useState(INSPECTOR_DEFAULT_WIDTH);
-  const onInspectorWidthChange = useCallback((width: number) => setInspectorWidth(width), []);
+  const [nodeConfigWidth, setNodeConfigWidth] = useState(NODE_CONFIG_DEFAULT_WIDTH);
+  const onNodeConfigWidthChange = useCallback((width: number) => setNodeConfigWidth(width), []);
 
   useEffect(() => {
     loadOperations();
@@ -72,26 +75,26 @@ export default function App() {
         </div>
       </header>
       <div
-        className={`app__body${showInspector ? '' : ' app__body--inspector-collapsed'}`}
+        className={`app__body${showNodeConfig ? '' : ' app__body--node-config-collapsed'}`}
         style={
-          showInspector
-            ? { gridTemplateColumns: `240px minmax(240px, 1fr) ${inspectorWidth}px` }
+          showNodeConfig
+            ? { gridTemplateColumns: `240px minmax(240px, 1fr) ${nodeConfigWidth}px` }
             : undefined
         }
       >
         <OperationList operations={operations} />
         <Canvas />
-        {showInspector ? (
-          <InspectorShell onCollapse={() => setShowInspector(false)} onWidthChange={onInspectorWidthChange}>
-            <NodeInspector />
-          </InspectorShell>
+        {showNodeConfig ? (
+          <NodeConfigShell onCollapse={() => setShowNodeConfig(false)} onWidthChange={onNodeConfigWidthChange}>
+            <NodeConfig />
+          </NodeConfigShell>
         ) : (
           <button
             type="button"
             className="pane-strip pane-strip--right"
-            onClick={() => setShowInspector(true)}
-            title="Show inspector"
-            aria-label="Show inspector"
+            onClick={() => setShowNodeConfig(true)}
+            title="Show node config"
+            aria-label="Show node config"
           >
             ‹
           </button>

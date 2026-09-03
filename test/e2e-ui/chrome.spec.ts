@@ -35,14 +35,14 @@ test.describe('Chrome redesign', () => {
     await expect(page.getByText(/Run the workflow to see each step/)).toBeVisible();
   });
 
-  test('inspector empty state and collapse strip', async ({ page }) => {
+  test('node config empty state and collapse strip', async ({ page }) => {
     await expect(page.getByText('Select a node to configure it.')).toBeVisible();
-    await expect(page.getByRole('separator', { name: 'Resize inspector' })).toBeVisible();
+    await expect(page.getByRole('separator', { name: 'Resize node config' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Hide inspector' }).click();
+    await page.getByRole('button', { name: 'Hide node config' }).click();
     await expect(page.getByText('Select a node to configure it.')).not.toBeVisible();
 
-    await page.getByRole('button', { name: 'Show inspector' }).click();
+    await page.getByRole('button', { name: 'Show node config' }).click();
     await expect(page.getByText('Select a node to configure it.')).toBeVisible();
   });
 });
