@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NodeInspector } from './NodeInspector.js';
-import { useWorkflowStore } from '../store/workflowStore.js';
-import type { Operation, WorkflowNode } from '../types.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
+import type { Operation, WorkflowNode } from '../../types.js';
 
 const petOperation: Operation = {
   id: 'POST /pet',

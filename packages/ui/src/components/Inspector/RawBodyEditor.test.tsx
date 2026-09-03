@@ -7,7 +7,7 @@ import { acceptCompletion, completionStatus } from '@codemirror/autocomplete';
 import { json } from '@codemirror/lang-json';
 import { RawBodyEditor, buildJsonAutocompleteExtensions, buildTagAutoCloneExtension, cloneTagsEffect } from './RawBodyEditor.js';
 import { buildNodeLabels } from '@get-enlace/core';
-import type { BodyTag, Operation, RawBody, WorkflowNode } from '../types.js';
+import type { BodyTag, Operation, RawBody, WorkflowNode } from '../../types.js';
 
 function node(id: string, operationId: string): WorkflowNode {
   return { id, operationId, credentialId: null, fieldValues: {} };

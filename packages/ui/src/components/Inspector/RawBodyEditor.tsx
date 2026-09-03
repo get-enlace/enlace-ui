@@ -16,8 +16,8 @@ import { tags as t } from '@lezer/highlight';
 import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { makeTagPlaceholder, tagPattern } from '@get-enlace/core';
-import { randomId } from '../utils/randomId.js';
-import type { BodyTag, BodyTagType, RawBody, WorkflowNode } from '../types.js';
+import { randomId } from '../../utils/randomId.js';
+import type { BodyTag, BodyTagType, RawBody, WorkflowNode } from '../../types.js';
 import { TagConfigModal } from './TagConfigModal.js';
 
 export interface RawBodyEditorProps {

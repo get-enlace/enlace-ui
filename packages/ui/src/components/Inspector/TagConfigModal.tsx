@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
 import { getHeaderCaseInsensitive, resolveJsonPath } from '@get-enlace/core';
-import { randomId } from '../utils/randomId.js';
-import type { BodyTag, BodyTagType, WorkflowNode } from '../types.js';
-import { Modal } from './Modal.js';
+import { randomId } from '../../utils/randomId.js';
+import type { BodyTag, BodyTagType, WorkflowNode } from '../../types.js';
+import { Modal } from '../Modal.js';
 
 const TYPE_LABELS: Record<BodyTagType, string> = {
   response_body: 'Response → Body Attribute',

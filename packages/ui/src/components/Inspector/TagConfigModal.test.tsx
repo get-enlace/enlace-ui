@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { useWorkflowStore } from '../store/workflowStore.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
 import { TagConfigModal } from './TagConfigModal.js';
 import { buildNodeLabels } from '@get-enlace/core';
-import type { Operation, WorkflowNode } from '../types.js';
+import type { Operation, WorkflowNode } from '../../types.js';
 
 function node(id: string, operationId: string): WorkflowNode {
   return { id, operationId, credentialId: null, fieldValues: {} };

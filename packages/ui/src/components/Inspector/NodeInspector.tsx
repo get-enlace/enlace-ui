@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useWorkflowStore } from '../store/workflowStore.js';
-import { coerceStaticValue } from '../utils/coerceValue.js';
-import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from '../utils/flattenSchema.js';
+import { useWorkflowStore } from '../../store/workflowStore.js';
+import { coerceStaticValue } from '../../utils/coerceValue.js';
+import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from '../../utils/flattenSchema.js';
 import { computeAncestors } from '@get-enlace/core';
-import { hasUnrepresentableShape } from '../utils/schemaExample.js';
-import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from '../utils/bodyTemplate.js';
+import { hasUnrepresentableShape } from '../../utils/schemaExample.js';
+import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from '../../utils/bodyTemplate.js';
 import { buildNodeLabels } from '@get-enlace/core';
 import { RawBodyEditor } from './RawBodyEditor.js';
-import { Modal } from './Modal.js';
-import type { SchemaField } from '../utils/flattenSchema.js';
-import type { FieldValue } from '../types.js';
+import { Modal } from '../Modal.js';
+import type { SchemaField } from '../../utils/flattenSchema.js';
+import type { FieldValue } from '../../types.js';
 
 /** Stroked lock — same outline style as CredentialTypeFields eye icons. */
 function LockIcon() {
