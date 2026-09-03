@@ -313,4 +313,29 @@ describe('DebugPane (Results)', () => {
     expect(screen.getByText('GET /a')).toBeInTheDocument();
     expect(screen.getAllByText('GET /b').length).toBeGreaterThanOrEqual(1);
   });
+
+  it('shows a settled wait node as a synthetic "waited" row, not an expandable request/response', () => {
+    useWorkflowStore.setState({
+      nodes: [{ id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 2000 }],
+      runResult: {
+        steps: [
+          {
+            nodeId: 'w1',
+            request: { method: 'WAIT', url: 'wait:2000ms', headers: {}, credentials: 'omit' },
+            timestampStart: '2026-01-01T00:00:00.000Z',
+            timestampEnd: '2026-01-01T00:00:02.000Z',
+          },
+        ],
+      },
+      stepStatusByNodeId: { w1: 'completed' },
+    });
+    render(<DebugPane collapsed={false} onToggleCollapsed={() => {}} />);
+
+    expect(screen.getByText('Wait 2s')).toBeInTheDocument();
+    expect(screen.getByText('waited')).toBeInTheDocument();
+    // No method badge, and nothing expandable (no <details> chevron) — a
+    // wait step has no request/response worth showing.
+    expect(document.querySelector('.method-badge')).not.toBeInTheDocument();
+    expect(document.querySelector('details')).not.toBeInTheDocument();
+  });
 });

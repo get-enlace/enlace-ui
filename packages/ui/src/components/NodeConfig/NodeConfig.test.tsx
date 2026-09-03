@@ -66,6 +66,66 @@ describe('NodeConfig', () => {
     expect(screen.getByText('Select a node to configure it.')).toBeInTheDocument();
   });
 
+  it('renders the Wait inspector, not the empty state or the operation form, for a wait node', () => {
+    useWorkflowStore.setState({
+      nodes: [{ id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 2000 }],
+      selectedNodeId: 'w1',
+    });
+    render(<NodeConfig />);
+
+    expect(screen.getByText('Wait')).toBeInTheDocument();
+    expect(screen.getByLabelText('Seconds')).toHaveValue(2);
+    expect(screen.queryByText('Select a node to configure it.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Request' })).not.toBeInTheDocument();
+  });
+
+  it('editing the Wait duration field updates the node in seconds-to-milliseconds', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      nodes: [{ id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 1000 }],
+      selectedNodeId: 'w1',
+    });
+    render(<NodeConfig />);
+
+    const input = screen.getByLabelText('Seconds');
+    await user.clear(input);
+    await user.type(input, '3.5');
+
+    const node = useWorkflowStore.getState().nodes.find((n) => n.id === 'w1')!;
+    expect(node.durationMs).toBe(3500);
+  });
+
+  it('locks the Wait duration field while the workflow is running', () => {
+    useWorkflowStore.setState({
+      nodes: [{ id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 1000 }],
+      selectedNodeId: 'w1',
+      isRunning: true,
+    });
+    render(<NodeConfig />);
+
+    expect(screen.getByLabelText('Seconds')).toBeDisabled();
+  });
+
+  it('switching selection between a wait node and an operation node does not throw (stable hook order)', () => {
+    useWorkflowStore.setState({
+      nodes: [
+        { id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 1000 },
+        makeNode({ id: 'node-1' }),
+      ],
+      selectedNodeId: 'w1',
+    });
+    const { rerender } = render(<NodeConfig />);
+    expect(screen.getByText('Wait')).toBeInTheDocument();
+
+    useWorkflowStore.setState({ selectedNodeId: 'node-1' });
+    rerender(<NodeConfig />);
+    expect(screen.getByRole('heading', { name: 'Request' })).toBeInTheDocument();
+
+    useWorkflowStore.setState({ selectedNodeId: 'w1' });
+    rerender(<NodeConfig />);
+    expect(screen.getByText('Wait')).toBeInTheDocument();
+  });
+
   it('groups request fields under Request with Path / Query / Body sections, toggle beside Request', () => {
     const op: Operation = {
       id: 'GET /items/{id}',

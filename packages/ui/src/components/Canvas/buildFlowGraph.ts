@@ -45,6 +45,15 @@ export function buildFlowNodes(args: {
       const size = collapsedGroupSize(g.nodeIds.length);
       const members: GroupMemberSummary[] = sortGroupMemberIds(g.nodeIds, nodePositions).map((nodeId) => {
         const node = nodes.find((n) => n.id === nodeId);
+        if (node?.kind === 'wait') {
+          return {
+            nodeId,
+            method: 'wait',
+            path: nodeLabels.get(nodeId) ?? 'Wait',
+            label: nodeLabels.get(nodeId) ?? nodeId,
+            status: stepStatusByNodeId[nodeId],
+          };
+        }
         const operation = node ? operations.find((o) => o.id === node.operationId) : undefined;
         return {
           nodeId,

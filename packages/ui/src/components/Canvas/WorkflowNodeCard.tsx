@@ -1,5 +1,6 @@
 import { Handle, Position, useStore, type NodeProps } from 'reactflow';
 import { useWorkflowStore } from '../../store/workflowStore.js';
+import { formatWaitDuration } from '@get-enlace/core';
 import type { Operation, RunStepStatus, WorkflowNode } from '../../types.js';
 import { DeleteNodeIcon, LeaveGroupIcon, STATUS_BADGE_GLYPH } from '../chromeIcons.js';
 
@@ -47,6 +48,7 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
   // third, separate way a node could be removed).
   const elementsSelectable = useStore((s) => s.elementsSelectable);
   const chromeDisabled = isRunning || !elementsSelectable;
+  const isWait = node.kind === 'wait';
   const method = operation?.method ?? 'get';
   // Skip the legend when it would just repeat the method+path already shown in the header below —
   // only worth a second line when the spec names the operation, or this operation appears more
@@ -66,9 +68,12 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
           the verb badge; the card chrome is neutral until a run status paints
           a border (see styles/canvas.css's workflow-node--{in-flight,paused,failed}). */}
       <fieldset
-        className={`workflow-node${selected ? ' workflow-node--selected' : ''}${status ? ` workflow-node--${status}` : ''}${groupId ? ' workflow-node--grouped' : ''}`}
+        className={`workflow-node${isWait ? ' workflow-node--wait' : ''}${selected ? ' workflow-node--selected' : ''}${status ? ` workflow-node--${status}` : ''}${groupId ? ' workflow-node--grouped' : ''}`}
       >
-        {showLegend && <legend className="workflow-node__operation-id">{label}</legend>}
+        {/* No legend on a Wait card — "Wait 2s" already carries the whole
+            identity in the header below, unlike an operation card where the
+            legend is the only place operationId/#N ever shows. */}
+        {!isWait && showLegend && <legend className="workflow-node__operation-id">{label}</legend>}
         {badgeGlyph && (
           <span className={`workflow-node__status-badge workflow-node__status-badge--${status}`} aria-hidden="true">
             {badgeGlyph}
@@ -79,14 +84,25 @@ export function WorkflowNodeCard({ data }: NodeProps<WorkflowNodeData>) {
             field mapping (data source), which stays in the Node Config's
             "map from..." picker. onConnect is wired up in Canvas.tsx. */}
         <Handle type="target" position={Position.Left} title="Drop here to connect" />
-        <div className="workflow-node__header">
-          <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
-          <span className="workflow-node__path">{operation?.path ?? 'Unknown operation'}</span>
-        </div>
-        {operation?.summary && (
-          <div className="workflow-node__summary" title={operation.summary}>
-            {operation.summary}
+        {isWait ? (
+          <div className="workflow-node__header">
+            <span className="wait-node__icon" aria-hidden="true">
+              ⏱
+            </span>
+            <span className="wait-node__label">Wait {formatWaitDuration(node.durationMs ?? 0)}</span>
           </div>
+        ) : (
+          <>
+            <div className="workflow-node__header">
+              <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
+              <span className="workflow-node__path">{operation?.path ?? 'Unknown operation'}</span>
+            </div>
+            {operation?.summary && (
+              <div className="workflow-node__summary" title={operation.summary}>
+                {operation.summary}
+              </div>
+            )}
+          </>
         )}
         {/* Point-of-truth for "why hasn't this fired" without needing the
             Debugger tab open — the corner badge alone reads as "something's

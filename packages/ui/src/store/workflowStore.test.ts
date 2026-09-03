@@ -30,6 +30,49 @@ beforeEach(() => {
   });
 });
 
+describe('addWaitNode / setNodeDurationMs', () => {
+  it('adds a wait node with no operationId, a default duration, and selects it', () => {
+    const { addWaitNode } = useWorkflowStore.getState();
+    const id = addWaitNode({ x: 10, y: 20 });
+
+    const state = useWorkflowStore.getState();
+    const node = state.nodes.find((n) => n.id === id)!;
+    expect(node.kind).toBe('wait');
+    expect(node.operationId).toBeUndefined();
+    expect(node.credentialId).toBeNull();
+    expect(node.fieldValues).toEqual({});
+    expect(node.durationMs).toBeGreaterThan(0);
+    expect(state.nodePositions[id]).toEqual({ x: 10, y: 20 });
+    expect(state.selectedNodeId).toBe(id);
+  });
+
+  it('accepts an explicit durationMs', () => {
+    const { addWaitNode } = useWorkflowStore.getState();
+    const id = addWaitNode(undefined, 3000);
+    expect(useWorkflowStore.getState().nodes.find((n) => n.id === id)!.durationMs).toBe(3000);
+  });
+
+  it('setNodeDurationMs updates only the targeted wait node', () => {
+    const { addWaitNode, setNodeDurationMs } = useWorkflowStore.getState();
+    const a = addWaitNode(undefined, 1000);
+    const b = addWaitNode(undefined, 1000);
+
+    setNodeDurationMs(a, 5000);
+
+    const nodes = useWorkflowStore.getState().nodes;
+    expect(nodes.find((n) => n.id === a)!.durationMs).toBe(5000);
+    expect(nodes.find((n) => n.id === b)!.durationMs).toBe(1000);
+  });
+
+  it('is a no-op while the workflow is running (same isLocked guard as addNode)', () => {
+    const { addWaitNode } = useWorkflowStore.getState();
+    useWorkflowStore.setState({ isRunning: true });
+    const id = addWaitNode();
+    expect(id).toBe('');
+    expect(useWorkflowStore.getState().nodes).toEqual([]);
+  });
+});
+
 describe('removeNode', () => {
   it('removes the node itself, its position, and any connections referencing it (either direction)', () => {
     const { addNode, connectNodes, removeNode } = useWorkflowStore.getState();

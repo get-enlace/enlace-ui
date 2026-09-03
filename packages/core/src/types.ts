@@ -73,11 +73,44 @@ export interface RawBody {
   tags: Record<string, BodyTag>;
 }
 
+/**
+ * Discriminates what a `WorkflowNode` actually does when it runs —
+ * dispatched by engine/nodeHandlers.ts's handler registry (`chainExecutor.ts`
+ * only knows this contract, never a kind's specifics). `'operation'` is
+ * every node from before this field existed: it fires an HTTP call
+ * described by `operationId`. `'wait'` is the first non-HTTP preset (see
+ * ARCHITECTURE.md's "Preset nodes" section) — a pure pacing step with no
+ * request/response of its own.
+ */
+export type WorkflowNodeKind = 'operation' | 'wait';
+
 export interface WorkflowNode {
   id: string; // unique per canvas instance
-  operationId: string; // references an Operation.id
+  /**
+   * Optional, and absent means `'operation'` — every pre-existing
+   * `WorkflowNode` literal (fixtures, older in-memory state, older
+   * `.enlace` imports) keeps compiling and behaving exactly as before with
+   * no migration step of its own. See utils/workflowDocument.ts for the
+   * explicit `kind` an import writes/reads today.
+   */
+  kind?: WorkflowNodeKind;
+  /**
+   * References an Operation.id. Required in practice for `kind: 'operation'`
+   * (the default) — optional on the type only because other kinds (e.g.
+   * `'wait'`) don't have one at all and still need to satisfy this same
+   * interface (see this file's own note on why `WorkflowNode` stays one
+   * flat shape rather than a discriminated union: every existing consumer
+   * already treats most of these fields as optional/absent-safe).
+   */
+  operationId?: string;
   credentialId: string | null;
   fieldValues: Record<string, FieldValue>;
+  /**
+   * `kind: 'wait'` only — how long the node pauses execution, in
+   * milliseconds, once its dependencies are satisfied and no breakpoint
+   * gates it. Ignored by every other kind.
+   */
+  durationMs?: number;
   /**
    * Optional (not required) so every pre-existing `WorkflowNode` literal
    * (fixtures, older in-memory state) keeps compiling/behaving unchanged —

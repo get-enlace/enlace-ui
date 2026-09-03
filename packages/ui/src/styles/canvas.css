@@ -339,6 +339,28 @@
   overflow-wrap: anywhere;
 }
 
+/* Wait preset card — deliberately not method-tinted (it isn't an HTTP call):
+   a dashed border in the same neutral --color-wait used by its palette row
+   and .method-badge--wait, so it reads as "not an operation" at a glance
+   even before the run-status border rules above (which still apply on top
+   during a run, same as any other node). */
+.workflow-node--wait {
+  border-style: dashed;
+  border-color: var(--color-wait);
+  background: var(--color-wait-bg);
+}
+
+.wait-node__icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.wait-node__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
 
 /* --- Canvas node groups (drop-overlap; collapsed = compact card) --- */
 

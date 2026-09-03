@@ -17,6 +17,8 @@ function StatusIcon({ status }: { status: RunStepStatus }) {
 
 interface ResultsRowProps {
   nodeId: string;
+  /** `kind: 'wait'` renders as a distinct pacing row — no method badge, no expandable request/response (there is neither). */
+  isWait: boolean;
   operation: Operation | undefined;
   label: string;
   status: RunStepStatus;
@@ -30,6 +32,7 @@ interface ResultsRowProps {
 
 function ResultsRow({
   nodeId,
+  isWait,
   operation,
   label,
   status,
@@ -40,7 +43,10 @@ function ResultsRow({
   onSelect,
 }: ResultsRowProps) {
   const method = operation?.method ?? step?.request.method.toLowerCase() ?? 'get';
-  const hasDetail = Boolean(step) || Boolean(previewRequest);
+  // A Wait step has no request/response worth expanding — its "detail" is
+  // just the synthetic "waited Xs" summary itself (see nodeHandlers.ts's
+  // waitNodeHandler).
+  const hasDetail = !isWait && (Boolean(step) || Boolean(previewRequest));
   const rowRef = useRef<HTMLDetailsElement | HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -52,7 +58,16 @@ function ResultsRow({
     }
   }, [preferOpen]);
 
-  const summary = (
+  const summary = isWait ? (
+    <>
+      <StatusIcon status={status} />
+      <span className="wait-node__icon" aria-hidden="true">
+        ⏱
+      </span>
+      <span className="debug-step__url">{label}</span>
+      {status === 'completed' && <span className="status-badge status-badge--ok">waited</span>}
+    </>
+  ) : (
     <>
       <StatusIcon status={status} />
       <span className={`method-badge method-badge--${method}`}>{method.toUpperCase()}</span>
@@ -208,8 +223,9 @@ export function ResultsList() {
             <ResultsRow
               key={node.id}
               nodeId={node.id}
-              operation={operationsById.get(node.operationId)}
-              label={nodeLabels.get(node.id) ?? node.operationId}
+              isWait={node.kind === 'wait'}
+              operation={node.operationId ? operationsById.get(node.operationId) : undefined}
+              label={nodeLabels.get(node.id) ?? node.operationId ?? node.id}
               status={resolvedStatus}
               step={stepsByNodeId.get(node.id)}
               previewRequest={previewRequestByNodeId[node.id]}
@@ -228,6 +244,10 @@ export function ResultsList() {
             <ResultsRow
               key={step.nodeId}
               nodeId={step.nodeId}
+              // No `node` survives a cleared canvas — the synthetic
+              // `method: 'WAIT'` set by waitNodeHandler is the only signal
+              // left to tell a settled wait step apart from an operation one.
+              isWait={step.request.method === 'WAIT'}
               operation={undefined}
               label={step.request.method}
               status={step.error ? 'failed' : 'completed'}

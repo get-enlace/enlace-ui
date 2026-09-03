@@ -5,7 +5,8 @@ import { LeaveGroupIcon, STATUS_BADGE_GLYPH } from '../chromeIcons.js';
 
 export interface GroupMemberSummary {
   nodeId: string;
-  method: HttpMethod;
+  /** `'wait'` for a Wait preset member — not an `HttpMethod`, no operation behind it at all. */
+  method: HttpMethod | 'wait';
   path: string;
   label: string;
   /** Live run status — same source as WorkflowNodeCard (`stepStatusByNodeId`). */
