@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildNodeLabels } from './nodeLabel.js';
+import { buildNodeLabels, formatWaitDuration } from './nodeLabel.js';
 import type { Operation, WorkflowNode } from './types.js';
 
 function makeOperation(overrides: Partial<Operation> = {}): Operation {
@@ -69,5 +69,34 @@ describe('buildNodeLabels', () => {
     expect(labels.get('node-a')).toBe('createCustomer #1');
     expect(labels.get('node-b')).toBe('createCustomer #2');
     expect(labels.get('node-c')).toBe('createOrder');
+  });
+
+  it('labels a wait node by its duration, never by operationId (it has none)', () => {
+    const node: WorkflowNode = { id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 2000 };
+    expect(buildNodeLabels([node], new Map()).get('w1')).toBe('Wait 2s');
+  });
+
+  it('numbers wait nodes that share the same duration, same as repeated operations', () => {
+    const a: WorkflowNode = { id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 500 };
+    const b: WorkflowNode = { id: 'w2', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 500 };
+    const labels = buildNodeLabels([a, b], new Map());
+    expect(labels.get('w1')).toBe('Wait 500ms #1');
+    expect(labels.get('w2')).toBe('Wait 500ms #2');
+  });
+});
+
+describe('formatWaitDuration', () => {
+  it('renders sub-second durations in milliseconds', () => {
+    expect(formatWaitDuration(0)).toBe('0ms');
+    expect(formatWaitDuration(500)).toBe('500ms');
+  });
+
+  it('renders whole seconds with no decimal', () => {
+    expect(formatWaitDuration(1000)).toBe('1s');
+    expect(formatWaitDuration(2000)).toBe('2s');
+  });
+
+  it('renders fractional seconds with one decimal place', () => {
+    expect(formatWaitDuration(2500)).toBe('2.5s');
   });
 });

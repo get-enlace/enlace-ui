@@ -1,11 +1,9 @@
-import { resolveCredentialInjection } from './credentials.js';
-import { resolveRawBody } from './rawBodyResolver.js';
 import { buildDependencyGraph } from './dependencyGraph.js';
-import { resolveTagsInValue } from '../bodyTags.js';
 import { buildNodeLabels } from '../nodeLabel.js';
+import { getByPath, setByPath } from './path.js';
+import { buildRequest, nodeHandlers, type NodeHandlerContext } from './nodeHandlers.js';
 import type {
   Credential,
-  FieldValue,
   Operation,
   RunControl,
   RunEvent,
@@ -17,6 +15,14 @@ import type {
   WorkflowConnection,
   WorkflowNode,
 } from '../types.js';
+
+// Re-exported so every existing `import { getByPath, buildRequest } from
+// './chainExecutor.js'` (this package's own tests, and utils/bodyTemplate.ts
+// via the @get-enlace/core barrel) keeps working unchanged even though both
+// now actually live in path.ts / nodeHandlers.ts — split out so
+// chainExecutor.ts and nodeHandlers.ts can depend on path.ts without
+// depending on each other.
+export { getByPath, setByPath, buildRequest };
 
 /**
  * The key a `WorkflowConnection` is armed/looked-up under in a breakpoints
@@ -75,320 +81,6 @@ export function computeExecutionLevels(
 /** Flat run order — levels concatenated in order, original relative order preserved within each. */
 export function topologicalSort(nodes: WorkflowNode[], connections: WorkflowConnection[] = []): WorkflowNode[] {
   return computeExecutionLevels(nodes, connections).flat();
-}
-
-/** Minimal dot/bracket path getter, e.g. "items[0].id" or "order.id". */
-export function getByPath(obj: unknown, path: string): unknown {
-  if (!path) return undefined;
-  const parts = path
-    .replace(/\[(\d+)\]/g, '.$1')
-    .split('.')
-    .filter(Boolean);
-
-  let current: any = obj;
-  for (const part of parts) {
-    if (current == null) return undefined;
-    current = current[part];
-  }
-  return current;
-}
-
-/** Exported for reuse by utils/bodyTemplate.ts, which needs the same dotted-path write when reconstructing a body from form fieldValues to detect a lossy Raw->Form conversion. */
-export function setByPath(target: Record<string, unknown>, path: string, value: unknown) {
-  const parts = path.split('.').filter(Boolean);
-  let current = target;
-  parts.forEach((part, i) => {
-    if (i === parts.length - 1) {
-      current[part] = value;
-    } else {
-      current[part] = current[part] ?? {};
-      current = current[part] as Record<string, unknown>;
-    }
-  });
-}
-
-function resolveFieldValue(
-  fieldValue: FieldValue,
-  fieldPath: string,
-  nodeId: string,
-  stepsByNodeId: Map<string, RunStep>,
-  uploadedFiles: Record<string, File>
-): unknown {
-  if (fieldValue.source === 'static') return fieldValue.value;
-  if (fieldValue.source === 'file') {
-    const file = uploadedFiles[`${nodeId}::${fieldPath}`];
-    if (!file) {
-      throw new Error(
-        `Re-select the file for "${fieldPath}"${fieldValue.fileName ? ` (${fieldValue.fileName})` : ''} — file contents are not persisted.`
-      );
-    }
-    return file;
-  }
-  const priorStep = stepsByNodeId.get(fieldValue.fromNodeId);
-  return getByPath(priorStep?.response?.body, fieldValue.fromResponseFieldPath);
-}
-
-/**
- * Resolves a node's fully-applied request — fields, tag chips, and
- * credential injection — without sending it. `runNode` (below) is this
- * plus the actual `fetch()`; exported separately so a paused node's row
- * can preview exactly what's about to go out before it's released (see
- * `executeChain`'s pause handling), using the same resolution logic a real
- * fire would.
- */
-export async function buildRequest(
-  node: WorkflowNode,
-  operation: Operation,
-  stepsByNodeId: Map<string, RunStep>,
-  credentialsById: Map<string, Credential>,
-  baseUrl: string,
-  nodeLabels?: Map<string, string>,
-  uploadedFiles: Record<string, File> = {}
-): Promise<RunStepRequest> {
-  let requestPath = operation.path;
-  const query = new URLSearchParams();
-  const isMultipart = operation.requestBodyContentType === 'multipart/form-data';
-  const headers: Record<string, string> = isMultipart ? {} : { 'Content-Type': 'application/json' };
-  const bodyFields: Record<string, unknown> = {};
-  const requestMode = isMultipart ? 'form' : (node.requestMode ?? 'form');
-
-  // A field's static value can itself contain a `{{enlace:<id>}}`
-  // reference even in Form mode — not something the form UI lets you type
-  // deliberately, but a Raw JSON tag chip that ended up embedded in a
-  // larger string (e.g. "Bearer {{enlace:...}}") survives a lossy Raw ->
-  // Form conversion as literal text in a static field (see
-  // utils/bodyTemplate.ts): the "Map from..." UI for it is gone, but the
-  // mapping itself shouldn't silently stop working, so it's resolved here
-  // too — against tags any raw section still carries even once
-  // `requestMode` is back to `'form'` (switching modes never clears them).
-  const nodeTags = { ...node.rawPath?.tags, ...node.rawQuery?.tags, ...node.rawBody?.tags };
-
-  for (const [fieldPath, fieldValue] of Object.entries(node.fieldValues)) {
-    const [section, ...rest] = fieldPath.split('.');
-    // Raw mode owns path/query/body from their templates; form fieldValues
-    // for those sections are ignored until the user switches back.
-    if (requestMode === 'raw' && (section === 'path' || section === 'query' || section === 'body')) {
-      continue;
-    }
-
-    let value = resolveFieldValue(fieldValue, fieldPath, node.id, stepsByNodeId, uploadedFiles);
-    if (fieldValue.source !== 'file' && Object.keys(nodeTags).length > 0) {
-      value = resolveTagsInValue(value, nodeTags, stepsByNodeId, nodeLabels);
-    }
-    const key = rest.join('.');
-
-    if (section === 'path') {
-      requestPath = requestPath.replace(`{${key}}`, encodeURIComponent(String(value ?? '')));
-    } else if (section === 'query') {
-      if (value !== undefined) query.set(key, String(value));
-    } else if (section === 'header') {
-      if (value !== undefined) headers[key] = String(value);
-    } else if (section === 'body') {
-      setByPath(bodyFields, key, value);
-    }
-  }
-
-  if (requestMode === 'raw') {
-    if (node.rawPath) {
-      const pathObj = resolveRawBody(node.rawPath, stepsByNodeId, nodeLabels);
-      if (pathObj && typeof pathObj === 'object' && !Array.isArray(pathObj)) {
-        for (const [key, value] of Object.entries(pathObj as Record<string, unknown>)) {
-          if (value === undefined || value === null) continue;
-          requestPath = requestPath.replace(`{${key}}`, encodeURIComponent(String(value)));
-        }
-      }
-    }
-    if (node.rawQuery) {
-      const queryObj = resolveRawBody(node.rawQuery, stepsByNodeId, nodeLabels);
-      if (queryObj && typeof queryObj === 'object' && !Array.isArray(queryObj)) {
-        for (const [key, value] of Object.entries(queryObj as Record<string, unknown>)) {
-          if (value === undefined || value === null) continue;
-          query.set(key, typeof value === 'string' ? value : String(value));
-        }
-      }
-    }
-  }
-
-  // Runs entirely client-side, same as the request itself: the secret
-  // never leaves the tab except as whatever resolveCredentialInjection
-  // hands back (a header, a query param, or — uniquely for cookie — a
-  // `credentials: 'include'` fetch option instead of any injected value at
-  // all) — sent straight to the target API, not routed through any adapter.
-  const redactQueryParams: string[] = [];
-  // Explicit 'omit' as the base case, not left undefined — see
-  // RunStepRequest.credentials's own comment for why: fetch()'s default
-  // ('same-origin') would otherwise leak an existing browser cookie on any
-  // same-origin target regardless of whether a Cookie credential is even
-  // attached.
-  let credentials: 'include' | 'omit' = 'omit';
-  if (node.credentialId) {
-    const credential = credentialsById.get(node.credentialId);
-    if (credential) {
-      // Two gates, both must pass: the map is only even consulted while
-      // `credentialExtraParamOverridesEnabled` is true (toggled off, it's
-      // inert regardless of what it holds — see that flag's own comment on
-      // WorkflowNode), and even then, this stays `undefined` rather than an
-      // empty object unless at least one entry actually resolved to a
-      // value (a row can exist with nothing usable yet — no response field
-      // picked, or its source node hasn't produced that field).
-      // resolveCredentialInjection treats "was I passed anything at all" as
-      // "skip the cache", so either gate failing must fall through to
-      // `undefined` — that's what lets the credential's own configured
-      // extraTokenParams value (and its cached token) keep working
-      // untouched — see credentialExtraParamOverrides's own comment on
-      // WorkflowNode for why this deliberately isn't stored on Credential
-      // itself.
-      let extraTokenParamOverrides: Record<string, string> | undefined;
-      if (node.credentialExtraParamOverridesEnabled) {
-        for (const [key, fieldValue] of Object.entries(node.credentialExtraParamOverrides ?? {})) {
-          const value = resolveFieldValue(
-            fieldValue,
-            `credential.extraTokenParams.${key}`,
-            node.id,
-            stepsByNodeId,
-            uploadedFiles
-          );
-          if (value === undefined) continue;
-          extraTokenParamOverrides ??= {};
-          extraTokenParamOverrides[key] = String(value);
-        }
-      }
-      const injection = await resolveCredentialInjection(credential, extraTokenParamOverrides);
-      Object.assign(headers, injection.headers);
-      for (const [key, value] of Object.entries(injection.query ?? {})) {
-        query.set(key, value);
-        redactQueryParams.push(key);
-      }
-      if (injection.credentials) credentials = injection.credentials;
-    }
-  }
-
-  const queryString = query.toString();
-  const url = `${baseUrl}${requestPath}${queryString ? `?${queryString}` : ''}`;
-
-  // Raw JSON mode bypasses the per-leaf `fieldValues['body.*']` fields
-  // entirely — the whole body comes from resolving the node's own
-  // `rawBody` template (tag chips substituted against `stepsByNodeId`;
-  // see engine/rawBodyResolver.ts). A throw here (unknown tag, missing
-  // source response, missing header) is caught by runNode's existing
-  // try/catch around buildRequest, same as any other request-building
-  // failure — no separate error path needed.
-  let body: unknown;
-  if (isMultipart) {
-    body = Object.keys(bodyFields).length > 0 ? appendFormData(bodyFields) : undefined;
-  } else if (requestMode === 'raw' && node.rawBody) {
-    body = resolveRawBody(node.rawBody, stepsByNodeId, nodeLabels);
-  } else {
-    body = Object.keys(bodyFields).length > 0 ? bodyFields : undefined;
-  }
-  const hasBody = Boolean(operation.requestBodySchema) && body !== undefined;
-
-  return {
-    method: operation.method.toUpperCase(),
-    url,
-    headers,
-    body: hasBody ? body : undefined,
-    redactQueryParams: redactQueryParams.length > 0 ? redactQueryParams : undefined,
-    credentials,
-  };
-}
-
-/** Flatten a body object into FormData entries (nested keys as dotted paths). */
-function appendFormData(fields: Record<string, unknown>, form = new FormData(), prefix = ''): FormData {
-  for (const [key, value] of Object.entries(fields)) {
-    const name = prefix ? `${prefix}.${key}` : key;
-    if (value instanceof File) {
-      form.append(name, value, value.name);
-    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      appendFormData(value as Record<string, unknown>, form, name);
-    } else if (value !== undefined && value !== null) {
-      form.append(name, typeof value === 'string' ? value : String(value));
-    }
-  }
-  return form;
-}
-
-async function runNode(
-  node: WorkflowNode,
-  operation: Operation,
-  stepsByNodeId: Map<string, RunStep>,
-  credentialsById: Map<string, Credential>,
-  baseUrl: string,
-  nodeLabels: Map<string, string>,
-  uploadedFiles: Record<string, File>
-): Promise<RunStep> {
-  // Built before the request fires — every field this node could need
-  // comes from an earlier level, already in stepsByNodeId, so there's no
-  // ordering hazard reading it here even though other nodes in this same
-  // level are being built/fired concurrently. Now async (credential
-  // resolution can require a live token-endpoint round-trip — see
-  // credentials.ts), so a failure here (e.g. a bad oauth2 tokenUrl) is
-  // caught the same way a failed fetch() is: a normal failed RunStep,
-  // not an uncaught rejection out of executeChain's Promise.all.
-  const timestampStart = new Date().toISOString();
-  let request: RunStepRequest;
-  try {
-    request = await buildRequest(node, operation, stepsByNodeId, credentialsById, baseUrl, nodeLabels, uploadedFiles);
-  } catch (err) {
-    return {
-      nodeId: node.id,
-      request: {
-        method: operation.method.toUpperCase(),
-        url: `${baseUrl}${operation.path}`,
-        headers: {},
-        credentials: 'omit',
-      },
-      timestampStart,
-      timestampEnd: new Date().toISOString(),
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  const step: RunStep = { nodeId: node.id, request, timestampStart, timestampEnd: '' };
-
-  try {
-    // Browser fetch() — same interface as Node's, no adapter round-trip:
-    // this hits the target API directly from the tab. `credentials` is
-    // always explicit ('omit' unless a cookie credential set it to
-    // 'include' — see RunStepRequest.credentials) rather than left for
-    // fetch()'s own 'same-origin' default to decide — 'include' has real
-    // consequences (the target's CORS response must explicitly allow
-    // credentialed requests from this origin, not just any).
-    //
-    // Multipart: pass FormData through and do NOT JSON.stringify — and
-    // Content-Type must already have been omitted in buildRequest so fetch
-    // can set multipart/form-data; boundary=...
-    const body =
-      request.body === undefined
-        ? undefined
-        : request.body instanceof FormData
-          ? request.body
-          : JSON.stringify(request.body);
-    const res = await fetch(request.url, {
-      method: request.method,
-      headers: request.headers,
-      body,
-      credentials: request.credentials,
-    });
-
-    const responseHeaders: Record<string, string> = {};
-    res.headers.forEach((value, key) => (responseHeaders[key] = value));
-    const contentType = res.headers.get('content-type') ?? '';
-    const responseBody = contentType.includes('application/json')
-      ? await res.json().catch(() => null)
-      : await res.text();
-
-    step.response = { status: res.status, headers: responseHeaders, body: responseBody };
-    step.timestampEnd = new Date().toISOString();
-    if (res.status >= 400) {
-      step.error = `Request failed with status ${res.status}`;
-    }
-  } catch (err) {
-    step.timestampEnd = new Date().toISOString();
-    step.error = err instanceof Error ? err.message : String(err);
-  }
-
-  return step;
 }
 
 export interface ChainExecutorOptions {
@@ -483,6 +175,20 @@ export async function executeChain(
   // recording the release here is enough; no need to track "which
   // connection" was released separately from "which node."
   const releasedNodeIds = new Set<string>();
+  // Aborted by RunControl.stop() — lets a handler with something worth
+  // cutting short mid-flight (Wait's sleep) end early instead of running to
+  // its full length pointlessly once the run has already halted. An
+  // in-flight HTTP request ignores this; it can't be un-sent anyway.
+  const abortController = new AbortController();
+  const ctx: NodeHandlerContext = {
+    stepsByNodeId,
+    credentialsById,
+    operationsById,
+    baseUrl: options.baseUrl,
+    nodeLabels,
+    uploadedFiles,
+    signal: abortController.signal,
+  };
 
   const emit = (nodeId: string, s: RunStepStatus, step?: RunStep, request?: RunStepRequest) =>
     options.onEvent?.({ nodeId, status: s, step, request });
@@ -532,12 +238,13 @@ export async function executeChain(
     }
   }
 
-  function fireNode(node: WorkflowNode, operation: Operation) {
+  function fireNode(node: WorkflowNode) {
     status.set(node.id, 'in-flight');
     inFlightCount++;
     emit(node.id, 'in-flight');
 
-    runNode(node, operation, stepsByNodeId, credentialsById, options.baseUrl, nodeLabels, uploadedFiles).then((step) => {
+    const handler = nodeHandlers[node.kind ?? 'operation'];
+    handler.execute(node, ctx).then((step) => {
       steps.push(step);
       stepsByNodeId.set(step.nodeId, step);
       const finalStatus = step.error ? 'failed' : 'completed';
@@ -558,11 +265,10 @@ export async function executeChain(
       if (status.get(node.id) !== 'pending') continue;
       if (halted || !isSatisfied(node.id)) continue;
 
-      const operation = operationsById.get(node.operationId);
-      if (!operation) {
-        unknownOperationError = new Error(
-          `Unknown operation "${node.operationId}" referenced by ${nodeLabels.get(node.id) ?? 'a step'}`
-        );
+      const handler = nodeHandlers[node.kind ?? 'operation'];
+      const readyError = handler.checkReady(node, ctx);
+      if (readyError) {
+        unknownOperationError = new Error(`${readyError} referenced by ${nodeLabels.get(node.id) ?? 'a step'}`);
         progressed();
         return;
       }
@@ -575,21 +281,23 @@ export async function executeChain(
         // it needs the same credential/mapping resolution buildRequest
         // itself does, which can take a real round-trip (an oauth2 token
         // fetch). A failure here isn't fatal to the pause itself: the row
-        // just shows no preview, same as if this were never attempted.
-        buildRequest(node, operation, stepsByNodeId, credentialsById, options.baseUrl, nodeLabels, uploadedFiles)
+        // just shows no preview, same as if this were never attempted (and
+        // a kind with nothing to preview, e.g. wait, always resolves null).
+        handler
+          .preview(node, ctx)
           .then((request) => {
             // Guard against a race: Continue/Step may have already fired
             // this node for real by the time the preview finishes building
             // (e.g. a slow oauth2 token fetch) — an event claiming it's
             // still 'paused' at that point would misreport its actual
             // status, so only emit if nothing's changed underneath it.
-            if (status.get(node.id) === 'paused') emit(node.id, 'paused', undefined, request);
+            if (request && status.get(node.id) === 'paused') emit(node.id, 'paused', undefined, request);
           })
           .catch(() => {});
         continue;
       }
 
-      fireNode(node, operation);
+      fireNode(node);
     }
   }
 
@@ -616,6 +324,7 @@ export async function executeChain(
       },
       stop: () => {
         halted = true;
+        abortController.abort();
         skipEverythingStillWaiting();
         progressed();
       },

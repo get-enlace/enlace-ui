@@ -7,6 +7,7 @@ import { hasUnrepresentableShape } from '../../utils/schemaExample.js';
 import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from '../../utils/bodyTemplate.js';
 import { buildNodeLabels } from '@get-enlace/core';
 import { RawBodyEditor } from './RawBodyEditor.js';
+import { WaitNodeConfig } from './WaitNodeConfig.js';
 import { Modal } from '../Modal.js';
 import type { SchemaField } from '../../utils/flattenSchema.js';
 import type { FieldValue } from '../../types.js';
@@ -112,6 +113,15 @@ export function NodeConfig() {
   useEffect(() => {
     setCredPickerOpen(false);
   }, [selectedNodeId]);
+
+  // Wait has no operation to inspect at all — a dedicated, much smaller
+  // panel. Checked after every hook above (not as an earlier return) so
+  // this component calls the same hooks in the same order on every render
+  // regardless of which node's selected — switching from a Wait node to an
+  // operation node (or back) must never change the hook count mid-lifetime.
+  if (node?.kind === 'wait') {
+    return <WaitNodeConfig node={node} />;
+  }
 
   if (!node || !operation) {
     return (

@@ -82,7 +82,8 @@ Operation (derived from the spec, not stored — read fresh each load) {
 
 WorkflowNode {
   id: string               // unique per canvas instance
-  operationId: string       // references an Operation.id
+  kind?: "operation" | "wait"   // absent = "operation" (back-compat default)
+  operationId?: string      // "operation" kind only — references an Operation.id
   credentialId: string | null
   fieldValues: {
     [ "<section>.<key>" ]: {    // section: path | query | body | header
@@ -92,6 +93,7 @@ WorkflowNode {
       fromResponseFieldPath?: string
     }
   }
+  durationMs?: number       // "wait" kind only — how long the node pauses execution
 }
 
 WorkflowConnection {
@@ -163,6 +165,8 @@ RunResult {
 **Connection and mapping are two separate concerns.** A `WorkflowConnection` establishes execution *order* only — it carries no data. A mapped `FieldValue` establishes a field's *data source* — it always implies its source must run first too, whether or not the user also drew an explicit connection, but the reverse isn't true: a node can be connected after another purely for sequencing, with no data flowing between them.
 
 A field may be mapped from **any ancestor** in the connection graph, not just the node directly before it — e.g. `A -> B -> C` where `B` carries no data at all, `C` can still map a field from `A` directly, skipping `B`.
+
+**Preset nodes.** Not every canvas node fires an HTTP call — `WorkflowNode.kind` discriminates what a node actually does when it runs, dispatched by a small handler registry (`packages/core/src/engine/nodeHandlers.ts`) that `executeChain` calls through without knowing any kind's specifics: `checkReady` (can this node run at all — e.g. an `"operation"` node's `operationId` must resolve against the loaded spec), `execute` (run it for real, return a settled `RunStep`), `preview` (resolve its about-to-fire request for a breakpoint pause, or `null` if the kind has none). `kind` is optional and absent means `"operation"` — every node created before this field existed, and every node an older `.enlace` import produces, keeps behaving exactly as before with no migration step. **Wait** is the first non-`"operation"` kind: a pure pacing step (`durationMs`, no credential, no request) that sleeps once its dependencies are satisfied and no breakpoint gates it, then settles with a synthetic `RunStep` (`request.method: "WAIT"`, no `response`) so it flows through Results and downstream dependency resolution like any other node, just with no response body a later node could map a field from. A run's Stop aborts an in-progress Wait's sleep immediately rather than letting it run out its full duration pointlessly — the one kind where "everything already in flight still runs to completion" (see §5) has something worth cutting short. Breakpoints arm on ordinary connections regardless of what's on either end, so a Wait can sit gated the same as an operation node. A canvas-layout `NodeGroup` (below) is a different concept from a preset — groups are drop-overlap layout chrome; a future packaging node bundling several presets into one executable unit is tracked separately (see the workspace-level `ROADMAP.md`), not built as of this section.
 
 ## 5. Request Flow
 

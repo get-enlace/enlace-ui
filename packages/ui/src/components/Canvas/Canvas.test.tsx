@@ -45,6 +45,22 @@ describe('Canvas', () => {
     expect(useWorkflowStore.getState().nodes[0].operationId).toBe('POST /pet');
   });
 
+  it('adds a wait node to the store when the Wait preset is dropped onto the canvas', () => {
+    const { container } = render(<Canvas />);
+    const canvas = container.querySelector('.canvas')!;
+
+    fireEvent.drop(canvas, {
+      dataTransfer: { getData: (type: string) => (type === 'text/preset-kind' ? 'wait' : '') },
+      clientX: 100,
+      clientY: 100,
+    });
+
+    const nodes = useWorkflowStore.getState().nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].kind).toBe('wait');
+    expect(nodes[0].operationId).toBeUndefined();
+  });
+
   it('does nothing when the drop carries no operation id (e.g. a stray file drop)', () => {
     const { container } = render(<Canvas />);
     const canvas = container.querySelector('.canvas')!;

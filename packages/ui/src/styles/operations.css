@@ -159,3 +159,43 @@
   min-width: 0;
 }
 
+/* --- Preset palette: non-HTTP nodes (Wait today) — same drag mechanism as
+   an operation row (see OperationList.tsx), distinct chrome so it never
+   reads as "just another operation." --- */
+
+.preset-list {
+  margin: 0 0 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.preset-list__item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  border: 1px dashed var(--color-wait);
+  border-radius: 4px;
+  background: var(--color-wait-bg);
+  cursor: grab;
+  font-size: 13px;
+}
+
+.preset-list__item:hover {
+  border-color: var(--color-focus);
+}
+
+.preset-list__icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.preset-list__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+

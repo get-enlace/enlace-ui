@@ -57,6 +57,17 @@ describe('OperationList', () => {
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/operation-id', 'POST /pet');
   });
 
+  it('renders a Wait preset that sets a distinct preset-kind drag payload', () => {
+    render(<OperationList operations={[]} />);
+
+    expect(screen.getByText('Presets')).toBeInTheDocument();
+    const item = screen.getByText('Wait').closest('div')!;
+    const dataTransfer = { setData: vi.fn() };
+    fireEvent.dragStart(item, { dataTransfer });
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/preset-kind', 'wait');
+  });
+
   describe('search', () => {
     const operations = [
       makeOperation({ id: 'POST /pet', operationId: 'addPet' }),

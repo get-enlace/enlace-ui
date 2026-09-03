@@ -78,6 +78,22 @@ export function OperationList({ operations }: Props) {
 
   return (
     <aside className="operation-list">
+      {/* Deliberately not a <ul>/<li> like the Operations list below — a
+          single fixed preset today, and the two lists' `listitem` roles
+          would otherwise collide in "how many operations matched" counts. */}
+      <section className="preset-list">
+        <h2>Presets</h2>
+        <div
+          className="preset-list__item"
+          draggable
+          onDragStart={(e) => e.dataTransfer.setData('text/preset-kind', 'wait')}
+        >
+          <span className="preset-list__icon" aria-hidden="true">
+            ⏱
+          </span>
+          <span className="preset-list__label">Wait</span>
+        </div>
+      </section>
       <div className="operation-list__heading">
         <h2>Operations</h2>
         {multipleGroups && !searching && (

@@ -52,6 +52,7 @@ function CanvasInner() {
     armedBreakpoints,
     isRunning,
     addNode,
+    addWaitNode,
     updateNodePosition,
     selectNode,
     connectNodes,
@@ -123,12 +124,17 @@ function CanvasInner() {
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      const presetKind = e.dataTransfer.getData('text/preset-kind');
+      if (presetKind === 'wait') {
+        addWaitNode(screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+        return;
+      }
       const operationId = e.dataTransfer.getData('text/operation-id');
       if (!operationId) return;
       const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       addNode(operationId, position);
     },
-    [addNode, screenToFlowPosition]
+    [addNode, addWaitNode, screenToFlowPosition]
   );
 
   const onConnect = useCallback(

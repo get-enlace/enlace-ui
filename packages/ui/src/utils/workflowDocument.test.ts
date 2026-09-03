@@ -129,6 +129,44 @@ describe('serializeCollection', () => {
     expect(hydrateCollection(parsed.collection).groups).toEqual([group]);
   });
 
+  it('round-trips a wait node without an operationId, and keeps it out of the operationIds spec hint', () => {
+    const waitNode: WorkflowNode = { id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: 2500 };
+    const doc = serializeCollection({
+      name: 'Waits',
+      nodes: [node, waitNode],
+      connections: [{ fromNodeId: 'n1', toNodeId: 'w1' }],
+      nodePositions: { n1: { x: 0, y: 0 }, w1: { x: 100, y: 0 } },
+      credentials: [],
+      now: () => '2026-09-03T00:00:00.000Z',
+    });
+
+    expect(doc.workflows[0].nodes).toEqual([node, waitNode]);
+    expect(doc.workflows[0].specHint.operationIds).toEqual(['POST /orders']);
+
+    const parsed = parseCollection(doc, { operations: [operation] });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.collection.workflows[0].nodes).toEqual([node, waitNode]);
+    // The wait node's absent operationId must never be flagged as "unknown".
+    expect(parsed.warnings.unknownOperationIds).toEqual([]);
+  });
+
+  it('rejects a wait node with an invalid durationMs', () => {
+    const bad = {
+      ...serializeAll(),
+      workflows: [
+        {
+          ...serializeAll().workflows[0],
+          nodes: [{ id: 'w1', kind: 'wait', credentialId: null, fieldValues: {}, durationMs: -5 }],
+        },
+      ],
+    };
+    const result = parseCollection(bad);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/invalid durationMs/);
+  });
+
   it('accepts collections that omit groups (treats as empty)', () => {
     const bare = serializeAll();
     const { groups: _ignored, ...workflowWithoutGroups } = bare.workflows[0];

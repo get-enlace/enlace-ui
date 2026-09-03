@@ -176,6 +176,16 @@ export interface WorkflowState {
    */
   addNode: (operationId: string, position?: Position) => string;
   /**
+   * Adds a Wait preset node — a pure pacing step, no `operationId`/spec
+   * operation involved (see `WorkflowNodeKind` in `@get-enlace/core`'s
+   * types.ts). `durationMs` defaults to a sensible starting point; the
+   * inspector (`WaitNodeConfig`) is where it actually gets tuned. Same
+   * `isLocked`/placement behavior as `addNode`.
+   */
+  addWaitNode: (position?: Position, durationMs?: number) => string;
+  /** Sets a Wait node's pause duration, in milliseconds. No-op for any other kind. */
+  setNodeDurationMs: (nodeId: string, durationMs: number) => void;
+  /**
    * Moves a node on the canvas. Purely visual — exempt from `isLocked`.
    * Pass `avoidOverlap: true` when the gesture has settled (drop / drag-end)
    * so the card nudges clear of neighbors; leave it off while dragging so the

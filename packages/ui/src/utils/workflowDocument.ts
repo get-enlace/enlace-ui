@@ -49,7 +49,10 @@ export type ParseCollectionResult =
 export function serializeCollection(input: SerializeWorkflowInput): EnlaceCollection {
   const name = input.name?.trim() || input.specInfo?.title?.trim() || 'Untitled';
   const nodes = input.nodes.map(serializeNode);
-  const operationIds = [...new Set(nodes.map((n) => n.operationId))];
+  // Wait (and any future non-'operation' kind) has no operationId at all —
+  // filtered out here rather than coerced to a placeholder string, so it
+  // never shows up as a bogus "unknown operation" specHint entry on import.
+  const operationIds = [...new Set(nodes.map((n) => n.operationId).filter((id): id is string => typeof id === 'string'))];
   const specHint: CollectionWorkflow['specHint'] = { operationIds };
   if (input.specInfo?.title) specHint.title = input.specInfo.title;
   if (input.specInfo?.version) specHint.version = input.specInfo.version;
@@ -207,7 +210,13 @@ export function parseCollection(
   const unknownOperationIds =
     options.operations === undefined
       ? []
-      : [...new Set(nodes.map((n) => n.operationId).filter((id) => !knownOperations.has(id)))];
+      : [
+          ...new Set(
+            nodes
+              .map((n) => n.operationId)
+              .filter((id): id is string => typeof id === 'string' && !knownOperations.has(id))
+          ),
+        ];
 
   const hydratedCredentials = hydrateCredentials(collection);
   const credentialsNeedingSecrets = hydratedCredentials
@@ -298,6 +307,22 @@ export function referencedIncompleteCredentials(
 }
 
 function serializeNode(node: WorkflowNode): WorkflowNode {
+  // Wait carries none of the operation-only fields below (operationId,
+  // requestMode, raw*, credential overrides) — writing them anyway would
+  // round-trip meaningless stray keys. `kind` itself is only ever written
+  // for a non-'operation' node — absent means 'operation', exactly as
+  // today's on-disk shape already does, so no existing collection needs
+  // migrating.
+  if (node.kind === 'wait') {
+    return {
+      id: node.id,
+      kind: 'wait',
+      credentialId: null,
+      fieldValues: {},
+      durationMs: node.durationMs ?? 0,
+    };
+  }
+
   const out: WorkflowNode = {
     id: node.id,
     operationId: node.operationId,
@@ -455,7 +480,22 @@ function parseJson(text: string): { ok: true; value: unknown } | { ok: false; er
 }
 
 function parseNode(raw: unknown, index: number): WorkflowNode | string {
-  if (!isRecord(raw) || typeof raw.id !== 'string' || typeof raw.operationId !== 'string') {
+  if (!isRecord(raw) || typeof raw.id !== 'string') {
+    return `Enlace collection has an invalid node at index ${index}.`;
+  }
+
+  // 'wait' is the only kind besides the default 'operation' — it needs no
+  // operationId at all, just a non-negative duration. Every node without
+  // this exact `kind` falls through to the 'operation' shape below,
+  // exactly as before this field existed — no migration for old exports.
+  if (raw.kind === 'wait') {
+    if (typeof raw.durationMs !== 'number' || !Number.isFinite(raw.durationMs) || raw.durationMs < 0) {
+      return `Enlace collection wait node "${raw.id}" has an invalid durationMs.`;
+    }
+    return { id: raw.id, kind: 'wait', credentialId: null, fieldValues: {}, durationMs: raw.durationMs };
+  }
+
+  if (typeof raw.operationId !== 'string') {
     return `Enlace collection has an invalid node at index ${index}.`;
   }
   if (raw.credentialId != null && typeof raw.credentialId !== 'string') {
@@ -760,7 +800,7 @@ function parseSpecHint(raw: unknown, nodes: WorkflowNode[]): CollectionWorkflow[
   const operationIds =
     isRecord(raw) && Array.isArray(raw.operationIds)
       ? raw.operationIds.filter((id): id is string => typeof id === 'string')
-      : [...new Set(nodes.map((n) => n.operationId))];
+      : [...new Set(nodes.map((n) => n.operationId).filter((id): id is string => typeof id === 'string'))];
   const hint: CollectionWorkflow['specHint'] = { operationIds };
   if (isRecord(raw) && typeof raw.title === 'string') hint.title = raw.title;
   if (isRecord(raw) && typeof raw.version === 'string') hint.version = raw.version;

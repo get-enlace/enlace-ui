@@ -1,8 +1,23 @@
 import type { Operation, WorkflowNode } from './types.js';
 
+/**
+ * Renders a millisecond duration the way a person would type it — whole
+ * seconds when it divides evenly (`2000` -> `"2s"`), one decimal place
+ * otherwise (`2500` -> `"2.5s"`), plain milliseconds under a second
+ * (`500` -> `"500ms"`). Shared by the Wait preset's canvas card, inspector,
+ * and node label so all three always agree on the same wording.
+ */
+export function formatWaitDuration(durationMs: number): string {
+  if (durationMs < 1000) return `${durationMs}ms`;
+  const seconds = durationMs / 1000;
+  const rounded = Math.round(seconds * 10) / 10;
+  return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)}s`;
+}
+
 function operationName(node: WorkflowNode, operationsById: Map<string, Operation>): string {
-  const operation = operationsById.get(node.operationId);
-  return operation?.operationId ?? operation?.id ?? node.operationId;
+  if (node.kind === 'wait') return `Wait ${formatWaitDuration(node.durationMs ?? 0)}`;
+  const operation = node.operationId ? operationsById.get(node.operationId) : undefined;
+  return operation?.operationId ?? operation?.id ?? node.operationId ?? node.id;
 }
 
 /**

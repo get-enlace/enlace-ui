@@ -38,6 +38,13 @@
    * credential type is an error state", which it isn't. */
   --color-cookie: #a78bfa;
   --color-cookie-bg: rgba(167, 139, 250, 0.14);
+
+  /* Wait preset's own accent — deliberately a neutral slate, not one of the
+   * HTTP method colors above or --color-cookie: a Wait node isn't a call to
+   * anything, and its chrome should read as "not an HTTP operation" at a
+   * glance (see WorkflowNodeCard.tsx's kind === 'wait' branch). */
+  --color-wait: #8a8f98;
+  --color-wait-bg: rgba(138, 143, 152, 0.14);
 }
 
 * {

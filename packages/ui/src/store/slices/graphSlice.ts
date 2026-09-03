@@ -20,6 +20,8 @@ export interface GraphSlice {
   selectedNodeId: string | null;
   uploadedFiles: Record<string, File>;
   addNode: (operationId: string, position?: Position) => string;
+  addWaitNode: (position?: Position, durationMs?: number) => string;
+  setNodeDurationMs: (nodeId: string, durationMs: number) => void;
   updateNodePosition: (nodeId: string, position: Position, options?: { avoidOverlap?: boolean }) => void;
   removeNode: (nodeId: string) => void;
   selectNode: (nodeId: string | null) => void;
@@ -50,6 +52,9 @@ export interface GraphSlice {
   moveGroup: (groupId: string, position: Position) => void;
 }
 
+/** Default duration for a freshly-dropped Wait preset — 1s is long enough to be a deliberate pause without being annoying to test with, and short enough to trim on the spot. */
+const DEFAULT_WAIT_DURATION_MS = 1000;
+
 export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> = (set, get) => ({
   nodes: [],
   connections: [],
@@ -73,6 +78,34 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
     });
     return id;
   },
+
+  addWaitNode: (position, durationMs) => {
+    if (isLocked(get())) return '';
+    const id = randomId();
+    const node: WorkflowNode = {
+      id,
+      kind: 'wait',
+      credentialId: null,
+      fieldValues: {},
+      durationMs: durationMs ?? DEFAULT_WAIT_DURATION_MS,
+    };
+    set((state) => {
+      const desired = position ?? defaultPosition(state.nodes.length);
+      const obstacles = Object.values(state.nodePositions);
+      return {
+        nodes: [...state.nodes, node],
+        nodePositions: { ...state.nodePositions, [id]: findOpenPosition(desired, obstacles) },
+        selectedNodeId: id,
+      };
+    });
+    return id;
+  },
+
+  setNodeDurationMs: (nodeId, durationMs) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, durationMs } : n)) };
+    }),
 
   updateNodePosition: (nodeId, position, options) =>
     set((state) => {

@@ -1270,6 +1270,114 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
   });
 });
 
+function waitNode(id: string, durationMs: number): WorkflowNode {
+  return { id, kind: 'wait', credentialId: null, fieldValues: {}, durationMs };
+}
+
+describe('executeChain — wait nodes', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('completes a lone wait node with a synthetic step and no response to map from', async () => {
+    const result = await executeChain({ nodes: [waitNode('w', 10)], connections: [] }, new Map(), new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    expect(result.steps).toHaveLength(1);
+    const step = result.steps[0];
+    expect(step.nodeId).toBe('w');
+    expect(step.request.method).toBe('WAIT');
+    expect(step.response).toBeUndefined();
+    expect(step.error).toBeUndefined();
+  });
+
+  it('gates a downstream operation node exactly like an operation node would', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const w = waitNode('w', 10);
+    const a = node('a');
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'w', toNodeId: 'a' }];
+    const operationsById = new Map([['a', op('a', '/a')]]);
+
+    const result = await executeChain({ nodes: [a, w], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'w']);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('a downstream node cannot map a field from a wait node — there is no response body to read', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const w = waitNode('w', 10);
+    const a: WorkflowNode = {
+      id: 'a',
+      operationId: 'a',
+      credentialId: null,
+      fieldValues: { 'query.x': { source: 'mapped', fromNodeId: 'w', fromResponseFieldPath: 'id' } },
+    };
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'w', toNodeId: 'a' }];
+    const operationsById = new Map([['a', op('a', '/a')]]);
+
+    const result = await executeChain({ nodes: [a, w], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    const aStep = result.steps.find((s) => s.nodeId === 'a')!;
+    expect(aStep.error).toBeUndefined();
+    expect(new URL(fetchMock.mock.calls[0][0] as string).searchParams.get('x')).toBeNull();
+  });
+
+  it('pauses a wait node at an armed breakpoint like any other node, with no preview request ever emitted for it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, {})));
+
+    const a = node('a');
+    const w = waitNode('w', 10);
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'a', toNodeId: 'w' }];
+    const operationsById = new Map([['a', op('a', '/a')]]);
+
+    const events: RunEvent[] = [];
+    let control: RunControl | undefined;
+    const resultPromise = executeChain({ nodes: [a, w], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      armedBreakpoints: new Set([connectionKey('a', 'w')]),
+      onEvent: (e) => events.push(e),
+      onControl: (c) => (control = c),
+    });
+
+    await flushMicrotasks();
+    expect(events.find((e) => e.nodeId === 'w')?.status).toBe('paused');
+    expect(events.some((e) => e.nodeId === 'w' && e.request)).toBe(false);
+
+    control!.continue();
+    const result = await resultPromise;
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'w']);
+  });
+
+  it('Stop mid-sleep resolves the wait immediately instead of waiting out its full duration', async () => {
+    const w = waitNode('w', 60_000);
+
+    let control: RunControl | undefined;
+    const resultPromise = executeChain({ nodes: [w], connections: [] }, new Map(), new Map(), {
+      baseUrl: 'http://example.test',
+      onControl: (c) => (control = c),
+    });
+
+    await flushMicrotasks();
+    control!.stop();
+    // If Stop didn't actually cancel the sleep, this would hang for 60s and
+    // the test's own timeout would fail it — resolving at all here proves
+    // the abort short-circuited it.
+    const result = await resultPromise;
+
+    const step = result.steps.find((s) => s.nodeId === 'w');
+    expect(step).toBeDefined();
+    expect(step?.error).toBeUndefined();
+  });
+});
+
 describe('getByPath', () => {
   it('resolves nested and array paths', () => {
     const obj = { order: { items: [{ id: 'abc' }] } };
