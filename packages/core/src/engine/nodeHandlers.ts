@@ -7,6 +7,7 @@ import type {
   Credential,
   FieldValue,
   Preset,
+  PresetKind,
   Operation,
   RunStep,
   RunStepRequest,
@@ -62,6 +63,30 @@ export interface NodeHandler {
    * preview (e.g. Wait has no request at all).
    */
   preview(node: WorkflowNode, ctx: NodeHandlerContext): Promise<RunStepRequest | null>;
+}
+
+/**
+ * One entry per `PresetKind` — the same "behavior lives in the registry,
+ * not the data" split `NodeHandler` gives top-level nodes, sized for what a
+ * `Preset` actually is: never a graph node of its own (no `checkReady`
+ * gate worth having independent of its collection — see `checkReady`'s own
+ * comment below — and no `preview`, since a preset never fires ahead of
+ * time for a breakpoint the way an operation node's request does; only the
+ * collection as a whole is ever a breakpoint target, and its own `preview`
+ * already always returns `null`). `presetsNodeHandler` is the only caller,
+ * dispatching on `preset.kind` via the `presetHandlers` registry below.
+ */
+export interface PresetHandler {
+  /** Same contract as `NodeHandler.checkReady` — `null` means good to go. Both kinds today always return `null`: neither references anything that can be "missing" the way an operation's `operationId` can. */
+  checkReady(preset: Preset, ctx: NodeHandlerContext): string | null;
+  /**
+   * Runs one preset and resolves once it's settled. `stepNodeId` is the
+   * synthetic id (`${presetsNodeId}::${preset.id}`) `presetsNodeHandler`
+   * computes for this preset's own `RunStep.nodeId` — the handler doesn't
+   * need to know the collection it's running inside, only what to stamp
+   * its result with.
+   */
+  execute(preset: Preset, ctx: NodeHandlerContext, stepNodeId: string): Promise<RunStep>;
 }
 
 function resolveFieldValue(
@@ -404,12 +429,11 @@ function sleep(durationMs: number, signal: AbortSignal): Promise<void> {
 
 /**
  * The Wait preset — a pure pacing step with no request of its own (see
- * ARCHITECTURE.md's "Preset nodes" section). Fires like any other node once
- * its dependencies are satisfied and no breakpoint gates it, "runs" by
- * sleeping `durationMs`, and settles with a synthetic `RunStep` (a made-up
- * `request.method: 'WAIT'`, no `response`) so it still shows up in Results
- * and downstream execution-order logic sees it complete normally — it just
- * never produces a response body a later node could map a field from
+ * ARCHITECTURE.md's "Preset nodes" section). Runs in its turn inside
+ * `presetsNodeHandler`'s loop by sleeping `durationMs`, and settles with a
+ * synthetic `RunStep` (a made-up `request.method: 'WAIT'`, no `response`)
+ * so it still shows up in Results under its collection's `subSteps` — it
+ * just never produces a response body a later node could map a field from
  * (`getByPath(undefined, path)` already returns `undefined`, so this needs
  * no special-casing in `resolveFieldValue` above).
  *
@@ -419,24 +443,25 @@ function sleep(durationMs: number, signal: AbortSignal): Promise<void> {
  * was left, which would otherwise defeat the point of Stop for any chain
  * with a long wait in it.
  */
-export const waitNodeHandler: NodeHandler = {
+export const waitPresetHandler: PresetHandler = {
   checkReady() {
     return null;
   },
-  async execute(node, ctx) {
-    const durationMs = Math.max(0, node.durationMs ?? 0);
+  async execute(preset, ctx, stepNodeId) {
+    // Always true — presetHandlers[preset.kind] only ever dispatches a
+    // WaitPreset here. Narrowed with a guard (not a bare cast) so a
+    // mis-wired registry fails loudly instead of silently reading
+    // `undefined` off the wrong variant.
+    if (preset.kind !== 'wait') throw new Error('waitPresetHandler invoked with a non-wait preset');
+    const durationMs = Math.max(0, preset.durationMs);
     const timestampStart = new Date().toISOString();
     await sleep(durationMs, ctx.signal);
     return {
-      nodeId: node.id,
+      nodeId: stepNodeId,
       request: { method: 'WAIT', url: `wait:${durationMs}ms`, headers: {}, credentials: 'omit' },
       timestampStart,
       timestampEnd: new Date().toISOString(),
     };
-  },
-  async preview() {
-    // Nothing to preview — a Wait node has no request to resolve ahead of firing.
-    return null;
   },
 };
 
@@ -455,12 +480,14 @@ export const waitNodeHandler: NodeHandler = {
  * failed-check reporting as an ordinary comparison failure, so a bad
  * reference surfaces as this preset's `error`, not an uncaught rejection.
  */
-export const assertNodeHandler: NodeHandler = {
+export const assertPresetHandler: PresetHandler = {
   checkReady() {
     return null;
   },
-  async execute(node, ctx) {
-    const checks = node.checks ?? [];
+  async execute(preset, ctx, stepNodeId) {
+    // Always true — see waitPresetHandler's own comment on this guard.
+    if (preset.kind !== 'assert') throw new Error('assertPresetHandler invoked with a non-assert preset');
+    const checks = preset.checks;
     const timestampStart = new Date().toISOString();
     let error: string | undefined;
 
@@ -479,7 +506,7 @@ export const assertNodeHandler: NodeHandler = {
     }
 
     return {
-      nodeId: node.id,
+      nodeId: stepNodeId,
       request: {
         method: 'ASSERT',
         url: `assert:${checks.length} check${checks.length === 1 ? '' : 's'}`,
@@ -491,31 +518,13 @@ export const assertNodeHandler: NodeHandler = {
       ...(error ? { error } : {}),
     };
   },
-  async preview() {
-    // Nothing to preview — an Assert node has no request to resolve ahead of firing.
-    return null;
-  },
 };
 
-/**
- * Adapts one `Preset` into the `WorkflowNode` shape its own `kind`'s handler
- * expects — lets `presetsNodeHandler` reuse `nodeHandlers[preset.kind]`
- * exactly as `chainExecutor.ts` does for a top-level node, instead of
- * duplicating per-kind execution logic here. The synthetic id is scoped
- * under the collection's own id (never collides with a real node id, and is
- * stable across a run so `RunStep.nodeId` on each sub-step is at least
- * traceable back to which preset produced it).
- */
-function presetAsNode(presetsNodeId: string, preset: Preset): WorkflowNode {
-  return {
-    id: `${presetsNodeId}::${preset.id}`,
-    kind: preset.kind,
-    credentialId: null,
-    fieldValues: {},
-    durationMs: preset.durationMs,
-    checks: preset.checks,
-  };
-}
+/** One entry per `PresetKind` — see `PresetHandler`'s own comment above. */
+export const presetHandlers: Record<PresetKind, PresetHandler> = {
+  wait: waitPresetHandler,
+  assert: assertPresetHandler,
+};
 
 /**
  * The `'presets'` collection kind (see ARCHITECTURE.md's "Preset nodes"
@@ -525,10 +534,10 @@ function presetAsNode(presetsNodeId: string, preset: Preset): WorkflowNode {
  * preset (see store/slices/graphSlice.ts's `addPresetsNode`), so this
  * handler is exercised on every preset drop, not just a multi-preset one.
  *
- * Deliberately reuses `nodeHandlers[preset.kind]` for each preset (via
- * `presetAsNode`) rather than a parallel per-kind switch here — a preset's
- * own handler (e.g. `waitNodeHandler`) doesn't need to know it's being
- * invoked against a synthetic node rather than a real top-level one.
+ * Deliberately reuses the `presetHandlers` registry (one entry per
+ * `PresetKind`) for each preset rather than a parallel per-kind switch
+ * here — a preset's own handler (e.g. `waitPresetHandler`) runs the same
+ * way whether its collection holds one preset or ten.
  * Presets run strictly in order (never concurrently — "linear order only",
  * per the issue) and stop at the first failure or the instant the run's
  * abort signal fires, same "no partial recovery, nothing un-runs" rule
@@ -545,7 +554,7 @@ function presetAsNode(presetsNodeId: string, preset: Preset): WorkflowNode {
 export const presetsNodeHandler: NodeHandler = {
   checkReady(node, ctx) {
     for (const preset of node.presets ?? []) {
-      const error = nodeHandlers[preset.kind].checkReady(presetAsNode(node.id, preset), ctx);
+      const error = presetHandlers[preset.kind].checkReady(preset, ctx);
       if (error) return error;
     }
     return null;
@@ -563,7 +572,7 @@ export const presetsNodeHandler: NodeHandler = {
       // handling (e.g. Wait's sleep) is what actually shortens that, not
       // this loop.
       if (ctx.signal.aborted) break;
-      const stepResult = await nodeHandlers[preset.kind].execute(presetAsNode(node.id, preset), ctx);
+      const stepResult = await presetHandlers[preset.kind].execute(preset, ctx, `${node.id}::${preset.id}`);
       subSteps.push(stepResult);
       if (stepResult.error) {
         error = stepResult.error;
@@ -593,7 +602,5 @@ export const presetsNodeHandler: NodeHandler = {
 
 export const nodeHandlers: Record<WorkflowNodeKind, NodeHandler> = {
   operation: operationNodeHandler,
-  wait: waitNodeHandler,
   presets: presetsNodeHandler,
-  assert: assertNodeHandler,
 };

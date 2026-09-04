@@ -3,7 +3,7 @@ import { connectionKey } from '@get-enlace/core';
 import { findOpenPosition } from '../../utils/nodePlacement.js';
 import { expandedGroupFrame, sortGroupMemberIds } from '../../utils/groupGeometry.js';
 import { randomId } from '../../utils/randomId.js';
-import type { AssertCheck, FieldValue, Preset, NodeGroup, RawBody, WorkflowConnection, WorkflowNode } from '../../types.js';
+import type { AssertCheck, FieldValue, NewPreset, Preset, NodeGroup, RawBody, WorkflowConnection, WorkflowNode } from '../../types.js';
 import {
   defaultPosition,
   isLocked,
@@ -38,9 +38,9 @@ export interface GraphSlice {
    * Even a single preset renders with the collection's collapsed-diamond /
    * expanded-box chrome, never as a standalone graph node.
    */
-  addPresetsNode: (position?: Position, initialPreset?: Omit<Preset, 'id'>) => string;
+  addPresetsNode: (position?: Position, initialPreset?: NewPreset) => string;
   /** Appends one preset to a collection's ordered `presets` list. No-op if `presetsNodeId` isn't a presets node. */
-  addPreset: (presetsNodeId: string, preset: Omit<Preset, 'id'>) => void;
+  addPreset: (presetsNodeId: string, preset: NewPreset) => void;
   removePreset: (presetsNodeId: string, presetId: string) => void;
   /** Swaps a preset with its immediate up/down neighbor — "linear order only", no arbitrary jumps. A no-op at either end of the list. */
   movePreset: (presetsNodeId: string, presetId: string, direction: 'up' | 'down') => void;
@@ -182,13 +182,24 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       return { nodes: state.nodes.map((n) => (n.id === presetsNodeId ? { ...n, presets } : n)) };
     }),
 
+  // Each of the four mutators below narrows to its own preset kind before
+  // touching a kind-specific field — `Preset` is a real discriminated union
+  // now (WaitPreset | AssertPreset), so `p.durationMs`/`p.checks` isn't
+  // reachable at all without it. A `presetId` that resolves to the wrong
+  // kind (shouldn't happen — the UI only ever calls these from that kind's
+  // own editor) is a no-op rather than producing a malformed preset.
   setPresetDurationMs: (presetsNodeId, presetId, durationMs) =>
     set((state) => {
       if (isLocked(state)) return state;
       return {
         nodes: state.nodes.map((n) =>
           n.id === presetsNodeId
-            ? { ...n, presets: (n.presets ?? []).map((p) => (p.id === presetId ? { ...p, durationMs } : p)) }
+            ? {
+                ...n,
+                presets: (n.presets ?? []).map((p) =>
+                  p.id === presetId && p.kind === 'wait' ? { ...p, durationMs } : p
+                ),
+              }
             : n
         ),
       };
@@ -209,7 +220,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
             ? {
                 ...n,
                 presets: (n.presets ?? []).map((p) =>
-                  p.id === presetId ? { ...p, checks: [...(p.checks ?? []), newCheck] } : p
+                  p.id === presetId && p.kind === 'assert' ? { ...p, checks: [...p.checks, newCheck] } : p
                 ),
               }
             : n
@@ -226,7 +237,9 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
             ? {
                 ...n,
                 presets: (n.presets ?? []).map((p) =>
-                  p.id === presetId ? { ...p, checks: (p.checks ?? []).filter((c) => c.id !== checkId) } : p
+                  p.id === presetId && p.kind === 'assert'
+                    ? { ...p, checks: p.checks.filter((c) => c.id !== checkId) }
+                    : p
                 ),
               }
             : n
@@ -243,8 +256,8 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
             ? {
                 ...n,
                 presets: (n.presets ?? []).map((p) =>
-                  p.id === presetId
-                    ? { ...p, checks: (p.checks ?? []).map((c) => (c.id === checkId ? { ...c, ...patch } : c)) }
+                  p.id === presetId && p.kind === 'assert'
+                    ? { ...p, checks: p.checks.map((c) => (c.id === checkId ? { ...c, ...patch } : c)) }
                     : p
                 ),
               }

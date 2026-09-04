@@ -3,7 +3,20 @@ import { render, screen, within, fireEvent, waitFor } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { NodeConfig } from './NodeConfig.js';
 import { useWorkflowStore } from '../../store/workflowStore.js';
-import type { Operation, WorkflowNode } from '../../types.js';
+import type { AssertPreset, Operation, Preset, WaitPreset, WorkflowNode } from '../../types.js';
+
+// Preset is a real discriminated union (WaitPreset | AssertPreset) — these
+// narrow-or-throw so a test can read a kind-specific field directly instead
+// of every call site repeating an `as`/`!` that would silently hide a
+// wrong-kind preset instead of failing the test on it.
+function asWaitPreset(preset: Preset): WaitPreset {
+  if (preset.kind !== 'wait') throw new Error(`expected a wait preset, got "${preset.kind}"`);
+  return preset;
+}
+function asAssertPreset(preset: Preset): AssertPreset {
+  if (preset.kind !== 'assert') throw new Error(`expected an assert preset, got "${preset.kind}"`);
+  return preset;
+}
 
 const petOperation: Operation = {
   id: 'POST /pet',
@@ -116,7 +129,7 @@ describe('NodeConfig', () => {
       expect(input).toHaveValue(1);
 
       fireEvent.change(input, { target: { value: '3' } });
-      expect(useWorkflowStore.getState().nodes[0].presets![0].durationMs).toBe(3000);
+      expect(asWaitPreset(useWorkflowStore.getState().nodes[0].presets![0]).durationMs).toBe(3000);
     });
 
     it('dropping an Assert preset from the palette appends it with no checks', () => {
@@ -138,7 +151,7 @@ describe('NodeConfig', () => {
       render(<NodeConfig />);
 
       await user.click(screen.getByRole('button', { name: '+ Add check' }));
-      const checks = useWorkflowStore.getState().nodes[0].presets![0].checks!;
+      const checks = asAssertPreset(useWorkflowStore.getState().nodes[0].presets![0]).checks;
       expect(checks).toHaveLength(1);
       expect(checks[0]).toMatchObject({ operator: 'equals', source: { type: 'response_body' } });
     });
@@ -181,17 +194,19 @@ describe('NodeConfig', () => {
       });
       render(<NodeConfig />);
 
+      const checksOf1 = () => asAssertPreset(useWorkflowStore.getState().nodes[1].presets![0]).checks;
+
       await user.selectOptions(screen.getByLabelText('Check 1 source node'), 'op1');
-      expect(useWorkflowStore.getState().nodes[1].presets![0].checks![0].source.sourceNodeId).toBe('op1');
+      expect(checksOf1()[0].source.sourceNodeId).toBe('op1');
 
       await user.selectOptions(screen.getByLabelText('Check 1 source type'), 'response_status');
-      expect(useWorkflowStore.getState().nodes[1].presets![0].checks![0].source.type).toBe('response_status');
+      expect(checksOf1()[0].source.type).toBe('response_status');
 
       await user.selectOptions(screen.getByLabelText('Check 1 operator'), 'greaterThan');
-      expect(useWorkflowStore.getState().nodes[1].presets![0].checks![0].operator).toBe('greaterThan');
+      expect(checksOf1()[0].operator).toBe('greaterThan');
 
       fireEvent.change(screen.getByLabelText('Check 1 expected value'), { target: { value: '199' } });
-      expect(useWorkflowStore.getState().nodes[1].presets![0].checks![0].expected).toBe('199');
+      expect(checksOf1()[0].expected).toBe('199');
     });
 
     it('shows the expected-value input for equals but hides it for exists', () => {
@@ -230,7 +245,7 @@ describe('NodeConfig', () => {
       render(<NodeConfig />);
 
       await user.click(screen.getByRole('button', { name: 'Remove check 1' }));
-      expect(useWorkflowStore.getState().nodes[0].presets![0].checks).toEqual([]);
+      expect(asAssertPreset(useWorkflowStore.getState().nodes[0].presets![0]).checks).toEqual([]);
     });
   });
 
