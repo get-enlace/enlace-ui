@@ -13,6 +13,7 @@ export * from './engine/dependencyGraph.js';
 export * from './engine/credentials.js';
 export * from './engine/rawBodyResolver.js';
 export * from './engine/securitySchemes.js';
+export * from './engine/path.js';
 
 export * from './bodyTags.js';
 export * from './nodeLabel.js';

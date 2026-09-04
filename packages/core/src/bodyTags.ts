@@ -1,4 +1,4 @@
-import { getByPath } from './engine/chainExecutor.js';
+import { getByPath } from './engine/path.js';
 import type { BodyTag, RunStep } from './types.js';
 
 /**
