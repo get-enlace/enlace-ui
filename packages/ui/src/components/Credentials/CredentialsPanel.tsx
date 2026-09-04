@@ -151,7 +151,7 @@ export function CredentialsPanel({ showTrigger = true, open, onOpenChange }: Cre
                 title="Close"
                 aria-label="Close credentials"
               >
-                ✕
+                ×
               </button>
             </div>
 
