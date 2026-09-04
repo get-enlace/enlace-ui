@@ -56,36 +56,26 @@ export function createApp() {
   // itself), mirroring ENLACE_EXAMPLE_NO_AUTH's pattern in auth.ts:
   // env-var wiring is this harness's own concern, not the adapter's.
   //
-  //   ENLACE_EXAMPLE_AI_PROVIDER  'anthropic' (default) or 'ollama'
-  //   ENLACE_EXAMPLE_AI_API_KEY   required for anthropic; optional for
-  //                               ollama (only needed against a remote/
-  //                               cloud-key-gated endpoint, not a local
-  //                               signed-in daemon) — see EnlaceAiOptions.
-  //   ENLACE_EXAMPLE_AI_MODEL     defaults to a current Sonnet-tier Claude
-  //                               model for anthropic, or a gpt-oss cloud
-  //                               model for ollama — not the cheapest tier
-  //                               either way.
-  //   ENLACE_EXAMPLE_AI_BASE_URL  ollama only — overrides the default local
-  //                               http://localhost:11434.
-  //
-  // anthropic is only enabled when its required API key is present;
-  // ollama's local/cloud-proxied mode needs no key at all, so it's enabled
-  // by provider selection alone.
-  const aiProvider = process.env.ENLACE_EXAMPLE_AI_PROVIDER === 'ollama' ? 'ollama' : 'anthropic';
-  const aiApiKey = process.env.ENLACE_EXAMPLE_AI_API_KEY;
-  const aiEnabled = aiProvider === 'ollama' || Boolean(aiApiKey);
+  //   ENLACE_EXAMPLE_AI_BASE_URL  base URL of an OpenAI chat-completions-
+  //                               compatible endpoint — the only wire shape
+  //                               this adapter speaks (see EnlaceAiOptions
+  //                               and aiProviders.ts). No default; AI stays
+  //                               disabled entirely unless this is set.
+  //   ENLACE_EXAMPLE_AI_API_KEY   optional — plenty of local/self-hosted
+  //                               endpoints don't gate on a key at all.
+  //   ENLACE_EXAMPLE_AI_MODEL     optional — left unset, the endpoint's own
+  //                               default model is used.
+  const aiBaseUrl = process.env.ENLACE_EXAMPLE_AI_BASE_URL;
   app.use(
     '/enlace',
     enlace({
       spec,
-      ai: aiEnabled
+      ai: aiBaseUrl
         ? {
             enabled: true,
-            provider: aiProvider,
-            apiKey: aiApiKey,
-            baseUrl: process.env.ENLACE_EXAMPLE_AI_BASE_URL,
-            model:
-              process.env.ENLACE_EXAMPLE_AI_MODEL ?? (aiProvider === 'ollama' ? 'gpt-oss:20b-cloud' : 'claude-sonnet-5'),
+            baseUrl: aiBaseUrl,
+            apiKey: process.env.ENLACE_EXAMPLE_AI_API_KEY,
+            model: process.env.ENLACE_EXAMPLE_AI_MODEL,
           }
         : undefined,
     })

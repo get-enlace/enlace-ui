@@ -295,15 +295,16 @@ any Enlace-specific knowledge.** Two new routes, both under the same
 `enlace()` mount as `api/spec` (see `examples/sample-api/enlace.ts`):
 
 ```
-GET  api/ai/capabilities  -> { enabled: false } | { enabled: true, provider, model }
+GET  api/ai/capabilities  -> { enabled: false } | { enabled: true, model? }
 POST api/ai/complete      -> { messages: [{role, content}], model?, temperature?, maxTokens? }
                            <- { content: string }  (or 404 disabled / 400 malformed / 502 provider failure)
 ```
 
 `POST api/ai/complete` does nothing but inject a server-side BYOK key
-(`EnlaceAiOptions.apiKey`, never echoed back) and forward the given messages
-to the configured provider (`examples/sample-api/aiProviders.ts`) — it never
-knows what an Operation, a WorkflowNode, or a field schema is. Every
+(`EnlaceAiOptions.apiKey`, optional, never echoed back) and forward the
+given messages to the configured OpenAI chat-completions-compatible
+endpoint (`examples/sample-api/aiProviders.ts`) — it never knows what an
+Operation, a WorkflowNode, or a field schema is. Every
 Enlace-specific step — building the context bundle, writing the system
 prompt, parsing the reply back into a `FieldValue` — happens **in the
 browser**: `packages/core/src/ai/` (provider-agnostic prompt build/parse,
@@ -316,27 +317,26 @@ describes — a call to a third-party LLM provider is a different
 relationship entirely, and was never what that rule meant to forbid.
 
 **Explicit opt-in, enforced on both ends.** The adapter has no AI config by
-default; `examples/sample-api/app.ts` only sets one when the configured
-provider is actually usable (`ENLACE_EXAMPLE_AI_PROVIDER` picks `anthropic`,
-the default, or `ollama`), mirroring `ENLACE_EXAMPLE_NO_AUTH`'s existing
-env-var pattern in `auth.ts`. An operator who hasn't configured it gets a
-`POST api/ai/complete` that 404s — the route genuinely doesn't exist, not
-just a disabled one — and `GET api/ai/capabilities` always answers
-`{enabled:false}` with no provider/model leaked. The UI
-(`store/slices/aiSlice.ts`'s `loadAiCapabilities`) checks this once on
-mount and gates every AI-related render on `aiCapabilities?.enabled ===
-true`; both "not checked yet" and "disabled" render nothing at all, never a
-disabled-looking affordance.
+default; `examples/sample-api/app.ts` only sets one when
+`ENLACE_EXAMPLE_AI_BASE_URL` is present, mirroring `ENLACE_EXAMPLE_NO_AUTH`'s
+existing env-var pattern in `auth.ts`. An operator who hasn't configured it
+gets a `POST api/ai/complete` that 404s — the route genuinely doesn't exist,
+not just a disabled one — and `GET api/ai/capabilities` always answers
+`{enabled:false}` with no config leaked. The UI (`store/slices/aiSlice.ts`'s
+`loadAiCapabilities`) checks this once on mount and gates every AI-related
+render on `aiCapabilities?.enabled === true`; both "not checked yet" and
+"disabled" render nothing at all, never a disabled-looking affordance.
 
-**Two providers today** (`examples/sample-api/aiProviders.ts`, keyed on
-`EnlaceAiOptions.provider`): `anthropic` (the Messages API, requires a BYOK
-`apiKey`) and `ollama` (a local daemon's `/api/chat`, cloud-proxied for
-`-cloud`-suffixed models like `gpt-oss:20b-cloud` via whatever `ollama
-signin` session already exists on the machine running the adapter — no
-`apiKey` required in that mode, unlike Anthropic). Ollama exists mainly so
-this feature can be exercised without spending real Anthropic credits
-during development; either provider is a straightforward `switch` branch to
-add to, not a structural choice.
+**One wire shape, deliberately** (`examples/sample-api/aiProviders.ts`):
+`EnlaceAiOptions` speaks only the OpenAI chat-completions shape
+(`POST {baseUrl}/chat/completions`), configured with just a `baseUrl` +
+optional `apiKey` (sent as `Authorization: Bearer <apiKey>` when present) +
+optional `model` (omitted from the request when unset, so the endpoint
+falls back to its own default). This single caller covers self-hosted
+gateways, LM Studio, vLLM, OpenRouter, a local Ollama daemon's own `/v1`
+endpoint, or a proxy in front of any other provider — no per-provider
+branching to maintain; pointing at a different backend is just a different
+`baseUrl`/`apiKey`, not a code change.
 
 **What never leaves the browser.** The context bundle sent for a
 suggestion is spec-declared shapes and credential *identity* only — every

@@ -40,24 +40,36 @@ function loadSpec(source: SpecSource): Record<string, any> {
  * existed.
  */
 export interface EnlaceAiOptions {
-  /** Explicit opt-in — the UI hides every AI affordance unless this is true AND the provider is actually usable (see aiIsUsable below). Never inferred from apiKey's mere presence alone. */
+  /** Explicit opt-in — the UI hides every AI affordance unless this is true AND the config is actually usable (see aiIsUsable below). Never inferred from apiKey's mere presence alone. */
   enabled: boolean;
-  provider: 'anthropic' | 'ollama';
+  /**
+   * The base URL of an OpenAI chat-completions-compatible endpoint — this
+   * is the only wire shape this adapter speaks (`POST {baseUrl}/chat/
+   * completions`; see aiProviders.ts's callAiProvider), covering
+   * self-hosted gateways, LM Studio, vLLM, OpenRouter, a local Ollama
+   * daemon's own `/v1` endpoint, or a proxy in front of any other provider
+   * — not literally OpenAI's own API only. No default; required whenever
+   * `enabled` is true. No trailing `/chat/completions` — that's appended
+   * by the caller.
+   */
+  baseUrl: string;
   /**
    * BYOK secret. Read by the *consuming app* (see app.ts) from wherever it
    * likes — env var, secret manager — and passed in here explicitly; this
    * module never reads `process.env` itself, same as it never reads `spec`
    * from one. Never echoed back in any response.
    *
-   * Required for `provider: 'anthropic'`. Optional for `provider: 'ollama'`
-   * when talking to a local daemon — auth there is whatever `ollama signin`
-   * session already exists on the machine running the adapter, not a key
-   * this process holds (see aiProviders.ts's callOllama).
+   * Optional — plenty of local/self-hosted OpenAI-compatible endpoints
+   * don't gate on a key at all. Sent as `Authorization: Bearer <apiKey>`
+   * when present.
    */
   apiKey?: string;
-  /** Only meaningful for `provider: 'ollama'` — overrides the default local `http://localhost:11434`, e.g. to point at Ollama's cloud API directly instead of a local daemon. Ignored by every other provider. */
-  baseUrl?: string;
-  model: string;
+  /**
+   * Optional — when omitted, the request simply doesn't include a `model`
+   * field and the endpoint falls back to whatever it's configured to serve
+   * by default (common for single-model local/self-hosted gateways).
+   */
+  model?: string;
 }
 
 export interface EnlaceOptions {
@@ -73,14 +85,12 @@ export interface EnlaceOptions {
 }
 
 /**
- * Whether `options.ai` is enough to actually make a provider call — not
- * every provider needs the same things. `anthropic` always needs a BYOK
- * `apiKey`; `ollama` doesn't (see EnlaceAiOptions.apiKey's own comment) —
- * `enabled` + a `model` is enough.
+ * Whether `options.ai` is enough to actually make a call — just a
+ * `baseUrl`. `apiKey` and `model` are both genuinely optional (see their
+ * own doc comments on EnlaceAiOptions).
  */
 function aiIsUsable(ai: EnlaceAiOptions | undefined): ai is EnlaceAiOptions {
-  if (!ai?.enabled || !ai.model) return false;
-  return ai.provider === 'anthropic' ? Boolean(ai.apiKey) : true;
+  return Boolean(ai?.enabled) && Boolean(ai?.baseUrl);
 }
 
 /**
@@ -106,21 +116,21 @@ export function enlace(options: EnlaceOptions): express.Router {
 
   // Capability signal the UI checks before rendering ANY AI affordance —
   // see store/slices/aiSlice.ts's loadAiCapabilities. Always 200; never
-  // requires a valid key to answer. Provider/model are omitted when
-  // disabled — don't leak adapter config to an operator who hasn't opted in.
+  // requires a valid key to answer. Model is omitted when disabled or
+  // unset — don't leak adapter config to an operator who hasn't opted in.
   router.get('/api/ai/capabilities', (_req, res) => {
     if (!aiIsUsable(options.ai)) {
       res.json({ enabled: false });
       return;
     }
-    res.json({ enabled: true, provider: options.ai.provider, model: options.ai.model });
+    res.json({ enabled: true, model: options.ai.model });
   });
 
   // Dumb, symmetric, authenticated LLM proxy — zero Enlace-specific
   // knowledge (no Operations, no WorkflowNode, no schemas; see
   // ARCHITECTURE.md). All prompt/context assembly happens in the browser;
   // this only injects the server-side BYOK key and forwards to the
-  // configured provider (aiProviders.ts).
+  // configured OpenAI-compatible endpoint (aiProviders.ts).
   router.post('/api/ai/complete', async (req, res) => {
     if (!aiIsUsable(options.ai)) {
       // The route genuinely doesn't exist for an operator who hasn't

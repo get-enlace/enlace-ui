@@ -3,7 +3,6 @@ import type { AiChatMessage } from '../types.js';
 
 export interface AiCapabilitiesResponse {
   enabled: boolean;
-  provider?: string;
   model?: string;
 }
 
@@ -19,7 +18,7 @@ export async function fetchAiCapabilities(): Promise<AiCapabilitiesResponse> {
     const res = await fetch(`${API_BASE}/ai/capabilities`);
     if (!res.ok) return { enabled: false };
     const data = await res.json();
-    return data?.enabled ? { enabled: true, provider: data.provider, model: data.model } : { enabled: false };
+    return data?.enabled ? { enabled: true, model: data.model } : { enabled: false };
   } catch {
     return { enabled: false };
   }

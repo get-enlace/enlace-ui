@@ -1,14 +1,14 @@
 // Real end-to-end coverage of the AI-assist proxy routes added to
 // examples/sample-api/enlace.ts (GET /api/ai/capabilities, POST
 // /api/ai/complete) — an actual Express server, actual HTTP requests. The
-// outbound call to the configured LLM provider is always stubbed (see
-// mockAnthropicResponse below); this suite never hits a real LLM, in CI or
+// outbound call to the configured endpoint is always stubbed (see
+// mockAiResponse below); this suite never hits a real LLM, in CI or
 // anywhere else.
 //
 // "Disabled by default" coverage runs against the same shared server every
 // other e2e file in this directory uses (see helpers.ts — no AI config is
 // ever passed there). "Enabled" coverage spins up its own small,
-// standalone instance instead, since AI config is only ever passed to
+// standalone instances instead, since AI config is only ever passed to
 // enlace() at construction time, not read from an env var mid-test.
 import type { Server } from 'node:http';
 import express from 'express';
@@ -39,15 +39,16 @@ describe('AI assist — disabled by default (no ai option passed to enlace())', 
 
 const AI_TEST_PORT = 4124;
 const AI_BASE_URL = `http://localhost:${AI_TEST_PORT}`;
+const AI_UPSTREAM_URL = 'https://example-ai-endpoint.test/v1';
 
-function mockAnthropicResponse(text: string, status = 200): Response {
-  return new Response(JSON.stringify({ content: [{ type: 'text', text }] }), {
+function mockAiResponse(content: string, status = 200): Response {
+  return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }), {
     status,
     headers: { 'content-type': 'application/json' },
   });
 }
 
-describe('AI assist — enabled', () => {
+describe('AI assist — enabled (baseUrl + apiKey + model)', () => {
   let server: Server;
   const realFetch = globalThis.fetch;
 
@@ -57,7 +58,7 @@ describe('AI assist — enabled', () => {
       '/enlace',
       enlace({
         spec,
-        ai: { enabled: true, provider: 'anthropic', apiKey: 'test-key', model: 'test-model' },
+        ai: { enabled: true, baseUrl: AI_UPSTREAM_URL, apiKey: 'test-key', model: 'test-model' },
       })
     );
     server = app.listen(AI_TEST_PORT);
@@ -79,8 +80,13 @@ describe('AI assist — enabled', () => {
     // implementation.
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('api.anthropic.com')) {
-        return mockAnthropicResponse('hello from the mock');
+      if (url.startsWith(AI_UPSTREAM_URL)) {
+        expect(url).toBe(`${AI_UPSTREAM_URL}/chat/completions`);
+        const headers = new Headers((init as RequestInit | undefined)?.headers);
+        expect(headers.get('authorization')).toBe('Bearer test-key');
+        const body = JSON.parse((init as RequestInit).body as string);
+        expect(body.model).toBe('test-model');
+        return mockAiResponse('hello from the mock');
       }
       return realFetch(input as any, init);
     });
@@ -90,10 +96,10 @@ describe('AI assist — enabled', () => {
     vi.restoreAllMocks();
   });
 
-  it('GET /api/ai/capabilities reports the configured provider/model', async () => {
+  it('GET /api/ai/capabilities reports the configured model', async () => {
     const res = await fetch(`${AI_BASE_URL}/enlace/api/ai/capabilities`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ enabled: true, provider: 'anthropic', model: 'test-model' });
+    expect(await res.json()).toEqual({ enabled: true, model: 'test-model' });
   });
 
   it('POST /api/ai/complete 400s on a missing/malformed "messages" array', async () => {
@@ -105,7 +111,7 @@ describe('AI assist — enabled', () => {
     expect(res.status).toBe(400);
   });
 
-  it('POST /api/ai/complete forwards to the provider and returns its text, key never echoed back', async () => {
+  it('POST /api/ai/complete forwards to the endpoint and returns its text, key never echoed back', async () => {
     const res = await fetch(`${AI_BASE_URL}/enlace/api/ai/complete`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -120,7 +126,7 @@ describe('AI assist — enabled', () => {
   it('POST /api/ai/complete returns 502 when the provider call fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('api.anthropic.com')) {
+      if (url.startsWith(AI_UPSTREAM_URL)) {
         return new Response('rate limited', { status: 429 });
       }
       return realFetch(input as any, init);
@@ -137,17 +143,11 @@ describe('AI assist — enabled', () => {
   });
 });
 
-const OLLAMA_TEST_PORT = 4125;
-const OLLAMA_BASE_URL = `http://localhost:${OLLAMA_TEST_PORT}`;
+const AI_NO_AUTH_TEST_PORT = 4125;
+const AI_NO_AUTH_BASE_URL = `http://localhost:${AI_NO_AUTH_TEST_PORT}`;
+const AI_NO_AUTH_UPSTREAM_URL = 'http://localhost:11434/v1';
 
-function mockOllamaResponse(content: string, status = 200): Response {
-  return new Response(JSON.stringify({ message: { role: 'assistant', content } }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-describe('AI assist — enabled (ollama, local/cloud-proxied, no apiKey)', () => {
+describe('AI assist — enabled (baseUrl only, no apiKey, no model)', () => {
   let server: Server;
   const realFetch = globalThis.fetch;
 
@@ -155,11 +155,13 @@ describe('AI assist — enabled (ollama, local/cloud-proxied, no apiKey)', () =>
     const app = express();
     app.use(
       '/enlace',
-      // No apiKey at all — local Ollama mode never needs a BYOK secret
-      // (see enlace.ts's aiIsUsable and aiProviders.ts's callOllama).
-      enlace({ spec, ai: { enabled: true, provider: 'ollama', model: 'gpt-oss:20b-cloud' } })
+      // No apiKey, no model — both are genuinely optional (see enlace.ts's
+      // aiIsUsable and aiProviders.ts's callAiProvider): plenty of local/
+      // self-hosted endpoints don't gate on a key, and a single-model
+      // endpoint doesn't need one specified.
+      enlace({ spec, ai: { enabled: true, baseUrl: AI_NO_AUTH_UPSTREAM_URL } })
     );
-    server = app.listen(OLLAMA_TEST_PORT);
+    server = app.listen(AI_NO_AUTH_TEST_PORT);
     await new Promise<void>((resolve, reject) => {
       server.once('listening', () => resolve());
       server.once('error', reject);
@@ -174,15 +176,19 @@ describe('AI assist — enabled (ollama, local/cloud-proxied, no apiKey)', () =>
 
   beforeEach(() => {
     // Stubs only the outbound provider call — every other fetch (this
-    // test's own calls into OLLAMA_BASE_URL) passes through to the real
-    // implementation.
+    // test's own calls into AI_NO_AUTH_BASE_URL) passes through to the
+    // real implementation.
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('localhost:11434')) {
+      if (url.startsWith(AI_NO_AUTH_UPSTREAM_URL)) {
+        expect(url).toBe(`${AI_NO_AUTH_UPSTREAM_URL}/chat/completions`);
         // No Authorization header should be sent when apiKey is absent.
         const headers = new Headers((init as RequestInit | undefined)?.headers);
         expect(headers.has('authorization')).toBe(false);
-        return mockOllamaResponse('hello from ollama');
+        // No model field should be sent when model is absent.
+        const body = JSON.parse((init as RequestInit).body as string);
+        expect(body.model).toBeUndefined();
+        return mockAiResponse('hello from the local endpoint');
       }
       return realFetch(input as any, init);
     });
@@ -192,19 +198,19 @@ describe('AI assist — enabled (ollama, local/cloud-proxied, no apiKey)', () =>
     vi.restoreAllMocks();
   });
 
-  it('GET /api/ai/capabilities reports the configured provider/model', async () => {
-    const res = await fetch(`${OLLAMA_BASE_URL}/enlace/api/ai/capabilities`);
+  it('GET /api/ai/capabilities reports enabled with model omitted', async () => {
+    const res = await fetch(`${AI_NO_AUTH_BASE_URL}/enlace/api/ai/capabilities`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ enabled: true, provider: 'ollama', model: 'gpt-oss:20b-cloud' });
+    expect(await res.json()).toEqual({ enabled: true });
   });
 
-  it('POST /api/ai/complete forwards to the local Ollama daemon and returns its message content', async () => {
-    const res = await fetch(`${OLLAMA_BASE_URL}/enlace/api/ai/complete`, {
+  it('POST /api/ai/complete forwards to the configured endpoint and returns its message content', async () => {
+    const res = await fetch(`${AI_NO_AUTH_BASE_URL}/enlace/api/ai/complete`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ messages: [{ role: 'user', content: 'suggest a value' }] }),
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ content: 'hello from ollama' });
+    expect(await res.json()).toEqual({ content: 'hello from the local endpoint' });
   });
 });

@@ -17,8 +17,8 @@ export interface AiChatMessage {
   content: string;
 }
 
-/** What the adapter reports at GET api/ai/capabilities — checked before any AI affordance renders (see store/slices/aiSlice.ts's loadAiCapabilities). Absent provider/model when disabled is deliberate: don't leak adapter config to an operator who hasn't opted in. */
-export type AiCapabilities = { enabled: false } | { enabled: true; provider: string; model: string };
+/** What the adapter reports at GET api/ai/capabilities — checked before any AI affordance renders (see store/slices/aiSlice.ts's loadAiCapabilities). Absent model when disabled or unset is deliberate: don't leak adapter config to an operator who hasn't opted in. */
+export type AiCapabilities = { enabled: false } | { enabled: true; model?: string };
 
 /**
  * One field on an ancestor node's response a target field may reference as
