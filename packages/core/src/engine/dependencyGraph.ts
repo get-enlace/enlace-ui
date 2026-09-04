@@ -54,6 +54,22 @@ export function buildDependencyGraph(
     }
   }
 
+  // Assert presets' checks — same "a reference implies its source must run
+  // first" rule, but the edge attaches to the *collection* node's own id:
+  // a preset never participates in this graph individually (see Preset's
+  // own comment), only its parent collection does. Unconditional, unlike
+  // the two loops above — every AssertCheck.source is inherently a
+  // reference to another step (no 'static' variant to gate on).
+  for (const node of nodes) {
+    for (const preset of node.presets ?? []) {
+      for (const check of preset.checks ?? []) {
+        if (byId.has(check.source.sourceNodeId)) {
+          dependsOn.get(node.id)!.add(check.source.sourceNodeId);
+        }
+      }
+    }
+  }
+
   return dependsOn;
 }
 

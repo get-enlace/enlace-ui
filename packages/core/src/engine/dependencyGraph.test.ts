@@ -58,4 +58,23 @@ describe('computeAncestors', () => {
 
     expect(computeAncestors([a, b], [], 'b')).toEqual(new Set());
   });
+
+  it("treats an assert preset's check source as an implied connection, attached to the collection node itself", () => {
+    const a = node('a');
+    const presetsNode: WorkflowNode = {
+      id: 'g1',
+      kind: 'presets',
+      credentialId: null,
+      fieldValues: {},
+      presets: [
+        {
+          id: 's1',
+          kind: 'assert',
+          checks: [{ id: 'c1', source: { type: 'response_status', sourceNodeId: 'a' }, operator: 'equals', expected: '200' }],
+        },
+      ],
+    };
+
+    expect(computeAncestors([a, presetsNode], [], 'g1')).toEqual(new Set(['a']));
+  });
 });

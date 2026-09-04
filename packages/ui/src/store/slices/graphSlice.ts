@@ -3,7 +3,7 @@ import { connectionKey } from '@get-enlace/core';
 import { findOpenPosition } from '../../utils/nodePlacement.js';
 import { expandedGroupFrame, sortGroupMemberIds } from '../../utils/groupGeometry.js';
 import { randomId } from '../../utils/randomId.js';
-import type { FieldValue, Preset, NodeGroup, RawBody, WorkflowConnection, WorkflowNode } from '../../types.js';
+import type { AssertCheck, FieldValue, Preset, NodeGroup, RawBody, WorkflowConnection, WorkflowNode } from '../../types.js';
 import {
   defaultPosition,
   isLocked,
@@ -18,6 +18,8 @@ export interface GraphSlice {
   nodePositions: Record<string, Position>;
   groups: NodeGroup[];
   selectedNodeId: string | null;
+  /** Which preset inside the selected presets node has its config open in NodeConfig — see WorkflowState's own comment. */
+  selectedPresetId: string | null;
   uploadedFiles: Record<string, File>;
   /**
    * View-only chrome for `kind: 'presets'` nodes — collapsed (small diamond)
@@ -43,10 +45,21 @@ export interface GraphSlice {
   /** Swaps a preset with its immediate up/down neighbor — "linear order only", no arbitrary jumps. A no-op at either end of the list. */
   movePreset: (presetsNodeId: string, presetId: string, direction: 'up' | 'down') => void;
   setPresetDurationMs: (presetsNodeId: string, presetId: string, durationMs: number) => void;
+  /** Appends one blank check to an assert preset's `checks` list. No-op if `presetsNodeId`/`presetId` don't resolve to an assert preset. */
+  addAssertCheck: (presetsNodeId: string, presetId: string) => void;
+  removeAssertCheck: (presetsNodeId: string, presetId: string, checkId: string) => void;
+  /** Shallow-merges `patch` into one check — same "patch one field at a time" shape as `setFieldValue`. */
+  updateAssertCheck: (
+    presetsNodeId: string,
+    presetId: string,
+    checkId: string,
+    patch: Partial<Omit<AssertCheck, 'id'>>
+  ) => void;
   setPresetsCollapsed: (presetsNodeId: string, collapsed: boolean) => void;
   updateNodePosition: (nodeId: string, position: Position, options?: { avoidOverlap?: boolean }) => void;
   removeNode: (nodeId: string) => void;
   selectNode: (nodeId: string | null) => void;
+  selectPreset: (presetsNodeId: string, presetId: string) => void;
   setCredential: (nodeId: string, credentialId: string | null) => void;
   setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
   mergeFieldValues: (nodeId: string, values: Record<string, FieldValue>) => void;
@@ -83,6 +96,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
   nodePositions: {},
   groups: [],
   selectedNodeId: null,
+  selectedPresetId: null,
   uploadedFiles: {},
   presetsCollapsed: {},
 
@@ -114,6 +128,11 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
         nodes: [...state.nodes, node],
         nodePositions: { ...state.nodePositions, [id]: findOpenPosition(desired, obstacles) },
         selectedNodeId: id,
+        // Seeded with one preset (the palette's own drop path) — open its
+        // config immediately, same as addPreset below, rather than leaving
+        // the inspector on the "select a preset" placeholder for a card
+        // that only has the one.
+        selectedPresetId: presets[0]?.id ?? null,
       };
     });
     return id;
@@ -129,6 +148,11 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
         nodes: state.nodes.map((n) =>
           n.id === presetsNodeId ? { ...n, presets: [...(n.presets ?? []), newPreset] } : n
         ),
+        // Dragging a preset onto the card is the only way to add one now
+        // (see PresetsNodeCard.tsx's own comment) — open its config right
+        // away instead of leaving the user to go find and click the new row.
+        selectedNodeId: presetsNodeId,
+        selectedPresetId: newPreset.id,
       };
     }),
 
@@ -139,6 +163,9 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
         nodes: state.nodes.map((n) =>
           n.id === presetsNodeId ? { ...n, presets: (n.presets ?? []).filter((p) => p.id !== presetId) } : n
         ),
+        // Same dangling-selection reasoning as removeNode's selectedNodeId
+        // clear — a removed preset can't stay "open" in NodeConfig.
+        selectedPresetId: state.selectedPresetId === presetId ? null : state.selectedPresetId,
       };
     }),
 
@@ -162,6 +189,65 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
         nodes: state.nodes.map((n) =>
           n.id === presetsNodeId
             ? { ...n, presets: (n.presets ?? []).map((p) => (p.id === presetId ? { ...p, durationMs } : p)) }
+            : n
+        ),
+      };
+    }),
+
+  addAssertCheck: (presetsNodeId, presetId) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      const newCheck: AssertCheck = {
+        id: randomId(),
+        source: { type: 'response_body', sourceNodeId: '', jsonPath: '' },
+        operator: 'equals',
+        expected: '',
+      };
+      return {
+        nodes: state.nodes.map((n) =>
+          n.id === presetsNodeId
+            ? {
+                ...n,
+                presets: (n.presets ?? []).map((p) =>
+                  p.id === presetId ? { ...p, checks: [...(p.checks ?? []), newCheck] } : p
+                ),
+              }
+            : n
+        ),
+      };
+    }),
+
+  removeAssertCheck: (presetsNodeId, presetId, checkId) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) =>
+          n.id === presetsNodeId
+            ? {
+                ...n,
+                presets: (n.presets ?? []).map((p) =>
+                  p.id === presetId ? { ...p, checks: (p.checks ?? []).filter((c) => c.id !== checkId) } : p
+                ),
+              }
+            : n
+        ),
+      };
+    }),
+
+  updateAssertCheck: (presetsNodeId, presetId, checkId, patch) =>
+    set((state) => {
+      if (isLocked(state)) return state;
+      return {
+        nodes: state.nodes.map((n) =>
+          n.id === presetsNodeId
+            ? {
+                ...n,
+                presets: (n.presets ?? []).map((p) =>
+                  p.id === presetId
+                    ? { ...p, checks: (p.checks ?? []).map((c) => (c.id === checkId ? { ...c, ...patch } : c)) }
+                    : p
+                ),
+              }
             : n
         ),
       };
@@ -251,10 +337,13 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
         groups,
         connections: state.connections.filter((c) => c.fromNodeId !== nodeId && c.toNodeId !== nodeId),
         selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
+        selectedPresetId: state.selectedNodeId === nodeId ? null : state.selectedPresetId,
       };
     }),
 
-  selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+  selectNode: (nodeId) => set({ selectedNodeId: nodeId, selectedPresetId: null }),
+
+  selectPreset: (presetsNodeId, presetId) => set({ selectedNodeId: presetsNodeId, selectedPresetId: presetId }),
 
   setCredential: (nodeId, credentialId) =>
     set((state) => {

@@ -27,6 +27,7 @@ export const createDocumentSlice: StateCreator<WorkflowState, [], [], DocumentSl
       uploadedFiles: {},
       workflowName,
       selectedNodeId: null,
+      selectedPresetId: null,
       runResult: null,
       stepStatusByNodeId: {},
       armedBreakpoints: new Set(),

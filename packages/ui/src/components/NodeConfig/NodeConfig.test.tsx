@@ -56,6 +56,7 @@ describe('NodeConfig', () => {
       connections: [],
       operations: [petOperation, getPetOperation],
       selectedNodeId: null,
+      selectedPresetId: null,
       credentials: [],
       isRunning: false,
     });
@@ -69,33 +70,168 @@ describe('NodeConfig', () => {
   it('switching selection between a presets node and an operation node does not throw (stable hook order)', () => {
     useWorkflowStore.setState({
       nodes: [
-        { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [] },
+        { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [{ id: 'p1', kind: 'wait', durationMs: 1000 }] },
         makeNode({ id: 'node-1' }),
       ],
       selectedNodeId: 'g1',
+      selectedPresetId: 'p1',
     });
     const { rerender } = render(<NodeConfig />);
-    expect(screen.getByText(/Expand this collection on the canvas/)).toBeInTheDocument();
+    expect(screen.getByText('Wait 1s')).toBeInTheDocument();
 
-    useWorkflowStore.setState({ selectedNodeId: 'node-1' });
+    useWorkflowStore.setState({ selectedNodeId: 'node-1', selectedPresetId: null });
     rerender(<NodeConfig />);
     expect(screen.getByRole('heading', { name: 'Request' })).toBeInTheDocument();
 
-    useWorkflowStore.setState({ selectedNodeId: 'g1' });
+    useWorkflowStore.setState({ selectedNodeId: 'g1', selectedPresetId: 'p1' });
     rerender(<NodeConfig />);
-    expect(screen.getByText(/Expand this collection on the canvas/)).toBeInTheDocument();
+    expect(screen.getByText('Wait 1s')).toBeInTheDocument();
   });
 
-  it('points to the canvas card for a presets node, instead of the empty placeholder or the operation form', () => {
+  it('shows a placeholder for a presets node until a preset is selected', () => {
     useWorkflowStore.setState({
       nodes: [{ id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [] }],
       selectedNodeId: 'g1',
+      selectedPresetId: null,
     });
     render(<NodeConfig />);
 
-    expect(screen.getByText(/Expand this collection on the canvas/)).toBeInTheDocument();
+    expect(screen.getByText('Select a preset on the canvas to configure it.')).toBeInTheDocument();
     expect(screen.queryByText('Select a node to configure it.')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Request' })).not.toBeInTheDocument();
+  });
+
+  describe('preset config', () => {
+    function makePresetsNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
+      return { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [], ...overrides };
+    }
+
+    it("renders a Wait preset's duration in seconds, and editing it updates the store", () => {
+      const presetsNode = makePresetsNode({ presets: [{ id: 'p1', kind: 'wait', durationMs: 1000 }] });
+      useWorkflowStore.setState({ nodes: [presetsNode], selectedNodeId: 'g1', selectedPresetId: 'p1' });
+      render(<NodeConfig />);
+
+      expect(screen.getByText('Wait 1s')).toBeInTheDocument(); // panel header
+      const input = screen.getByLabelText('Duration in seconds');
+      expect(input).toHaveValue(1);
+
+      fireEvent.change(input, { target: { value: '3' } });
+      expect(useWorkflowStore.getState().nodes[0].presets![0].durationMs).toBe(3000);
+    });
+
+    it('dropping an Assert preset from the palette appends it with no checks', () => {
+      // Regression coverage for addPreset's own selection behavior — kept
+      // here (not just in the store test) since it's what makes an assert
+      // preset's config show up immediately after a palette drop.
+      const { addPresetsNode, addPreset } = useWorkflowStore.getState();
+      const id = addPresetsNode({ x: 0, y: 0 });
+      addPreset(id, { kind: 'assert', checks: [] });
+      render(<NodeConfig />);
+
+      expect(screen.getByText('Assert (0 checks)')).toBeInTheDocument();
+    });
+
+    it('+ Add check appends a blank check to the store', async () => {
+      const user = userEvent.setup();
+      const presetsNode = makePresetsNode({ presets: [{ id: 'p1', kind: 'assert', checks: [] }] });
+      useWorkflowStore.setState({ nodes: [presetsNode], selectedNodeId: 'g1', selectedPresetId: 'p1' });
+      render(<NodeConfig />);
+
+      await user.click(screen.getByRole('button', { name: '+ Add check' }));
+      const checks = useWorkflowStore.getState().nodes[0].presets![0].checks!;
+      expect(checks).toHaveLength(1);
+      expect(checks[0]).toMatchObject({ operator: 'equals', source: { type: 'response_body' } });
+    });
+
+    // Each field's own onChange handler is exercised against a fixture that
+    // already has the check in place, rather than chaining off a prior "+
+    // Add check" click within the same render — like every other test in
+    // this file, `useWorkflowStore.setState` is a snapshot taken before
+    // render(), so a store update from an earlier interaction never
+    // re-renders this component; only the store's own resulting state is
+    // observable afterward.
+    it('editing a check row updates the store', async () => {
+      const user = userEvent.setup();
+      const opNode: WorkflowNode = {
+        id: 'op1',
+        operationId: 'POST /orders',
+        credentialId: null,
+        fieldValues: {},
+      };
+      const presetsNode = makePresetsNode({
+        presets: [
+          { id: 'p1', kind: 'assert', checks: [{ id: 'c1', source: { type: 'response_body', sourceNodeId: '' }, operator: 'equals' }] },
+        ],
+      });
+      useWorkflowStore.setState({
+        nodes: [opNode, presetsNode],
+        connections: [{ fromNodeId: 'op1', toNodeId: 'g1' }],
+        selectedNodeId: 'g1',
+        selectedPresetId: 'p1',
+        operations: [
+          {
+            id: 'POST /orders',
+            method: 'post',
+            path: '/orders',
+            parameters: [],
+            requestBodySchema: null,
+            responseSchema: null,
+          },
+        ],
+      });
+      render(<NodeConfig />);
+
+      await user.selectOptions(screen.getByLabelText('Check 1 source node'), 'op1');
+      expect(useWorkflowStore.getState().nodes[1].presets![0].checks![0].source.sourceNodeId).toBe('op1');
+
+      await user.selectOptions(screen.getByLabelText('Check 1 source type'), 'response_status');
+      expect(useWorkflowStore.getState().nodes[1].presets![0].checks![0].source.type).toBe('response_status');
+
+      await user.selectOptions(screen.getByLabelText('Check 1 operator'), 'greaterThan');
+      expect(useWorkflowStore.getState().nodes[1].presets![0].checks![0].operator).toBe('greaterThan');
+
+      fireEvent.change(screen.getByLabelText('Check 1 expected value'), { target: { value: '199' } });
+      expect(useWorkflowStore.getState().nodes[1].presets![0].checks![0].expected).toBe('199');
+    });
+
+    it('shows the expected-value input for equals but hides it for exists', () => {
+      const equalsPreset = makePresetsNode({
+        presets: [
+          { id: 'p1', kind: 'assert', checks: [{ id: 'c1', source: { type: 'response_body', sourceNodeId: '' }, operator: 'equals' }] },
+        ],
+      });
+      useWorkflowStore.setState({ nodes: [equalsPreset], selectedNodeId: 'g1', selectedPresetId: 'p1' });
+      const { unmount } = render(<NodeConfig />);
+      expect(screen.getByLabelText('Check 1 expected value')).toBeInTheDocument();
+      unmount();
+
+      const existsPreset = makePresetsNode({
+        presets: [
+          { id: 'p1', kind: 'assert', checks: [{ id: 'c1', source: { type: 'response_body', sourceNodeId: '' }, operator: 'exists' }] },
+        ],
+      });
+      useWorkflowStore.setState({ nodes: [existsPreset], selectedNodeId: 'g1', selectedPresetId: 'p1' });
+      render(<NodeConfig />);
+      expect(screen.queryByLabelText('Check 1 expected value')).not.toBeInTheDocument();
+    });
+
+    it('removes a check via its × button', async () => {
+      const user = userEvent.setup();
+      const presetsNode = makePresetsNode({
+        presets: [
+          {
+            id: 'p1',
+            kind: 'assert',
+            checks: [{ id: 'c1', source: { type: 'response_body', sourceNodeId: '' }, operator: 'equals' }],
+          },
+        ],
+      });
+      useWorkflowStore.setState({ nodes: [presetsNode], selectedNodeId: 'g1', selectedPresetId: 'p1' });
+      render(<NodeConfig />);
+
+      await user.click(screen.getByRole('button', { name: 'Remove check 1' }));
+      expect(useWorkflowStore.getState().nodes[0].presets![0].checks).toEqual([]);
+    });
   });
 
   it('groups request fields under Request with Path / Query / Body sections, toggle beside Request', () => {

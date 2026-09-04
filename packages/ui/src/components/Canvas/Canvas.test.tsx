@@ -63,6 +63,23 @@ describe('Canvas', () => {
     expect(nodes[0].presets![0]).toMatchObject({ kind: 'wait' });
   });
 
+  it('adds a presets collection seeded with one empty-checks Assert preset when the Assert preset is dropped onto the canvas', () => {
+    const { container } = render(<Canvas />);
+    const canvas = container.querySelector('.canvas')!;
+
+    fireEvent.drop(canvas, {
+      dataTransfer: { getData: (type: string) => (type === 'text/preset-kind' ? 'assert' : '') },
+      clientX: 100,
+      clientY: 100,
+    });
+
+    const nodes = useWorkflowStore.getState().nodes;
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].kind).toBe('presets');
+    expect(nodes[0].presets).toHaveLength(1);
+    expect(nodes[0].presets![0]).toMatchObject({ kind: 'assert', checks: [] });
+  });
+
   it('does nothing when the drop carries no operation id (e.g. a stray file drop)', () => {
     const { container } = render(<Canvas />);
     const canvas = container.querySelector('.canvas')!;

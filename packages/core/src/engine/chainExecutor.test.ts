@@ -1479,6 +1479,125 @@ describe('executeChain — presets nodes', () => {
   });
 });
 
+describe('executeChain — assert presets', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('a passing check settles the collection with no error, downstream still fires', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(mockResponse(201, { id: 'abc' }))
+      .mockResolvedValueOnce(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const g = presetsNode('g', [
+      {
+        id: 's1',
+        kind: 'assert',
+        checks: [{ id: 'c1', source: { type: 'response_status', sourceNodeId: 'a' }, operator: 'equals', expected: '201' }],
+      },
+    ]);
+    const b = node('b');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'g' },
+      { fromNodeId: 'g', toNodeId: 'b' },
+    ];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+    ]);
+
+    const result = await executeChain({ nodes: [a, g, b], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    const gStep = result.steps.find((s) => s.nodeId === 'g')!;
+    expect(gStep.request.method).toBe('PRESETS');
+    expect(gStep.subSteps?.[0].request.method).toBe('ASSERT');
+    expect(gStep.error).toBeUndefined();
+    expect(result.steps.map((s) => s.nodeId).sort()).toEqual(['a', 'b', 'g']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failing check fails the collection and skips downstream — same propagation as an HTTP failure', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = node('a');
+    const g = presetsNode('g', [
+      {
+        id: 's1',
+        kind: 'assert',
+        checks: [{ id: 'c1', source: { type: 'response_status', sourceNodeId: 'a' }, operator: 'equals', expected: '201' }],
+      },
+    ]);
+    const b = node('b');
+    const connections: WorkflowConnection[] = [
+      { fromNodeId: 'a', toNodeId: 'g' },
+      { fromNodeId: 'g', toNodeId: 'b' },
+    ];
+    const operationsById = new Map([
+      ['a', op('a', '/a')],
+      ['b', op('b', '/b')],
+    ]);
+
+    const events: RunEvent[] = [];
+    const result = await executeChain({ nodes: [a, g, b], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+      onEvent: (e) => events.push(e),
+    });
+
+    const gStep = result.steps.find((s) => s.nodeId === 'g')!;
+    expect(gStep.error).toMatch(/Check 1: expected "201", got 200/);
+    expect(result.steps.find((s) => s.nodeId === 'b')).toBeUndefined();
+    expect(events.find((e) => e.nodeId === 'b')?.status).toBe('skipped');
+    // b's own operation never fires once its dependency (g) fails.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at the first failing check — later checks in the same preset never run', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse(200, {})));
+
+    const a = node('a');
+    const g = presetsNode('g', [
+      {
+        id: 's1',
+        kind: 'assert',
+        checks: [
+          { id: 'c1', source: { type: 'response_status', sourceNodeId: 'a' }, operator: 'equals', expected: '201' },
+          { id: 'c2', source: { type: 'response_status', sourceNodeId: 'a' }, operator: 'equals', expected: '999' },
+        ],
+      },
+    ]);
+    const connections: WorkflowConnection[] = [{ fromNodeId: 'a', toNodeId: 'g' }];
+    const operationsById = new Map([['a', op('a', '/a')]]);
+
+    const result = await executeChain({ nodes: [a, g], connections }, operationsById, new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    const gStep = result.steps.find((s) => s.nodeId === 'g')!;
+    expect(gStep.error).toMatch(/^Check 1:/);
+  });
+
+  it("a check whose source node never captured a response fails clearly, doesn't throw uncaught", async () => {
+    const g = presetsNode('g', [
+      {
+        id: 's1',
+        kind: 'assert',
+        checks: [{ id: 'c1', source: { type: 'response_status', sourceNodeId: 'nonexistent' }, operator: 'exists' }],
+      },
+    ]);
+
+    const result = await executeChain({ nodes: [g], connections: [] }, new Map(), new Map(), {
+      baseUrl: 'http://example.test',
+    });
+
+    const gStep = result.steps.find((s) => s.nodeId === 'g')!;
+    expect(gStep.error).toMatch(/Check 1:.*no captured response/);
+  });
+});
+
 describe('getByPath', () => {
   it('resolves nested and array paths', () => {
     const obj = { order: { items: [{ id: 'abc' }] } };

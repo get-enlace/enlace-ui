@@ -9,6 +9,7 @@ const TYPE_LABELS: Record<BodyTagType, string> = {
   response_body: 'Response → Body Attribute',
   response_raw: 'Response → Raw Body',
   response_header: 'Response → Header',
+  response_status: 'Response → Status Code',
 };
 
 export interface TagConfigModalProps {
@@ -63,6 +64,7 @@ export function TagConfigModal({
       const value = getHeaderCaseInsensitive(step.response.headers, headerName);
       return value === undefined ? `(no "${headerName}" header in the last response)` : value;
     }
+    if (type === 'response_status') return String(step.response.status);
     const value = type === 'response_raw' ? step.response.body : resolveJsonPath(step.response.body, jsonPath);
     return JSON.stringify(value, null, 2) ?? 'undefined';
   }

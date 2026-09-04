@@ -51,6 +51,14 @@ describe('addPresetsNode / presets', () => {
     expect(node.presets).toHaveLength(1);
     expect(node.presets![0]).toMatchObject({ kind: 'wait', durationMs: 1500 });
     expect(useWorkflowStore.getState().nodePositions[id]).toEqual({ x: 10, y: 20 });
+    // Seeded with one preset — open its config right away (see addPreset's own version of this below).
+    expect(useWorkflowStore.getState().selectedPresetId).toBe(node.presets![0].id);
+  });
+
+  it('leaves selectedPresetId null when dropped with no initial preset', () => {
+    const { addPresetsNode } = useWorkflowStore.getState();
+    addPresetsNode({ x: 0, y: 0 });
+    expect(useWorkflowStore.getState().selectedPresetId).toBeNull();
   });
 
   it('is a no-op while the workflow is running', () => {
@@ -80,17 +88,33 @@ describe('addPresetsNode / presets', () => {
     expect(useWorkflowStore.getState().nodes.find((n) => n.id === opId)!.presets).toBeUndefined();
   });
 
-  it('removePreset removes exactly the targeted preset', () => {
-    const { addPresetsNode, addPreset, removePreset } = useWorkflowStore.getState();
+  it('addPreset selects the newly appended preset — the only way to add one to an existing card', () => {
+    const { addPresetsNode, addPreset, selectNode } = useWorkflowStore.getState();
+    const presetsId = addPresetsNode();
+    selectNode(null); // dragging a preset onto a card works whether or not that card was already selected
+    addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
+
+    const state = useWorkflowStore.getState();
+    const preset = state.nodes.find((n) => n.id === presetsId)!.presets![0];
+    expect(state.selectedNodeId).toBe(presetsId);
+    expect(state.selectedPresetId).toBe(preset.id);
+  });
+
+  it('removePreset removes exactly the targeted preset, clearing selectedPresetId only if it pointed at the removed one', () => {
+    const { addPresetsNode, addPreset, removePreset, selectPreset } = useWorkflowStore.getState();
     const presetsId = addPresetsNode();
     addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
     addPreset(presetsId, { kind: 'wait', durationMs: 2000 });
     const [first, second] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
 
+    selectPreset(presetsId, second.id);
     removePreset(presetsId, first.id);
+    expect(useWorkflowStore.getState().selectedPresetId).toBe(second.id); // unrelated removal leaves it alone
 
+    removePreset(presetsId, second.id);
     const presets = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
-    expect(presets.map((p) => p.id)).toEqual([second.id]);
+    expect(presets).toEqual([]);
+    expect(useWorkflowStore.getState().selectedPresetId).toBeNull();
   });
 
   it('movePreset swaps a preset with its adjacent neighbor, and no-ops past either end', () => {
@@ -133,6 +157,50 @@ describe('addPresetsNode / presets', () => {
     expect(presets.find((p) => p.id === second.id)!.durationMs).toBe(2000);
   });
 
+  it('addAssertCheck appends a blank check to the targeted assert preset', () => {
+    const { addPresetsNode, addPreset, addAssertCheck } = useWorkflowStore.getState();
+    const presetsId = addPresetsNode();
+    addPreset(presetsId, { kind: 'assert', checks: [] });
+    const [assertPreset] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+
+    addAssertCheck(presetsId, assertPreset.id);
+
+    const checks = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+    expect(checks).toHaveLength(1);
+    expect(checks[0]).toMatchObject({ operator: 'equals', source: { type: 'response_body' } });
+  });
+
+  it('removeAssertCheck removes exactly the targeted check', () => {
+    const { addPresetsNode, addPreset, addAssertCheck, removeAssertCheck } = useWorkflowStore.getState();
+    const presetsId = addPresetsNode();
+    addPreset(presetsId, { kind: 'assert', checks: [] });
+    const [assertPreset] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    addAssertCheck(presetsId, assertPreset.id);
+    addAssertCheck(presetsId, assertPreset.id);
+    const [first, second] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+
+    removeAssertCheck(presetsId, assertPreset.id, first.id);
+
+    const checks = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+    expect(checks.map((c) => c.id)).toEqual([second.id]);
+  });
+
+  it('updateAssertCheck shallow-merges a patch into the targeted check only', () => {
+    const { addPresetsNode, addPreset, addAssertCheck, updateAssertCheck } = useWorkflowStore.getState();
+    const presetsId = addPresetsNode();
+    addPreset(presetsId, { kind: 'assert', checks: [] });
+    const [assertPreset] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    addAssertCheck(presetsId, assertPreset.id);
+    addAssertCheck(presetsId, assertPreset.id);
+    const [first, second] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+
+    updateAssertCheck(presetsId, assertPreset.id, first.id, { operator: 'greaterThan', expected: '10' });
+
+    const checks = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+    expect(checks.find((c) => c.id === first.id)).toMatchObject({ operator: 'greaterThan', expected: '10' });
+    expect(checks.find((c) => c.id === second.id)).toMatchObject({ operator: 'equals' });
+  });
+
   it('setPresetsCollapsed toggles view-only chrome, gated by isLocked like setGroupCollapsed', () => {
     const { addPresetsNode, setPresetsCollapsed } = useWorkflowStore.getState();
     const presetsId = addPresetsNode();
@@ -143,6 +211,37 @@ describe('addPresetsNode / presets', () => {
     useWorkflowStore.setState({ isRunning: true });
     setPresetsCollapsed(presetsId, false);
     expect(useWorkflowStore.getState().presetsCollapsed[presetsId]).toBe(true); // unchanged while locked
+  });
+});
+
+describe('selectPreset', () => {
+  it('sets both selectedNodeId and selectedPresetId in one step', () => {
+    const { addPresetsNode, addPreset, selectNode, selectPreset } = useWorkflowStore.getState();
+    const presetsId = addPresetsNode();
+    addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
+    const presetId = useWorkflowStore.getState().nodes[0].presets![0].id;
+    selectNode(null); // not already the selected node
+
+    selectPreset(presetsId, presetId);
+
+    expect(useWorkflowStore.getState().selectedNodeId).toBe(presetsId);
+    expect(useWorkflowStore.getState().selectedPresetId).toBe(presetId);
+  });
+
+  it('selectNode always resets selectedPresetId — a preset selection never outlives switching (or clearing) the selected node', () => {
+    const { addPresetsNode, addPreset, addNode, selectNode, selectPreset } = useWorkflowStore.getState();
+    const presetsId = addPresetsNode();
+    addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
+    const presetId = useWorkflowStore.getState().nodes[0].presets![0].id;
+    selectPreset(presetsId, presetId);
+
+    const otherId = addNode('GET /a');
+    selectNode(otherId);
+    expect(useWorkflowStore.getState().selectedPresetId).toBeNull();
+
+    selectPreset(presetsId, presetId);
+    selectNode(null);
+    expect(useWorkflowStore.getState().selectedPresetId).toBeNull();
   });
 });
 
@@ -191,6 +290,17 @@ describe('removeNode', () => {
     removeNode(a);
 
     expect(useWorkflowStore.getState().selectedNodeId).toBeNull();
+  });
+
+  it('clears selectedPresetId along with selectedNodeId when the removed node was the selected presets collection', () => {
+    const { addPresetsNode, addPreset, removeNode } = useWorkflowStore.getState();
+    const presetsId = addPresetsNode();
+    addPreset(presetsId, { kind: 'wait', durationMs: 1000 }); // also selects it — see addPreset's own test
+
+    removeNode(presetsId);
+
+    expect(useWorkflowStore.getState().selectedNodeId).toBeNull();
+    expect(useWorkflowStore.getState().selectedPresetId).toBeNull();
   });
 
   it('leaves an unrelated selected node alone', () => {
@@ -650,6 +760,7 @@ describe('replaceWorkflow', () => {
     expect(state.nodePositions).toEqual({ 'n-new': { x: 40, y: 80 } });
     expect(state.credentials).toEqual([{ id: 'c-new', name: 'imported', type: 'bearer', token: '' }]);
     expect(state.selectedNodeId).toBeNull();
+    expect(state.selectedPresetId).toBeNull();
     expect(state.runResult).toBeNull();
     expect(state.operations).toEqual([keepOp]);
     expect(state.baseUrl).toBe('http://example.test');

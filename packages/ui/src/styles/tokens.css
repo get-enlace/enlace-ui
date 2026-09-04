@@ -46,13 +46,14 @@
   --color-cookie: #a78bfa;
   --color-cookie-bg: rgba(167, 139, 250, 0.14);
 
-  /* Wait preset's own accent — deliberately a neutral slate, not one of the
-   * HTTP method colors above or --color-cookie: a Wait preset isn't a call
-   * to anything, and its chrome (the palette row, and each preset row
-   * inside an expanded presets-node card) should read as "not an HTTP
-   * operation" at a glance. */
-  --color-wait: #8a8f98;
-  --color-wait-bg: rgba(138, 143, 152, 0.14);
+  /* Wait preset's own accent — amber, distinct from every HTTP method color
+   * above and from --color-cookie/--color-presets, so its chrome (the
+   * palette icon, and each preset row inside an expanded presets-node card)
+   * reads as its own thing at a glance rather than "not an HTTP operation"
+   * grey. Deliberately not --color-put/--color-warning's orange (#fca130)
+   * despite the similar family — a Wait preset isn't a warning. */
+  --color-wait: #e8a33d;
+  --color-wait-bg: rgba(232, 163, 61, 0.14);
 
   /* The presets-collection card's own accent — distinct from every color
    * above (including --color-wait, since a collection is a packaging

@@ -2,43 +2,160 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore.js';
 import { coerceStaticValue } from '../../utils/coerceValue.js';
 import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from '../../utils/flattenSchema.js';
-import { computeAncestors } from '@get-enlace/core';
+import { buildNodeLabels, computeAncestors, formatPresetLabel } from '@get-enlace/core';
 import { hasUnrepresentableShape } from '../../utils/schemaExample.js';
 import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from '../../utils/bodyTemplate.js';
-import { buildNodeLabels } from '@get-enlace/core';
 import { RawBodyEditor } from './RawBodyEditor.js';
 import { Modal } from '../Modal.js';
+import { LockIcon, TrashIcon, UploadIcon } from '../chromeIcons.js';
 import type { SchemaField } from '../../utils/flattenSchema.js';
-import type { FieldValue } from '../../types.js';
+import type { AssertCheck, AssertOperator, BodyTagType, FieldValue, Operation, WorkflowNode } from '../../types.js';
 
-/** Stroked lock — same outline style as CredentialTypeFields eye icons. */
-function LockIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}
+const SOURCE_TYPE_LABELS: Record<BodyTagType, string> = {
+  response_status: 'Status',
+  response_body: 'Body field',
+  response_header: 'Header',
+  response_raw: 'Raw body',
+};
 
-function UploadIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="17 8 12 3 7 8" />
-      <line x1="12" y1="3" x2="12" y2="15" />
-    </svg>
-  );
-}
+const OPERATOR_LABELS: Record<AssertOperator, string> = {
+  equals: 'equals',
+  notEquals: 'not equals',
+  contains: 'contains',
+  exists: 'exists',
+  notExists: "doesn't exist",
+  greaterThan: '>',
+  lessThan: '<',
+};
 
-function TrashIcon() {
+/**
+ * One check row inside an assert preset's config — source node + what to
+ * read from it (mirrors this file's own request-field "Map from..."
+ * picker, minus its target-field type-compatibility filtering: a check
+ * isn't matching against a typed request field, any response shape is
+ * fair game) + the comparison itself. Lives here, not on the presets
+ * canvas card — see NodeConfig's own presets-kind branch below for why.
+ */
+function AssertCheckRow({
+  check,
+  index,
+  ancestorNodes,
+  operations,
+  nodeLabels,
+  disabled,
+  onUpdate,
+  onRemove,
+}: {
+  check: AssertCheck;
+  index: number;
+  ancestorNodes: WorkflowNode[];
+  operations: Operation[];
+  nodeLabels: Map<string, string>;
+  disabled: boolean;
+  onUpdate: (patch: Partial<Omit<AssertCheck, 'id'>>) => void;
+  onRemove: () => void;
+}) {
+  const sourceNode = ancestorNodes.find((n) => n.id === check.source.sourceNodeId);
+  const sourceOperation = sourceNode ? operations.find((o) => o.id === sourceNode.operationId) : undefined;
+  const responseFields = sourceOperation ? flattenResponseFields(sourceOperation) : [];
+  const needsExpected = check.operator !== 'exists' && check.operator !== 'notExists';
+
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-      <line x1="10" y1="11" x2="10" y2="17" />
-      <line x1="14" y1="11" x2="14" y2="17" />
-    </svg>
+    <li className="node-config__check-row">
+      <select
+        disabled={disabled}
+        aria-label={`Check ${index + 1} source node`}
+        value={check.source.sourceNodeId}
+        onChange={(e) => onUpdate({ source: { ...check.source, sourceNodeId: e.target.value } })}
+      >
+        <option value="">Select node...</option>
+        {ancestorNodes.map((n) => (
+          <option key={n.id} value={n.id}>
+            {nodeLabels.get(n.id) ?? n.id}
+          </option>
+        ))}
+      </select>
+      <select
+        disabled={disabled}
+        aria-label={`Check ${index + 1} source type`}
+        value={check.source.type}
+        onChange={(e) => onUpdate({ source: { ...check.source, type: e.target.value as BodyTagType } })}
+      >
+        {(Object.keys(SOURCE_TYPE_LABELS) as BodyTagType[]).map((type) => (
+          <option key={type} value={type}>
+            {SOURCE_TYPE_LABELS[type]}
+          </option>
+        ))}
+      </select>
+      {check.source.type === 'response_body' &&
+        (responseFields.length > 0 ? (
+          <select
+            disabled={disabled}
+            aria-label={`Check ${index + 1} response field`}
+            value={check.source.jsonPath ?? ''}
+            onChange={(e) => onUpdate({ source: { ...check.source, jsonPath: e.target.value } })}
+          >
+            <option value="">Select field...</option>
+            {responseFields.map((rf) => (
+              <option key={rf.path} value={rf.path} disabled={!rf.supported} title={rf.reason}>
+                {rf.path}
+                {!rf.supported ? ' (unsupported)' : ''}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            disabled={disabled}
+            placeholder="e.g. items[0].id"
+            aria-label={`Check ${index + 1} response field path`}
+            value={check.source.jsonPath ?? ''}
+            onChange={(e) => onUpdate({ source: { ...check.source, jsonPath: e.target.value } })}
+          />
+        ))}
+      {check.source.type === 'response_header' && (
+        <input
+          type="text"
+          disabled={disabled}
+          placeholder="e.g. x-trace-id"
+          aria-label={`Check ${index + 1} header name`}
+          value={check.source.headerName ?? ''}
+          onChange={(e) => onUpdate({ source: { ...check.source, headerName: e.target.value } })}
+        />
+      )}
+      <select
+        disabled={disabled}
+        aria-label={`Check ${index + 1} operator`}
+        value={check.operator}
+        onChange={(e) => onUpdate({ operator: e.target.value as AssertOperator })}
+      >
+        {(Object.keys(OPERATOR_LABELS) as AssertOperator[]).map((op) => (
+          <option key={op} value={op}>
+            {OPERATOR_LABELS[op]}
+          </option>
+        ))}
+      </select>
+      {needsExpected && (
+        <input
+          type="text"
+          disabled={disabled}
+          placeholder="expected value"
+          aria-label={`Check ${index + 1} expected value`}
+          value={check.expected ?? ''}
+          onChange={(e) => onUpdate({ expected: e.target.value })}
+        />
+      )}
+      <button
+        type="button"
+        className="node-config__check-remove"
+        disabled={disabled}
+        aria-label={`Remove check ${index + 1}`}
+        title="Remove check"
+        onClick={onRemove}
+      >
+        ×
+      </button>
+    </li>
   );
 }
 
@@ -48,6 +165,7 @@ export function NodeConfig() {
     connections,
     operations,
     selectedNodeId,
+    selectedPresetId,
     credentials,
     isRunning,
     setCredential,
@@ -60,6 +178,10 @@ export function NodeConfig() {
     setRawPath,
     setRawQuery,
     setRawBody,
+    setPresetDurationMs,
+    addAssertCheck,
+    removeAssertCheck,
+    updateAssertCheck,
   } = useWorkflowStore();
 
   const node = nodes.find((n) => n.id === selectedNodeId);
@@ -113,15 +235,83 @@ export function NodeConfig() {
     setCredPickerOpen(false);
   }, [selectedNodeId]);
 
-  // Presets are edited directly on the collection's expanded canvas card
-  // (duration fields, reorder, add/remove) — no separate inspector panel
-  // duplicating that UI, just a pointer to where the real controls live.
+  // A preset's own config lives here, not on the canvas card — the card
+  // (PresetsNodeCard.tsx) only ever shows a summary row (icon +
+  // formatPresetLabel) plus reorder/remove, so every row stays the same
+  // compact width regardless of kind; clicking one just calls
+  // `selectPreset`, which is what `selectedPresetId` reflects. Reorder,
+  // add (drag from the palette), and remove-the-whole-preset stay on the
+  // card itself — only per-preset *configuration* moved.
   if (node?.kind === 'presets') {
+    const preset = node.presets?.find((p) => p.id === selectedPresetId);
+    if (!preset) {
+      return (
+        <aside className="node-config node-config--empty">
+          <p className="node-config__empty-msg">Select a preset on the canvas to configure it.</p>
+        </aside>
+      );
+    }
     return (
-      <aside className="node-config node-config--empty">
-        <p className="node-config__empty-msg">
-          Expand this collection on the canvas to add, reorder, or edit its presets.
-        </p>
+      <aside className="node-config">
+        {isRunning && (
+          <p className="node-config__banner">Workflow is running — editing is locked until it finishes.</p>
+        )}
+        <fieldset className="node-config__fieldset" disabled={isRunning}>
+          <div className="node-config__header">
+            <div className="node-config__op-title">
+              <span
+                className={`presets-node__step-icon${preset.kind === 'assert' ? ' presets-node__step-icon--assert' : ' presets-node__step-icon--wait'}`}
+                aria-hidden="true"
+              >
+                {preset.kind === 'wait' ? '⏱' : '✓'}
+              </span>
+              <h2 className="node-config__path">{formatPresetLabel(preset)}</h2>
+            </div>
+          </div>
+
+          {preset.kind === 'wait' ? (
+            <div className="node-config__field">
+              <label>Duration (seconds)</label>
+              <div className="node-config__field-row">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  aria-label="Duration in seconds"
+                  value={(preset.durationMs ?? 0) / 1000}
+                  onChange={(e) => {
+                    const seconds = Number(e.target.value);
+                    const nextMs = Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1000) : 0;
+                    setPresetDurationMs(node!.id, preset.id, nextMs);
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <section className="node-config__section">
+              <h4 className="node-config__section-title">Checks</h4>
+              {(preset.checks ?? []).length === 0 && <p className="node-config__hint">No checks yet — add one below.</p>}
+              <ul className="node-config__check-list">
+                {(preset.checks ?? []).map((check, index) => (
+                  <AssertCheckRow
+                    key={check.id}
+                    check={check}
+                    index={index}
+                    ancestorNodes={ancestorNodes}
+                    operations={operations}
+                    nodeLabels={nodeLabels}
+                    disabled={isRunning}
+                    onUpdate={(patch) => updateAssertCheck(node!.id, preset.id, check.id, patch)}
+                    onRemove={() => removeAssertCheck(node!.id, preset.id, check.id)}
+                  />
+                ))}
+              </ul>
+              <button type="button" className="node-config__add-check" onClick={() => addAssertCheck(node!.id, preset.id)}>
+                + Add check
+              </button>
+            </section>
+          )}
+        </fieldset>
       </aside>
     );
   }

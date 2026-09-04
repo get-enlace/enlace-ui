@@ -45,9 +45,12 @@ export type FieldValue =
  * filter (utils/bodyTags.ts's `resolveJsonPath`, a thin wrapper over
  * chainExecutor.ts's `getByPath`) out of the source node's parsed response
  * body; `response_raw` takes that response body whole, no filter applied;
- * `response_header` reads one named response header (case-insensitively).
+ * `response_header` reads one named response header (case-insensitively);
+ * `response_status` reads the numeric HTTP status code. The same union
+ * doubles as an Assert check's `source.type` (see `AssertCheck` below) —
+ * "a reference into a prior step's result" is exactly what both need.
  */
-export type BodyTagType = 'response_body' | 'response_raw' | 'response_header';
+export type BodyTagType = 'response_body' | 'response_raw' | 'response_header' | 'response_status';
 
 export interface BodyTag {
   id: string;
@@ -82,19 +85,45 @@ export interface RawBody {
  * more presets (`presets`) as one executable unit in the main graph — see
  * `Preset` below; this is the *only* way a preset ever reaches the canvas,
  * even a single Wait (see utils/workflowDocument.ts and the store's
- * `addPresetsNode`). `'wait'` never appears as a real top-level node's
- * `kind` — it exists only as the synthetic kind engine/nodeHandlers.ts's
- * `presetAsNode` gives each preset it runs, so the same per-kind handler
- * registry can dispatch it exactly like a top-level node would.
+ * `addPresetsNode`). `'wait'`/`'assert'` never appear as a real top-level
+ * node's `kind` — each exists only as the synthetic kind
+ * engine/nodeHandlers.ts's `presetAsNode` gives the preset it runs, so the
+ * same per-kind handler registry can dispatch it exactly like a top-level
+ * node would.
  */
-export type WorkflowNodeKind = 'operation' | 'wait' | 'presets';
+export type WorkflowNodeKind = 'operation' | 'wait' | 'presets' | 'assert';
 
 /**
  * The kind a single preset inside a `kind: 'presets'` node's `presets` list
- * can be. Today just `'wait'` — a union point for the next preset (Assert)
- * once it lands.
+ * can be — `'wait'` (a pacing step) or `'assert'` (a run of checks against
+ * an earlier step's result; see `AssertCheck` below).
  */
-export type PresetKind = 'wait';
+export type PresetKind = 'wait' | 'assert';
+
+/** Comparison an `AssertCheck` runs — see engine/assertCompare.ts's `evaluateCheck` for exact semantics of each. */
+export type AssertOperator =
+  | 'equals'
+  | 'notEquals'
+  | 'contains'
+  | 'exists'
+  | 'notExists'
+  | 'greaterThan'
+  | 'lessThan';
+
+/**
+ * One comparison an `'assert'` preset runs. `source` is the same
+ * "reference into a prior step's result" shape a Raw JSON tag chip uses
+ * (see `BodyTag`/utils/bodyTags.ts's `resolveTagValue`), minus the `id` a
+ * dictionary key would need there — a check isn't stored in a `Record`, so
+ * its own `id` below already identifies it.
+ */
+export interface AssertCheck {
+  id: string;
+  source: Omit<BodyTag, 'id'>;
+  operator: AssertOperator;
+  /** User-typed comparison value, always a plain string — irrelevant for `exists`/`notExists`. Numeric operators coerce at compare time (engine/assertCompare.ts). */
+  expected?: string;
+}
 
 /**
  * One preset entry inside a `kind: 'presets'` node's `presets` list — a
@@ -108,13 +137,16 @@ export type PresetKind = 'wait';
  * graph position of its own, and — per the issue's "Inside the collection:
  * presets only, linear order only" — never participates in
  * `WorkflowConnection`/the main dependency graph individually; only the
- * collection as a whole does.
+ * collection as a whole does (see dependencyGraph.ts's own `checks` loop
+ * for how an assert preset's ancestor dependency still gets there).
  */
 export interface Preset {
   id: string;
   kind: PresetKind;
   /** `kind: 'wait'` only — same meaning as `WorkflowNode.durationMs`. */
-  durationMs: number;
+  durationMs?: number;
+  /** `kind: 'assert'` only — every check must pass or the preset (and its collection) fails. */
+  checks?: AssertCheck[];
 }
 
 export interface WorkflowNode {
@@ -146,6 +178,13 @@ export interface WorkflowNode {
    * `presetAsNode` builds internally — no real top-level node carries it.
    */
   durationMs?: number;
+  /**
+   * `kind: 'assert'` only — same meaning as `Preset.checks`. Ignored by
+   * every other kind. In practice only ever set on the synthetic
+   * per-preset `WorkflowNode` `presetAsNode` builds internally, same as
+   * `durationMs` above — no real top-level node carries it.
+   */
+  checks?: AssertCheck[];
   /**
    * `kind: 'presets'` only — the ordered presets this node runs as one
    * unit once its own dependencies are satisfied (see `Preset` and

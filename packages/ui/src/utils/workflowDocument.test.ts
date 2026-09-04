@@ -181,6 +181,96 @@ describe('serializeCollection', () => {
     expect(result.error).toMatch(/invalid durationMs/);
   });
 
+  it('round-trips a presets node with an assert preset and its checks', () => {
+    const presetsNode: WorkflowNode = {
+      id: 'w1',
+      kind: 'presets',
+      credentialId: null,
+      fieldValues: {},
+      presets: [
+        {
+          id: 's1',
+          kind: 'assert',
+          checks: [
+            { id: 'c1', source: { type: 'response_status', sourceNodeId: 'n1' }, operator: 'equals', expected: '201' },
+            { id: 'c2', source: { type: 'response_body', sourceNodeId: 'n1', jsonPath: 'id' }, operator: 'exists' },
+          ],
+        },
+      ],
+    };
+    const doc = serializeCollection({
+      name: 'Presets',
+      nodes: [node, presetsNode],
+      connections: [{ fromNodeId: 'n1', toNodeId: 'w1' }],
+      nodePositions: { n1: { x: 0, y: 0 }, w1: { x: 100, y: 0 } },
+      credentials: [],
+      now: () => '2026-09-04T00:00:00.000Z',
+    });
+
+    const parsed = parseCollection(doc, { operations: [operation] });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.collection.workflows[0].nodes).toEqual([node, presetsNode]);
+  });
+
+  it('rejects an assert preset with an invalid operator or source type', () => {
+    const badOperator = {
+      ...serializeAll(),
+      workflows: [
+        {
+          ...serializeAll().workflows[0],
+          nodes: [
+            {
+              id: 'w1',
+              kind: 'presets',
+              credentialId: null,
+              fieldValues: {},
+              presets: [
+                {
+                  id: 's1',
+                  kind: 'assert',
+                  checks: [{ id: 'c1', source: { type: 'response_status', sourceNodeId: 'n1' }, operator: 'bogus' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const result = parseCollection(badOperator);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/invalid operator/);
+
+    const badSource = {
+      ...serializeAll(),
+      workflows: [
+        {
+          ...serializeAll().workflows[0],
+          nodes: [
+            {
+              id: 'w1',
+              kind: 'presets',
+              credentialId: null,
+              fieldValues: {},
+              presets: [
+                {
+                  id: 's1',
+                  kind: 'assert',
+                  checks: [{ id: 'c1', source: { type: 'bogus', sourceNodeId: 'n1' }, operator: 'equals' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const sourceResult = parseCollection(badSource);
+    expect(sourceResult.ok).toBe(false);
+    if (sourceResult.ok) return;
+    expect(sourceResult.error).toMatch(/invalid source/);
+  });
+
   it('round-trips a presets node with ordered presets, and its presetsCollapsed chrome', () => {
     const presetsNode: WorkflowNode = {
       id: 'g1',
@@ -240,7 +330,7 @@ describe('serializeCollection', () => {
               kind: 'presets',
               credentialId: null,
               fieldValues: {},
-              presets: [{ id: 's1', kind: 'assert', durationMs: 0 }],
+              presets: [{ id: 's1', kind: 'bogus', durationMs: 0 }],
             },
           ],
         },

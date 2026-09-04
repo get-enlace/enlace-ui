@@ -1,5 +1,8 @@
 import type {
+  AssertCheck,
+  AssertOperator,
   BodyTag,
+  BodyTagType,
   CollectionWarnings,
   CollectionWorkflow,
   Credential,
@@ -544,6 +547,45 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
   return node;
 }
 
+function parseAssertChecks(raw: unknown, presetsNodeId: string, presetId: string): AssertCheck[] | string {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) {
+    return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" has an invalid "checks" array.`;
+  }
+  const checks: AssertCheck[] = [];
+  const seenIds = new Set<string>();
+  for (let i = 0; i < raw.length; i++) {
+    const check = raw[i];
+    if (!isRecord(check) || typeof check.id !== 'string' || isUnsafeKey(check.id)) {
+      return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" has an invalid check at index ${i}.`;
+    }
+    if (seenIds.has(check.id)) {
+      return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" has a duplicate check id "${check.id}".`;
+    }
+    const source = check.source;
+    if (!isRecord(source) || typeof source.sourceNodeId !== 'string' || !isBodyTagType(source.type)) {
+      return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" check "${check.id}" has an invalid source.`;
+    }
+    if (!isAssertOperator(check.operator)) {
+      return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" check "${check.id}" has an invalid operator.`;
+    }
+    if (check.expected !== undefined && typeof check.expected !== 'string') {
+      return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" check "${check.id}" has an invalid expected value.`;
+    }
+    const copySource: AssertCheck['source'] = { type: source.type, sourceNodeId: source.sourceNodeId };
+    if (typeof source.jsonPath === 'string') copySource.jsonPath = source.jsonPath;
+    if (typeof source.headerName === 'string') copySource.headerName = source.headerName;
+    seenIds.add(check.id);
+    checks.push({
+      id: check.id,
+      source: copySource,
+      operator: check.operator,
+      ...(check.expected !== undefined ? { expected: check.expected } : {}),
+    });
+  }
+  return checks;
+}
+
 function parsePresetsList(raw: unknown, presetsNodeId: string): Preset[] | string {
   if (raw == null) return [];
   if (!Array.isArray(raw)) return `Enlace collection presets node "${presetsNodeId}" has an invalid "presets" array.`;
@@ -557,17 +599,23 @@ function parsePresetsList(raw: unknown, presetsNodeId: string): Preset[] | strin
     if (seenIds.has(preset.id)) {
       return `Enlace collection presets node "${presetsNodeId}" has a duplicate preset id "${preset.id}".`;
     }
-    // Only 'wait' exists today — every other value is rejected outright
-    // rather than silently dropped, since a preset from a newer format this
-    // version doesn't understand shouldn't quietly vanish from the collection.
-    if (preset.kind !== 'wait') {
+    // Every other kind is rejected outright rather than silently dropped —
+    // a preset from a newer format this version doesn't understand
+    // shouldn't quietly vanish from the collection.
+    if (preset.kind === 'wait') {
+      if (typeof preset.durationMs !== 'number' || !Number.isFinite(preset.durationMs) || preset.durationMs < 0) {
+        return `Enlace collection presets node "${presetsNodeId}" preset "${preset.id}" has an invalid durationMs.`;
+      }
+      seenIds.add(preset.id);
+      presets.push({ id: preset.id, kind: 'wait', durationMs: preset.durationMs });
+    } else if (preset.kind === 'assert') {
+      const checks = parseAssertChecks(preset.checks, presetsNodeId, preset.id);
+      if (typeof checks === 'string') return checks;
+      seenIds.add(preset.id);
+      presets.push({ id: preset.id, kind: 'assert', checks });
+    } else {
       return `Enlace collection presets node "${presetsNodeId}" has an unknown preset kind "${String(preset.kind)}".`;
     }
-    if (typeof preset.durationMs !== 'number' || !Number.isFinite(preset.durationMs) || preset.durationMs < 0) {
-      return `Enlace collection presets node "${presetsNodeId}" preset "${preset.id}" has an invalid durationMs.`;
-    }
-    seenIds.add(preset.id);
-    presets.push({ id: preset.id, kind: 'wait', durationMs: preset.durationMs });
   }
   return presets;
 }
@@ -612,12 +660,7 @@ function parseRawBody(raw: unknown, nodeId: string, fieldName = 'rawBody'): RawB
     if (isUnsafeKey(id)) {
       return `Enlace collection node "${nodeId}" has an invalid ${fieldName} tag id "${id}".`;
     }
-    if (
-      !isRecord(tag) ||
-      typeof tag.id !== 'string' ||
-      typeof tag.sourceNodeId !== 'string' ||
-      (tag.type !== 'response_body' && tag.type !== 'response_raw' && tag.type !== 'response_header')
-    ) {
+    if (!isRecord(tag) || typeof tag.id !== 'string' || typeof tag.sourceNodeId !== 'string' || !isBodyTagType(tag.type)) {
       return `Enlace collection node "${nodeId}" has an invalid ${fieldName} tag "${id}".`;
     }
     const copy: BodyTag = { id: tag.id, type: tag.type, sourceNodeId: tag.sourceNodeId };
@@ -893,4 +936,22 @@ function isUnsafeKey(key: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const BODY_TAG_TYPES: BodyTagType[] = ['response_body', 'response_raw', 'response_header', 'response_status'];
+function isBodyTagType(value: unknown): value is BodyTagType {
+  return typeof value === 'string' && (BODY_TAG_TYPES as string[]).includes(value);
+}
+
+const ASSERT_OPERATORS: AssertOperator[] = [
+  'equals',
+  'notEquals',
+  'contains',
+  'exists',
+  'notExists',
+  'greaterThan',
+  'lessThan',
+];
+function isAssertOperator(value: unknown): value is AssertOperator {
+  return typeof value === 'string' && (ASSERT_OPERATORS as string[]).includes(value);
 }
