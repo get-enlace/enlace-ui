@@ -1,34 +1,11 @@
 import { useState } from 'react';
 import { openLoginUrl } from '../../utils/credentialDraft.js';
+import { EyeIcon, EyeOffIcon, ExternalLinkIcon } from '../chromeIcons.js';
 import type { NewCredential } from '../../types.js';
 
 interface FieldsProps<T> {
   draft: T;
   setDraft: (draft: NewCredential) => void;
-}
-
-// Plain stroked-outline icons, not emoji — matches the rest of the app's
-// chrome (✕ for close, › for expand, ! for failed), which never uses
-// pictographic/colorful glyphs. `currentColor` means each follows
-// whatever text color the reveal button already has, so no separate
-// dark/light handling is needed.
-function EyeIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-function EyeOffIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
-      <line x1="2" y1="2" x2="22" y2="22" />
-    </svg>
-  );
 }
 
 /**
@@ -401,7 +378,7 @@ export function CookieFields({ draft, setDraft }: FieldsProps<CookieDraft>) {
           className="btn btn--secondary credentials-panel__login-btn"
           onClick={() => openLoginUrl(draft.loginUrl!)}
         >
-          Open login page ↗
+          Open login page <ExternalLinkIcon />
         </button>
       )}
 
