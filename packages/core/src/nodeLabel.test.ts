@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildNodeLabels, formatPresetsSummary, formatWaitDuration } from './nodeLabel.js';
-import type { Operation, WorkflowNode } from './types.js';
+import type { Operation, PresetsNode, WorkflowNode } from './types.js';
 
 function makeOperation(overrides: Partial<Operation> = {}): Operation {
   return {
@@ -91,7 +91,7 @@ describe('buildNodeLabels', () => {
   });
 
   it('labels an assert preset by its check count, singular and plural', () => {
-    const node: WorkflowNode = {
+    const node: PresetsNode = {
       id: 'g1',
       kind: 'presets',
       credentialId: null,
@@ -100,7 +100,7 @@ describe('buildNodeLabels', () => {
     };
     expect(buildNodeLabels([node], new Map()).get('g1')).toBe('Presets: Assert (1 check)');
 
-    const twoChecks: WorkflowNode = {
+    const twoChecks: PresetsNode = {
       ...node,
       presets: [
         {

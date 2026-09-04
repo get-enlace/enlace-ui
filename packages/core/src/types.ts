@@ -172,43 +172,26 @@ export interface AssertPreset {
  */
 export type NewPreset = DistributiveOmit<Preset, 'id'>;
 
-export interface WorkflowNode {
+interface WorkflowNodeBase {
   id: string; // unique per canvas instance
-  /**
-   * Optional, and absent means `'operation'` — every pre-existing
-   * `WorkflowNode` literal (fixtures, older in-memory state, older
-   * `.enlace` imports) keeps compiling and behaving exactly as before with
-   * no migration step of its own. See utils/workflowDocument.ts for the
-   * explicit `kind` an import writes/reads today.
-   */
-  kind?: WorkflowNodeKind;
-  /**
-   * References an Operation.id. Required in practice for `kind: 'operation'`
-   * (the default) — optional on the type only because `kind: 'presets'`
-   * doesn't have one at all and still needs to satisfy this same interface.
-   * `WorkflowNode` stays one flat shape covering both kinds (rather than a
-   * discriminated union like `Credential`/`Preset`) because every existing
-   * consumer already treats most of these fields as optional/absent-safe —
-   * revisiting that is a separate, larger change (see the workspace-level
-   * ROADMAP.md) than the `Preset` union above.
-   */
-  operationId?: string;
   credentialId: string | null;
   fieldValues: Record<string, FieldValue>;
+}
+
+/**
+ * The everyday node: fires an HTTP call described by `operationId`. `kind`
+ * is optional and absent means `'operation'` — every pre-existing
+ * `WorkflowNode` literal (fixtures, older in-memory state, older `.enlace`
+ * imports) keeps compiling and behaving exactly as before with no migration
+ * step of its own. See utils/workflowDocument.ts for the explicit `kind` an
+ * import writes/reads today.
+ */
+export interface OperationNode extends WorkflowNodeBase {
+  kind?: 'operation';
+  /** References an Operation.id. */
+  operationId?: string;
   /**
-   * `kind: 'presets'` only — the ordered presets this node runs as one
-   * unit once its own dependencies are satisfied (see `Preset` and
-   * engine/nodeHandlers.ts's `presetsNodeHandler`). Empty/absent means an
-   * empty collection — a valid, if useless, state (nothing to run, settles
-   * immediately) rather than an error, same as a group with no members
-   * being cleaned up elsewhere rather than rejected here. In practice the
-   * canvas never creates one empty — dropping a preset from the palette
-   * always creates a collection with that one preset already in it (see
-   * store/slices/graphSlice.ts's `addPresetsNode`).
-   */
-  presets?: Preset[];
-  /**
-   * Optional (not required) so every pre-existing `WorkflowNode` literal
+   * Optional (not required) so every pre-existing `OperationNode` literal
    * (fixtures, older in-memory state) keeps compiling/behaving unchanged —
    * treat an absent value as `'form'`. Orthogonal to `fieldValues`: raw
    * mode stops reading/writing `path.*` / `query.*` / `body.*` keys from
@@ -256,6 +239,41 @@ export interface WorkflowNode {
    */
   credentialExtraParamOverridesEnabled?: boolean;
 }
+
+/**
+ * A `kind: 'presets'` collection — no `operationId`/raw body/credential
+ * overrides of its own, just an ordered run of `presets` (see `Preset`
+ * above and engine/nodeHandlers.ts's `presetsNodeHandler`). `credentialId`/
+ * `fieldValues` stay on the shared base even though a presets collection
+ * never uses either today — keeping them here (rather than moving them onto
+ * `OperationNode` too) avoids widening every existing "any `WorkflowNode`"
+ * consumer (selection, positioning, connections) into a kind-narrowing call
+ * just to read an `id`.
+ */
+export interface PresetsNode extends WorkflowNodeBase {
+  kind: 'presets';
+  /**
+   * The ordered presets this node runs as one unit once its own
+   * dependencies are satisfied. Empty/absent means an empty collection — a
+   * valid, if useless, state (nothing to run, settles immediately) rather
+   * than an error, same as a group with no members being cleaned up
+   * elsewhere rather than rejected here. In practice the canvas never
+   * creates one empty — dropping a preset from the palette always creates a
+   * collection with that one preset already in it (see
+   * store/slices/graphSlice.ts's `addPresetsNode`).
+   */
+  presets?: Preset[];
+}
+
+/**
+ * A visible node on the canvas — one of two kinds today (see
+ * `WorkflowNodeKind`). A discriminated union, same pattern `Credential`/
+ * `Preset` already use in this file: `engine/nodeHandlers.ts`'s
+ * `nodeHandlers` registry dispatches on `node.kind` and narrows (or asserts,
+ * backed by that same dispatch) to the matching variant before reading a
+ * kind-specific field.
+ */
+export type WorkflowNode = OperationNode | PresetsNode;
 
 /**
  * An explicit "runs after" edge between two nodes — this is what

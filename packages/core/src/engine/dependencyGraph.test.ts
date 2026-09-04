@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { computeAncestors } from './dependencyGraph.js';
-import type { WorkflowConnection, WorkflowNode } from '../types.js';
+import type { OperationNode, WorkflowConnection, WorkflowNode } from '../types.js';
 
-function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): WorkflowNode {
+function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): OperationNode {
   return { id, operationId: id, credentialId: null, fieldValues };
 }
 

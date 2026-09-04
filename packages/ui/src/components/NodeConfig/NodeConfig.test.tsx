@@ -3,7 +3,7 @@ import { render, screen, within, fireEvent, waitFor } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { NodeConfig } from './NodeConfig.js';
 import { useWorkflowStore } from '../../store/workflowStore.js';
-import type { AssertPreset, Operation, Preset, WaitPreset, WorkflowNode } from '../../types.js';
+import type { AssertPreset, Operation, OperationNode, Preset, PresetsNode, WaitPreset, WorkflowNode } from '../../types.js';
 
 // Preset is a real discriminated union (WaitPreset | AssertPreset) — these
 // narrow-or-throw so a test can read a kind-specific field directly instead
@@ -16,6 +16,17 @@ function asWaitPreset(preset: Preset): WaitPreset {
 function asAssertPreset(preset: Preset): AssertPreset {
   if (preset.kind !== 'assert') throw new Error(`expected an assert preset, got "${preset.kind}"`);
   return preset;
+}
+
+// Same "narrow-or-throw" idiom, one level up — WorkflowNode is itself now a
+// discriminated union (OperationNode | PresetsNode).
+function asOperationNode(node: WorkflowNode): OperationNode {
+  if (node.kind === 'presets') throw new Error('expected an operation node, got a presets collection');
+  return node;
+}
+function asPresetsNode(node: WorkflowNode): PresetsNode {
+  if (node.kind !== 'presets') throw new Error('expected a presets collection, got an operation node');
+  return node;
 }
 
 const petOperation: Operation = {
@@ -115,7 +126,7 @@ describe('NodeConfig', () => {
   });
 
   describe('preset config', () => {
-    function makePresetsNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
+    function makePresetsNode(overrides: Partial<PresetsNode> = {}): PresetsNode {
       return { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [], ...overrides };
     }
 
@@ -129,7 +140,7 @@ describe('NodeConfig', () => {
       expect(input).toHaveValue(1);
 
       fireEvent.change(input, { target: { value: '3' } });
-      expect(asWaitPreset(useWorkflowStore.getState().nodes[0].presets![0]).durationMs).toBe(3000);
+      expect(asWaitPreset(asPresetsNode(useWorkflowStore.getState().nodes[0]).presets![0]).durationMs).toBe(3000);
     });
 
     it('dropping an Assert preset from the palette appends it with no checks', () => {
@@ -151,7 +162,7 @@ describe('NodeConfig', () => {
       render(<NodeConfig />);
 
       await user.click(screen.getByRole('button', { name: '+ Add check' }));
-      const checks = asAssertPreset(useWorkflowStore.getState().nodes[0].presets![0]).checks;
+      const checks = asAssertPreset(asPresetsNode(useWorkflowStore.getState().nodes[0]).presets![0]).checks;
       expect(checks).toHaveLength(1);
       expect(checks[0]).toMatchObject({ operator: 'equals', source: { type: 'response_body' } });
     });
@@ -194,7 +205,7 @@ describe('NodeConfig', () => {
       });
       render(<NodeConfig />);
 
-      const checksOf1 = () => asAssertPreset(useWorkflowStore.getState().nodes[1].presets![0]).checks;
+      const checksOf1 = () => asAssertPreset(asPresetsNode(useWorkflowStore.getState().nodes[1]).presets![0]).checks;
 
       await user.selectOptions(screen.getByLabelText('Check 1 source node'), 'op1');
       expect(checksOf1()[0].source.sourceNodeId).toBe('op1');
@@ -245,7 +256,7 @@ describe('NodeConfig', () => {
       render(<NodeConfig />);
 
       await user.click(screen.getByRole('button', { name: 'Remove check 1' }));
-      expect(asAssertPreset(useWorkflowStore.getState().nodes[0].presets![0]).checks).toEqual([]);
+      expect(asAssertPreset(asPresetsNode(useWorkflowStore.getState().nodes[0]).presets![0]).checks).toEqual([]);
     });
   });
 
@@ -309,7 +320,7 @@ describe('NodeConfig', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /Switch to Raw view/ }));
 
     await waitFor(() => {
-      const state = useWorkflowStore.getState().nodes[0];
+      const state = asOperationNode(useWorkflowStore.getState().nodes[0]);
       expect(state.requestMode).toBe('raw');
       expect(JSON.parse(state.rawPath!.template)).toEqual({ id: 'item-1' });
       // Unset query keys are still present as empty strings so Raw starts with a full skeleton.
@@ -417,7 +428,7 @@ describe('NodeConfig', () => {
 
       await user.click(screen.getByRole('checkbox', { name: 'Override credential extra params' }));
 
-      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverridesEnabled).toBe(true);
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).credentialExtraParamOverridesEnabled).toBe(true);
       const row = fieldRow('audience');
       expect(row.getByRole('combobox', { name: 'Source for extra param audience' })).toHaveValue('default');
     });
@@ -438,12 +449,12 @@ describe('NodeConfig', () => {
       const row = fieldRow('audience');
       await user.selectOptions(row.getByRole('combobox', { name: 'Source for extra param audience' }), 'mapped');
 
-      expect(useWorkflowStore.getState().nodes[1].credentialExtraParamOverrides).toEqual({
+      expect(asOperationNode(useWorkflowStore.getState().nodes[1]).credentialExtraParamOverrides).toEqual({
         audience: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: '' },
       });
 
       await user.selectOptions(screen.getByRole('combobox', { name: 'Map extra param audience from response field' }), 'name');
-      expect(useWorkflowStore.getState().nodes[1].credentialExtraParamOverrides).toEqual({
+      expect(asOperationNode(useWorkflowStore.getState().nodes[1]).credentialExtraParamOverrides).toEqual({
         audience: { source: 'mapped', fromNodeId: 'a', fromResponseFieldPath: 'name' },
       });
     });
@@ -473,7 +484,7 @@ describe('NodeConfig', () => {
       await user.selectOptions(row.getByRole('combobox', { name: 'Source for extra param audience' }), 'static');
       await user.type(screen.getByRole('textbox', { name: 'Static value for extra param audience' }), 'api://custom');
 
-      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverrides).toEqual({
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).credentialExtraParamOverrides).toEqual({
         audience: { source: 'static', value: 'api://custom' },
       });
     });
@@ -496,7 +507,7 @@ describe('NodeConfig', () => {
       const row = fieldRow('audience');
       await user.selectOptions(row.getByRole('combobox', { name: 'Source for extra param audience' }), 'default');
 
-      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverrides).toEqual({});
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).credentialExtraParamOverrides).toEqual({});
     });
 
     it('turning the toggle back off hides the rows without clearing the stored overrides', async () => {
@@ -516,8 +527,8 @@ describe('NodeConfig', () => {
 
       await user.click(screen.getByRole('checkbox', { name: 'Override credential extra params' }));
 
-      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverridesEnabled).toBe(false);
-      expect(useWorkflowStore.getState().nodes[0].credentialExtraParamOverrides).toEqual({
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).credentialExtraParamOverridesEnabled).toBe(false);
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).credentialExtraParamOverrides).toEqual({
         audience: { source: 'static', value: 'api://custom' },
       });
       expect(screen.queryByText((_, el) => el?.tagName === 'LABEL' && el.textContent === 'audience')).not.toBeInTheDocument();
@@ -706,13 +717,13 @@ describe('NodeConfig', () => {
       const modeSwitch = screen.getByRole('checkbox');
       fireEvent.click(modeSwitch);
 
-      const rawBody = () => useWorkflowStore.getState().nodes[0].rawBody;
+      const rawBody = () => asOperationNode(useWorkflowStore.getState().nodes[0]).rawBody;
       await waitFor(() => expect(rawBody()).toBeTruthy());
       expect(JSON.parse(rawBody()!.template).name).toBe('fido');
-      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('raw');
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).requestMode).toBe('raw');
 
       fireEvent.click(modeSwitch);
-      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('form');
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).requestMode).toBe('form');
       expect(useWorkflowStore.getState().nodes[0].fieldValues['body.name']).toEqual({ source: 'static', value: 'fido' });
     });
 
@@ -742,18 +753,18 @@ describe('NodeConfig', () => {
 
       // Form -> Raw: seeded with "fido".
       fireEvent.click(modeSwitch);
-      const rawBody = () => useWorkflowStore.getState().nodes[0].rawBody;
+      const rawBody = () => asOperationNode(useWorkflowStore.getState().nodes[0]).rawBody;
       await waitFor(() => expect(rawBody()).toBeTruthy());
       expect(JSON.parse(rawBody()!.template).name).toBe('fido');
 
       // Emptied out directly in Raw mode (as if the user cleared the JSON by hand).
       useWorkflowStore.setState((state) => ({
-        nodes: state.nodes.map((n) => (n.id === 'node-1' ? { ...n, rawBody: { template: '{}', tags: {} } } : n)),
+        nodes: state.nodes.map((n) => (n.id === 'node-1' && n.kind !== 'presets' ? { ...n, rawBody: { template: '{}', tags: {} } } : n)),
       }));
 
       // Raw -> Form: not lossy (an empty object round-trips through one static-undefined field), so no confirm needed.
       fireEvent.click(modeSwitch);
-      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('form');
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).requestMode).toBe('form');
 
       // Edit the now-empty field in Form mode.
       fireEvent.change(fieldRow('body.name').getByRole('textbox'), { target: { value: 'rex' } });
@@ -770,21 +781,23 @@ describe('NodeConfig', () => {
 
       const modeSwitch = screen.getByRole('checkbox');
       fireEvent.click(modeSwitch);
-      await waitFor(() => expect(useWorkflowStore.getState().nodes[0].rawBody).toBeTruthy());
+      await waitFor(() => expect(asOperationNode(useWorkflowStore.getState().nodes[0]).rawBody).toBeTruthy());
 
       // Inject an extra top-level key the flat form has no field for.
       useWorkflowStore.setState((state) => ({
         nodes: state.nodes.map((n) =>
-          n.id === 'node-1' ? { ...n, rawBody: { ...n.rawBody!, template: n.rawBody!.template.replace('{', '{"surprise":1,') } } : n
+          n.id === 'node-1' && n.kind !== 'presets'
+            ? { ...n, rawBody: { ...n.rawBody!, template: n.rawBody!.template.replace('{', '{"surprise":1,') } }
+            : n
         ),
       }));
 
       fireEvent.click(modeSwitch);
       expect(screen.getByText(/Switching to Form view may lose custom JSON structure/)).toBeInTheDocument();
-      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('raw'); // not switched yet
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).requestMode).toBe('raw'); // not switched yet
 
       fireEvent.click(screen.getByText('Switch anyway'));
-      expect(useWorkflowStore.getState().nodes[0].requestMode).toBe('form');
+      expect(asOperationNode(useWorkflowStore.getState().nodes[0]).requestMode).toBe('form');
     });
   });
 

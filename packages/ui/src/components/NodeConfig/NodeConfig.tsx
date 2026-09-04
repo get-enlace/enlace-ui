@@ -11,6 +11,11 @@ import { LockIcon, TrashIcon, UploadIcon } from '../chromeIcons.js';
 import type { SchemaField } from '../../utils/flattenSchema.js';
 import type { AssertCheck, AssertOperator, BodyTagType, FieldValue, Operation, WorkflowNode } from '../../types.js';
 
+/** An ancestor node picked as a "map from…" source may be either kind — a presets collection has no `operationId` at all. `undefined` in that case, same as a plain missing operationId. */
+function operationIdOf(node: WorkflowNode | undefined): string | undefined {
+  return node && node.kind !== 'presets' ? node.operationId : undefined;
+}
+
 const SOURCE_TYPE_LABELS: Record<BodyTagType, string> = {
   response_status: 'Status',
   response_body: 'Body field',
@@ -56,7 +61,7 @@ function AssertCheckRow({
   onRemove: () => void;
 }) {
   const sourceNode = ancestorNodes.find((n) => n.id === check.source.sourceNodeId);
-  const sourceOperation = sourceNode ? operations.find((o) => o.id === sourceNode.operationId) : undefined;
+  const sourceOperation = operations.find((o) => o.id === operationIdOf(sourceNode));
   const responseFields = sourceOperation ? flattenResponseFields(sourceOperation) : [];
   const needsExpected = check.operator !== 'exists' && check.operator !== 'notExists';
 
@@ -185,7 +190,7 @@ export function NodeConfig() {
   } = useWorkflowStore();
 
   const node = nodes.find((n) => n.id === selectedNodeId);
-  const operation = operations.find((o) => o.id === node?.operationId);
+  const operation = operations.find((o) => o.id === operationIdOf(node));
   const operationsById = useMemo(() => new Map(operations.map((o) => [o.id, o])), [operations]);
   const fields = useMemo(() => (operation ? flattenRequestFields(operation) : []), [operation]);
   const pathFields = useMemo(() => fields.filter((f) => f.path.startsWith('path.')), [fields]);
@@ -242,7 +247,7 @@ export function NodeConfig() {
   // `selectPreset`, which is what `selectedPresetId` reflects. Reorder,
   // add (drag from the palette), and remove-the-whole-preset stay on the
   // card itself — only per-preset *configuration* moved.
-  if (node?.kind === 'presets') {
+  if (node && node.kind === 'presets') {
     const preset = node.presets?.find((p) => p.id === selectedPresetId);
     if (!preset) {
       return (
@@ -323,6 +328,12 @@ export function NodeConfig() {
       </aside>
     );
   }
+  // Narrowed to OperationNode by the presets-kind branch's own early return
+  // above — captured in its own const (rather than relying on nested
+  // closures below to keep re-deriving the narrowing from `node`, which TS
+  // doesn't carry through a function declaration's body) so the rest of
+  // this component can read operation-only fields directly.
+  const opNode = node;
 
   const isMultipart = operation.requestBodyContentType === 'multipart/form-data';
   // Multipart bodies can't be represented as Raw JSON (a File isn't text), so
@@ -365,8 +376,8 @@ export function NodeConfig() {
     const merged: Record<string, FieldValue> = {};
     let lossy = false;
 
-    if (node.rawPath && pathFields.length > 0) {
-      const result = convertRawParamsToFieldValues('path', node.rawPath, operation);
+    if (opNode.rawPath && pathFields.length > 0) {
+      const result = convertRawParamsToFieldValues('path', opNode.rawPath, operation);
       if (result.parseError) {
         setSwitchError(`Can't switch to Form view — path Raw JSON isn't valid: ${result.parseError}`);
         return;
@@ -374,8 +385,8 @@ export function NodeConfig() {
       Object.assign(merged, result.fieldValues);
       lossy = lossy || result.lossy;
     }
-    if (node.rawQuery && queryFields.length > 0) {
-      const result = convertRawParamsToFieldValues('query', node.rawQuery, operation);
+    if (opNode.rawQuery && queryFields.length > 0) {
+      const result = convertRawParamsToFieldValues('query', opNode.rawQuery, operation);
       if (result.parseError) {
         setSwitchError(`Can't switch to Form view — query Raw JSON isn't valid: ${result.parseError}`);
         return;
@@ -383,8 +394,8 @@ export function NodeConfig() {
       Object.assign(merged, result.fieldValues);
       lossy = lossy || result.lossy;
     }
-    if (node.rawBody && operation.requestBodySchema) {
-      const result = convertRawBodyToFieldValues(node.rawBody, operation);
+    if (opNode.rawBody && operation.requestBodySchema) {
+      const result = convertRawBodyToFieldValues(opNode.rawBody, operation);
       if (result.parseError) {
         setSwitchError(`Can't switch to Form view — body Raw JSON isn't valid: ${result.parseError}`);
         return;
@@ -417,7 +428,7 @@ export function NodeConfig() {
     // Nested/array fields are still shown, just disabled — a missing
     // field looks like a bug, a disabled one with a reason doesn't.
     const sourceNode = isMapped ? ancestorNodes.find((n) => n.id === fieldValue.fromNodeId) : undefined;
-    const sourceOperation = sourceNode ? operations.find((o) => o.id === sourceNode.operationId) : undefined;
+    const sourceOperation = operations.find((o) => o.id === operationIdOf(sourceNode));
     const responseFields = sourceOperation ? flattenResponseFields(sourceOperation) : [];
 
     if (isFileField) {
@@ -626,11 +637,11 @@ export function NodeConfig() {
    * editing the shared credential).
    */
   function renderCredentialParamOverride(key: string) {
-    const override = node!.credentialExtraParamOverrides?.[key];
+    const override = opNode.credentialExtraParamOverrides?.[key];
     const mode = override?.source ?? 'default';
     const isMapped = override?.source === 'mapped';
     const sourceNode = isMapped ? ancestorNodes.find((n) => n.id === override.fromNodeId) : undefined;
-    const sourceOperation = sourceNode ? operations.find((o) => o.id === sourceNode.operationId) : undefined;
+    const sourceOperation = operations.find((o) => o.id === operationIdOf(sourceNode));
     const responseFields = sourceOperation ? flattenResponseFields(sourceOperation) : [];
 
     return (

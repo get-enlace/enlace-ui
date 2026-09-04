@@ -4,10 +4,20 @@ import userEvent from '@testing-library/user-event';
 import { ReactFlowProvider, Position, type NodeProps } from 'reactflow';
 import { PresetsNodeCard, type PresetsNodeData } from './PresetsNodeCard.js';
 import { useWorkflowStore } from '../../store/workflowStore.js';
-import type { WorkflowNode } from '../../types.js';
+import type { PresetsNode, WorkflowNode } from '../../types.js';
 
-function makePresetsNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
+function makePresetsNode(overrides: Partial<PresetsNode> = {}): PresetsNode {
   return { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [], ...overrides };
+}
+
+function asPresetsNode(node: WorkflowNode): PresetsNode {
+  if (node.kind !== 'presets') throw new Error('expected a presets collection, got an operation node');
+  return node;
+}
+
+/** Re-reads node `id`'s current `presets` list straight from the store — used after an interaction to see what actually landed, not the props the card was first rendered with. */
+function presetsOf(id = 'g1'): PresetsNode['presets'] {
+  return asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === id)!).presets;
 }
 
 function cardProps(data: PresetsNodeData): NodeProps<PresetsNodeData> {
@@ -129,8 +139,8 @@ describe('PresetsNodeCard', () => {
     const card = container.querySelector('.presets-node--expanded')!;
     fireEvent.drop(card, { dataTransfer: presetDataTransfer('wait') });
 
-    expect(useWorkflowStore.getState().nodes[0].presets).toHaveLength(1);
-    expect(useWorkflowStore.getState().nodes[0].presets![0]).toMatchObject({ kind: 'wait' });
+    expect(presetsOf()).toHaveLength(1);
+    expect(presetsOf()![0]).toMatchObject({ kind: 'wait' });
   });
 
   it('dropping a Wait preset onto the collapsed card also appends it', () => {
@@ -141,7 +151,7 @@ describe('PresetsNodeCard', () => {
     const card = container.querySelector('.presets-node--collapsed')!;
     fireEvent.drop(card, { dataTransfer: presetDataTransfer('wait') });
 
-    expect(useWorkflowStore.getState().nodes[0].presets).toHaveLength(1);
+    expect(presetsOf()).toHaveLength(1);
   });
 
   it('ignores a drop that is not a known preset kind (e.g. an operation drag)', () => {
@@ -152,7 +162,7 @@ describe('PresetsNodeCard', () => {
     const card = container.querySelector('.presets-node--expanded')!;
     fireEvent.drop(card, { dataTransfer: { getData: () => '', types: [] } });
 
-    expect(useWorkflowStore.getState().nodes[0].presets).toEqual([]);
+    expect(presetsOf()).toEqual([]);
   });
 
   it('renders each preset as a uniform summary row — icon + formatPresetLabel, same shape for every kind', () => {
@@ -235,7 +245,7 @@ describe('PresetsNodeCard', () => {
     renderCard({ node: presetsNode, collapsed: false, selected: false });
 
     await user.click(screen.getByRole('button', { name: 'Remove preset 1' }));
-    expect(useWorkflowStore.getState().nodes[0].presets).toEqual([]);
+    expect(presetsOf()).toEqual([]);
   });
 
   it('reorders presets with the up/down buttons, disabling at each end', async () => {
@@ -253,7 +263,7 @@ describe('PresetsNodeCard', () => {
     expect(screen.getByRole('button', { name: 'Move preset 2 down' })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Move preset 2 up' }));
-    expect(useWorkflowStore.getState().nodes[0].presets!.map((p) => p.id)).toEqual(['s2', 's1']);
+    expect(presetsOf()!.map((p) => p.id)).toEqual(['s2', 's1']);
   });
 
   it('removes the whole collection via the remove button', async () => {
@@ -273,7 +283,7 @@ describe('PresetsNodeCard', () => {
 
     const card = container.querySelector('.presets-node--expanded')!;
     fireEvent.drop(card, { dataTransfer: presetDataTransfer('wait') });
-    expect(useWorkflowStore.getState().nodes[0].presets).toHaveLength(1); // unchanged — drop is a no-op while locked
+    expect(presetsOf()).toHaveLength(1); // unchanged — drop is a no-op while locked
 
     expect(screen.getByRole('button', { name: 'Wait 1s' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Remove this collection' })).toBeDisabled();
@@ -288,7 +298,7 @@ describe('PresetsNodeCard', () => {
       const card = container.querySelector('.presets-node--expanded')!;
       fireEvent.drop(card, { dataTransfer: presetDataTransfer('assert') });
 
-      const presets = useWorkflowStore.getState().nodes[0].presets!;
+      const presets = presetsOf()!;
       expect(presets).toHaveLength(1);
       expect(presets[0]).toMatchObject({ kind: 'assert', checks: [] });
     });

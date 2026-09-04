@@ -240,13 +240,14 @@ export function ResultsList() {
                 ? 'failed'
                 : 'completed'
               : status;
+          const operationId = node.kind === 'presets' ? undefined : node.operationId;
           return (
             <ResultsRow
               key={node.id}
               nodeId={node.id}
               isPresets={node.kind === 'presets'}
-              operation={node.operationId ? operationsById.get(node.operationId) : undefined}
-              label={nodeLabels.get(node.id) ?? node.operationId ?? node.id}
+              operation={operationId ? operationsById.get(operationId) : undefined}
+              label={nodeLabels.get(node.id) ?? operationId ?? node.id}
               status={resolvedStatus}
               step={stepsByNodeId.get(node.id)}
               previewRequest={previewRequestByNodeId[node.id]}

@@ -146,7 +146,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       const newPreset: Preset = { ...preset, id: randomId() };
       return {
         nodes: state.nodes.map((n) =>
-          n.id === presetsNodeId ? { ...n, presets: [...(n.presets ?? []), newPreset] } : n
+          n.id === presetsNodeId && n.kind === 'presets' ? { ...n, presets: [...(n.presets ?? []), newPreset] } : n
         ),
         // Dragging a preset onto the card is the only way to add one now
         // (see PresetsNodeCard.tsx's own comment) — open its config right
@@ -161,7 +161,9 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       if (isLocked(state)) return state;
       return {
         nodes: state.nodes.map((n) =>
-          n.id === presetsNodeId ? { ...n, presets: (n.presets ?? []).filter((p) => p.id !== presetId) } : n
+          n.id === presetsNodeId && n.kind === 'presets'
+            ? { ...n, presets: (n.presets ?? []).filter((p) => p.id !== presetId) }
+            : n
         ),
         // Same dangling-selection reasoning as removeNode's selectedNodeId
         // clear — a removed preset can't stay "open" in NodeConfig.
@@ -173,13 +175,15 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
     set((state) => {
       if (isLocked(state)) return state;
       const presetsNode = state.nodes.find((n) => n.id === presetsNodeId);
-      if (!presetsNode?.presets) return state;
+      if (!presetsNode || presetsNode.kind !== 'presets' || !presetsNode.presets) return state;
       const index = presetsNode.presets.findIndex((p) => p.id === presetId);
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
       if (index < 0 || targetIndex < 0 || targetIndex >= presetsNode.presets.length) return state;
       const presets = [...presetsNode.presets];
       [presets[index], presets[targetIndex]] = [presets[targetIndex], presets[index]];
-      return { nodes: state.nodes.map((n) => (n.id === presetsNodeId ? { ...n, presets } : n)) };
+      return {
+        nodes: state.nodes.map((n) => (n.id === presetsNodeId && n.kind === 'presets' ? { ...n, presets } : n)),
+      };
     }),
 
   // Each of the four mutators below narrows to its own preset kind before
@@ -193,7 +197,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       if (isLocked(state)) return state;
       return {
         nodes: state.nodes.map((n) =>
-          n.id === presetsNodeId
+          n.id === presetsNodeId && n.kind === 'presets'
             ? {
                 ...n,
                 presets: (n.presets ?? []).map((p) =>
@@ -216,7 +220,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       };
       return {
         nodes: state.nodes.map((n) =>
-          n.id === presetsNodeId
+          n.id === presetsNodeId && n.kind === 'presets'
             ? {
                 ...n,
                 presets: (n.presets ?? []).map((p) =>
@@ -233,7 +237,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       if (isLocked(state)) return state;
       return {
         nodes: state.nodes.map((n) =>
-          n.id === presetsNodeId
+          n.id === presetsNodeId && n.kind === 'presets'
             ? {
                 ...n,
                 presets: (n.presets ?? []).map((p) =>
@@ -252,7 +256,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       if (isLocked(state)) return state;
       return {
         nodes: state.nodes.map((n) =>
-          n.id === presetsNodeId
+          n.id === presetsNodeId && n.kind === 'presets'
             ? {
                 ...n,
                 presets: (n.presets ?? []).map((p) =>
@@ -311,6 +315,10 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
               fieldValues[path] = { source: 'static', value: '' };
               changed = true;
             }
+          }
+
+          if (n.kind === 'presets') {
+            return changed ? { ...n, fieldValues } : n;
           }
 
           // Same dangling-reference cleanup as fieldValues above, but a
@@ -400,7 +408,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       if (isLocked(state)) return state;
       return {
         nodes: state.nodes.map((n) => {
-          if (n.id !== nodeId) return n;
+          if (n.id !== nodeId || n.kind === 'presets') return n;
           const credentialExtraParamOverrides = { ...n.credentialExtraParamOverrides };
           if (value) credentialExtraParamOverrides[key] = value;
           else delete credentialExtraParamOverrides[key];
@@ -417,7 +425,7 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
       if (isLocked(state)) return state;
       return {
         nodes: state.nodes.map((n) =>
-          n.id === nodeId ? { ...n, credentialExtraParamOverridesEnabled: enabled } : n
+          n.id === nodeId && n.kind !== 'presets' ? { ...n, credentialExtraParamOverridesEnabled: enabled } : n
         ),
       };
     }),
@@ -445,25 +453,33 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
   setRequestMode: (nodeId, mode) =>
     set((state) => {
       if (isLocked(state)) return state;
-      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, requestMode: mode } : n)) };
+      return {
+        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, requestMode: mode } : n)),
+      };
     }),
 
   setRawPath: (nodeId, rawPath) =>
     set((state) => {
       if (isLocked(state)) return state;
-      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, rawPath } : n)) };
+      return {
+        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, rawPath } : n)),
+      };
     }),
 
   setRawQuery: (nodeId, rawQuery) =>
     set((state) => {
       if (isLocked(state)) return state;
-      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, rawQuery } : n)) };
+      return {
+        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, rawQuery } : n)),
+      };
     }),
 
   setRawBody: (nodeId, rawBody) =>
     set((state) => {
       if (isLocked(state)) return state;
-      return { nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, rawBody } : n)) };
+      return {
+        nodes: state.nodes.map((n) => (n.id === nodeId && n.kind !== 'presets' ? { ...n, rawBody } : n)),
+      };
     }),
 
   connectNodes: (fromNodeId, toNodeId) =>
