@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractDeclaredCredentials } from './securitySchemes.js';
+import { extractDeclaredCredentials, securitySchemeCredentialType } from './securitySchemes.js';
 
 function specWithSchemes(securitySchemes: Record<string, any>) {
   return { openapi: '3.0.3', paths: {}, components: { securitySchemes } };
@@ -155,5 +155,26 @@ describe('extractDeclaredCredentials', () => {
     });
     const declared = extractDeclaredCredentials(spec);
     expect(declared.map((s) => s.schemeName).sort()).toEqual(['apiKeyAuth', 'bearerAuth']);
+  });
+});
+
+describe('securitySchemeCredentialType', () => {
+  it('maps every supported scheme shape to its CredentialType', () => {
+    expect(securitySchemeCredentialType({ type: 'http', scheme: 'bearer' })).toBe('bearer');
+    expect(securitySchemeCredentialType({ type: 'http', scheme: 'basic' })).toBe('basic');
+    expect(securitySchemeCredentialType({ type: 'apiKey', in: 'header', name: 'X-API-Key' })).toBe('apiKey');
+    expect(securitySchemeCredentialType({ type: 'apiKey', in: 'query', name: 'api_key' })).toBe('apiKey');
+    expect(securitySchemeCredentialType({ type: 'apiKey', in: 'cookie', name: 'session' })).toBe('cookie');
+    expect(securitySchemeCredentialType({ type: 'oauth2', flows: { clientCredentials: {} } })).toBe(
+      'oauth2_clientCredentials'
+    );
+    expect(securitySchemeCredentialType({ type: 'oauth2', flows: { password: {} } })).toBe('oauth2_password');
+  });
+
+  it('returns null for a scheme this phase does not resolve to a CredentialType', () => {
+    expect(securitySchemeCredentialType({ type: 'openIdConnect', openIdConnectUrl: 'https://x' })).toBeNull();
+    expect(securitySchemeCredentialType({ type: 'oauth2', flows: { authorizationCode: {} } })).toBeNull();
+    expect(securitySchemeCredentialType(undefined)).toBeNull();
+    expect(securitySchemeCredentialType(null)).toBeNull();
   });
 });

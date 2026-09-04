@@ -1,4 +1,4 @@
-import type { NewCredential } from '../types.js';
+import type { CredentialType, NewCredential } from '../types.js';
 
 /**
  * One `components.securitySchemes` entry, turned into a ready-to-use
@@ -36,6 +36,36 @@ export function extractDeclaredCredentials(spec: Record<string, any>): DeclaredC
   }
 
   return declared;
+}
+
+/**
+ * Which `CredentialType` a `components.securitySchemes` entry maps to, with
+ * no template-building — just the type, for callers (specParser.ts's
+ * Operation.requiredCredentialTypes, in turn AI-suggest's context) that
+ * only need to know *what kind* of credential an operation's declared
+ * security requirement calls for, not a ready-to-fill draft. Kept as its
+ * own small function rather than deriving from `toCredentialTemplate`'s
+ * result so this stays cheap to call once per (operation, scheme) pair
+ * during parsing — same unsupported-scheme-returns-null contract as
+ * `toCredentialTemplate` (openIdConnect, mutualTLS, oauth2
+ * authorizationCode/implicit all resolve to `null`).
+ */
+export function securitySchemeCredentialType(scheme: any): CredentialType | null {
+  if (!scheme || typeof scheme !== 'object') return null;
+
+  if (scheme.type === 'http' && scheme.scheme === 'bearer') return 'bearer';
+  if (scheme.type === 'http' && scheme.scheme === 'basic') return 'basic';
+  if (scheme.type === 'apiKey' && (scheme.in === 'header' || scheme.in === 'query')) return 'apiKey';
+  if (scheme.type === 'apiKey' && scheme.in === 'cookie') return 'cookie';
+
+  if (scheme.type === 'oauth2') {
+    const flows = scheme.flows ?? {};
+    if (flows.clientCredentials) return 'oauth2_clientCredentials';
+    if (flows.password) return 'oauth2_password';
+    return null; // authorizationCode/implicit — not supported yet
+  }
+
+  return null; // openIdConnect, mutualTLS — not supported
 }
 
 function toCredentialTemplate(schemeName: string, scheme: any): NewCredential | null {

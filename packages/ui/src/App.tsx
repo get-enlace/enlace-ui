@@ -16,6 +16,7 @@ export default function App() {
   const {
     operations,
     loadOperations,
+    loadAiCapabilities,
     run,
     isRunning,
     nodes,
@@ -35,7 +36,12 @@ export default function App() {
 
   useEffect(() => {
     loadOperations();
-  }, [loadOperations]);
+    // AI assist is optional and separate from spec loading — its own
+    // effect so a slow/failed capabilities check never blocks or delays
+    // operations loading, and vice versa. loadAiCapabilities() never
+    // throws (see api/aiClient.ts's fetchAiCapabilities).
+    loadAiCapabilities();
+  }, [loadOperations, loadAiCapabilities]);
 
   // One global set of controls for the whole run, not one per paused node
   // (Results pane pause bar also offers Continue/Step for the focused node).

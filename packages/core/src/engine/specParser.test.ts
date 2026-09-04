@@ -231,4 +231,63 @@ describe('parseOperations', () => {
     expect(createNode.requestBodySchema?.properties.value).toEqual({ type: 'string' });
     expect(createNode.requestBodySchema?.properties.parent).toEqual({});
   });
+
+  it('resolves requiredCredentialTypes from the sample spec, one type per security scheme actually declared', () => {
+    const spec = loadFixtureSpec();
+    const operations = parseOperations(spec);
+    const typesOf = (id: string) => operations.find((o) => o.id === id)!.requiredCredentialTypes;
+
+    // The sample spec deliberately exercises every supported scheme shape
+    // across its resources — see examples/sample-api/openapi.json.
+    expect(typesOf('POST /customers')).toEqual(['basic']);
+    expect(typesOf('PATCH /customers/{id}')).toEqual(['bearer']);
+    expect(typesOf('POST /products')).toEqual(['oauth2_password']);
+    expect(typesOf('POST /orders')).toEqual(['apiKey']);
+    expect(typesOf('PATCH /orders/{id}')).toEqual(['cookie']);
+    expect(typesOf('DELETE /orders/{id}')).toEqual(['oauth2_clientCredentials']);
+    // No `security` declared at all (neither operation- nor spec-level) — undefined, not an empty array.
+    expect(typesOf('GET /customers/{id}')).toBeUndefined();
+  });
+
+  it('falls back to the spec-level global security when an operation declares none of its own', () => {
+    const spec = {
+      security: [{ bearerAuth: [] }],
+      paths: { '/thing': { get: { responses: {} } } },
+      components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
+    };
+    const [op] = parseOperations(spec);
+    expect(op.requiredCredentialTypes).toEqual(['bearer']);
+  });
+
+  it('lets an operation-level security override the spec-level one, even to an empty list', () => {
+    const spec = {
+      security: [{ bearerAuth: [] }],
+      paths: { '/thing': { get: { security: [], responses: {} } } },
+      components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
+    };
+    const [op] = parseOperations(spec);
+    expect(op.requiredCredentialTypes).toBeUndefined();
+  });
+
+  it('dedupes and skips schemes that resolve to no CredentialType, across multiple requirement entries', () => {
+    const spec = {
+      paths: {
+        '/thing': {
+          get: {
+            security: [{ bearerAuth: [] }, { bearerAuthAgain: [] }, { oidc: [] }],
+            responses: {},
+          },
+        },
+      },
+      components: {
+        securitySchemes: {
+          bearerAuth: { type: 'http', scheme: 'bearer' },
+          bearerAuthAgain: { type: 'http', scheme: 'bearer' },
+          oidc: { type: 'openIdConnect', openIdConnectUrl: 'https://x' },
+        },
+      },
+    };
+    const [op] = parseOperations(spec);
+    expect(op.requiredCredentialTypes).toEqual(['bearer']);
+  });
 });

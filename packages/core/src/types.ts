@@ -24,6 +24,21 @@ export interface Operation {
   requestBodySchema: Record<string, any> | null;
   requestBodyContentType: 'application/json' | 'multipart/form-data' | null;
   responseSchema: Record<string, any> | null;
+  /**
+   * Credential type(s) that satisfy this operation's declared OpenAPI
+   * `security` requirement (falling back to the spec's top-level `security`
+   * when the operation doesn't declare its own — standard OpenAPI
+   * inheritance), resolved via engine/securitySchemes.ts's
+   * `securitySchemeCredentialType`. Omitted when the spec declares no
+   * security requirement for this operation, or only schemes this phase
+   * doesn't resolve to a `CredentialType` (openIdConnect, mutualTLS,
+   * oauth2 authorizationCode/implicit) — never a guess, only what the spec
+   * actually states. Purely informational today: shown to the AI-suggest
+   * feature (packages/ui/src/utils/aiFieldContext.ts) as a hint for which
+   * credential to recommend; the execution engine still sends whatever
+   * credential is actually attached to a node, regardless of this list.
+   */
+  requiredCredentialTypes?: CredentialType[];
 }
 
 export type FieldValue =

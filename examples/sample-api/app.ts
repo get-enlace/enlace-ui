@@ -51,7 +51,45 @@ export function createApp() {
   // UI mount that demonstrates the two can ride along side by side lives
   // in server.ts, not here, since e2e tests don't need it and it'd be an
   // unused devDependency in this module.
-  app.use('/enlace', enlace({ spec }));
+  //
+  // AI assist is opt-in and off by default. Read here (not inside enlace.ts
+  // itself), mirroring ENLACE_EXAMPLE_NO_AUTH's pattern in auth.ts:
+  // env-var wiring is this harness's own concern, not the adapter's.
+  //
+  //   ENLACE_EXAMPLE_AI_PROVIDER  'anthropic' (default) or 'ollama'
+  //   ENLACE_EXAMPLE_AI_API_KEY   required for anthropic; optional for
+  //                               ollama (only needed against a remote/
+  //                               cloud-key-gated endpoint, not a local
+  //                               signed-in daemon) — see EnlaceAiOptions.
+  //   ENLACE_EXAMPLE_AI_MODEL     defaults to a current Sonnet-tier Claude
+  //                               model for anthropic, or a gpt-oss cloud
+  //                               model for ollama — not the cheapest tier
+  //                               either way.
+  //   ENLACE_EXAMPLE_AI_BASE_URL  ollama only — overrides the default local
+  //                               http://localhost:11434.
+  //
+  // anthropic is only enabled when its required API key is present;
+  // ollama's local/cloud-proxied mode needs no key at all, so it's enabled
+  // by provider selection alone.
+  const aiProvider = process.env.ENLACE_EXAMPLE_AI_PROVIDER === 'ollama' ? 'ollama' : 'anthropic';
+  const aiApiKey = process.env.ENLACE_EXAMPLE_AI_API_KEY;
+  const aiEnabled = aiProvider === 'ollama' || Boolean(aiApiKey);
+  app.use(
+    '/enlace',
+    enlace({
+      spec,
+      ai: aiEnabled
+        ? {
+            enabled: true,
+            provider: aiProvider,
+            apiKey: aiApiKey,
+            baseUrl: process.env.ENLACE_EXAMPLE_AI_BASE_URL,
+            model:
+              process.env.ENLACE_EXAMPLE_AI_MODEL ?? (aiProvider === 'ollama' ? 'gpt-oss:20b-cloud' : 'claude-sonnet-5'),
+          }
+        : undefined,
+    })
+  );
 
   return app;
 }

@@ -1,7 +1,8 @@
 // Relative — resolves under whatever path this bundle is served from,
 // whether that's the Vite dev server (proxied, see vite.config.ts) or the
-// adapter's mount path in a real host app.
-const API_BASE = 'api';
+// adapter's mount path in a real host app. Exported for reuse by
+// api/aiClient.ts, which needs the same base for its own `api/ai/*` calls.
+export const API_BASE = 'api';
 
 /**
  * The raw OpenAPI document, unparsed — the adapter just passes it through

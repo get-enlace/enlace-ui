@@ -263,8 +263,103 @@ Built with React, React Flow, and Zustand.
 - No Docker, no separate service, no required database — runs in the same process as the existing API, travels with it through its normal deployment pipeline.
 - Access control is whatever already protects that environment; the tool adds none of its own.
 
-## 9. Open Technical Decisions
+## 9. AI Assist (Experimental)
+
+An **opt-in, non-execution channel**, separate from everything in §2/§5 — it
+never touches the target API, and is off by default. Only one AI feature is
+built today: an AI-suggest affordance on the Node Inspector (§6) that
+proposes a value for every suggestable field on a node (path/query/body,
+never header, never a field the schema can't represent) *and* recommends
+which already-configured credential (if any) the node should use, given
+those fields' schemas, the node's ancestor nodes' response schemas, the
+operation's declared security requirement (`Operation.requiredCredentialTypes`,
+resolved from the spec's `security` by `engine/securitySchemes.ts`'s
+`securitySchemeCredentialType`), and the workflow's own credential list
+(id/name/type only). This is deliberately **one LLM call for the whole
+node — every field plus the credential — not one call per field**: the
+model sees and answers for everything in a single round trip, which is
+both cheaper and lets it reason about the pieces together (e.g. not
+suggesting the same upstream value for two fields that should differ, or a
+credential whose type doesn't match what the field values imply). The
+trigger is a single sparkle icon in the node header, right after the
+method+path (`🔒 POST /path ✨`) — not a separate button per field, and not
+one buried in the Request section. Results land in the same per-field
+accept/dismiss panels as before, plus a node-wide "Accept all" / "Dismiss
+all" banner that applies (or discards) every current suggestion — including
+the credential — in one action. A chat-driven whole-workflow builder is a
+stated future direction, expected to reuse the same plumbing below with a
+different context bundle — not built yet.
+
+**The adapter stays a dumb, symmetric, authenticated proxy — it never gains
+any Enlace-specific knowledge.** Two new routes, both under the same
+`enlace()` mount as `api/spec` (see `examples/sample-api/enlace.ts`):
+
+```
+GET  api/ai/capabilities  -> { enabled: false } | { enabled: true, provider, model }
+POST api/ai/complete      -> { messages: [{role, content}], model?, temperature?, maxTokens? }
+                           <- { content: string }  (or 404 disabled / 400 malformed / 502 provider failure)
+```
+
+`POST api/ai/complete` does nothing but inject a server-side BYOK key
+(`EnlaceAiOptions.apiKey`, never echoed back) and forward the given messages
+to the configured provider (`examples/sample-api/aiProviders.ts`) — it never
+knows what an Operation, a WorkflowNode, or a field schema is. Every
+Enlace-specific step — building the context bundle, writing the system
+prompt, parsing the reply back into a `FieldValue` — happens **in the
+browser**: `packages/core/src/ai/` (provider-agnostic prompt build/parse,
+reusing `bodyTags.ts`'s `{{enlace:<tagId>}}` syntax for referencing an
+ancestor's response field) and `packages/ui/src/utils/aiFieldContext.ts`
+(the UI-owned bridge from the real data model into that portable bundle).
+This keeps the two-relationship rule in §2 intact: "the adapter never
+proxies execution calls" is scoped to calls against the target API the spec
+describes — a call to a third-party LLM provider is a different
+relationship entirely, and was never what that rule meant to forbid.
+
+**Explicit opt-in, enforced on both ends.** The adapter has no AI config by
+default; `examples/sample-api/app.ts` only sets one when the configured
+provider is actually usable (`ENLACE_EXAMPLE_AI_PROVIDER` picks `anthropic`,
+the default, or `ollama`), mirroring `ENLACE_EXAMPLE_NO_AUTH`'s existing
+env-var pattern in `auth.ts`. An operator who hasn't configured it gets a
+`POST api/ai/complete` that 404s — the route genuinely doesn't exist, not
+just a disabled one — and `GET api/ai/capabilities` always answers
+`{enabled:false}` with no provider/model leaked. The UI
+(`store/slices/aiSlice.ts`'s `loadAiCapabilities`) checks this once on
+mount and gates every AI-related render on `aiCapabilities?.enabled ===
+true`; both "not checked yet" and "disabled" render nothing at all, never a
+disabled-looking affordance.
+
+**Two providers today** (`examples/sample-api/aiProviders.ts`, keyed on
+`EnlaceAiOptions.provider`): `anthropic` (the Messages API, requires a BYOK
+`apiKey`) and `ollama` (a local daemon's `/api/chat`, cloud-proxied for
+`-cloud`-suffixed models like `gpt-oss:20b-cloud` via whatever `ollama
+signin` session already exists on the machine running the adapter — no
+`apiKey` required in that mode, unlike Anthropic). Ollama exists mainly so
+this feature can be exercised without spending real Anthropic credits
+during development; either provider is a straightforward `switch` branch to
+add to, not a structural choice.
+
+**What never leaves the browser.** The context bundle sent for a
+suggestion is spec-declared shapes and credential *identity* only — every
+target field's schema, ancestor operations'/fields' schemas (via
+`flattenResponseFields`), and the workflow's credentials reduced to
+`{id, name, type}` (`AiCredentialOption`) — never a credential's secret
+value (token, password, key, clientSecret, …), and never an actual
+captured `RunResult` response value, only its declared shape. The model
+may only ever recommend a credential by echoing back one of the ids it was
+shown; it never sees enough of a credential to fabricate one. That's a
+deliberate, safety-leaning trade against suggestion quality on the
+response-value side, revisitable later behind its own explicit opt-in if
+it turns out to matter.
+
+**Known gap, deliberately unaddressed for now**: `POST api/ai/complete` has
+no rate limiting or per-caller cost controls — every call spends the
+configured operator's own LLM budget. Acceptable for a local prototype
+harness; a real deployment would need this addressed before enabling it
+for anyone but the operator themselves.
+
+## 10. Open Technical Decisions
 
 - Confidence-scoring approach for auto-suggested field mapping, once built (how to rank multiple candidate fields sharing type/name) — not yet decided.
 - Strategy for handling a workflow that references a spec which has since changed shape (fail loudly vs. attempt best-effort remap) — not yet decided.
 - Keeping multiple adapters' behavior identical, once more than one exists, will need a shared conformance test suite — not built yet.
+- AI Assist (§9): rate limiting / cost controls on `api/ai/complete`, a chat-driven whole-workflow builder reusing the same plumbing, and whether real (non-prototype) adapters (`enlace-js`/`enlace-dotnet`/`enlace-java`/`enlace-python`) should gain the same two routes — none decided yet.

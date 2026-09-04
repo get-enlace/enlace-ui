@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useWorkflowStore } from '../../store/workflowStore.js';
+import { aiSuggestionKey, useWorkflowStore } from '../../store/workflowStore.js';
 import { coerceStaticValue } from '../../utils/coerceValue.js';
 import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from '../../utils/flattenSchema.js';
 import { buildNodeLabels, computeAncestors, formatPresetLabel } from '@get-enlace/core';
@@ -7,7 +7,7 @@ import { hasUnrepresentableShape } from '../../utils/schemaExample.js';
 import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from '../../utils/bodyTemplate.js';
 import { RawBodyEditor } from './RawBodyEditor.js';
 import { Modal } from '../Modal.js';
-import { LockIcon, TrashIcon, UploadIcon } from '../chromeIcons.js';
+import { LockIcon, SparkleIcon, TrashIcon, UploadIcon } from '../chromeIcons.js';
 import type { SchemaField } from '../../utils/flattenSchema.js';
 import type { AssertCheck, AssertOperator, BodyTagType, FieldValue, Operation, WorkflowNode } from '../../types.js';
 
@@ -173,6 +173,14 @@ export function NodeConfig() {
     selectedPresetId,
     credentials,
     isRunning,
+    aiCapabilities,
+    aiSuggestionsByKey,
+    aiCredentialSuggestionByNodeId,
+    requestNodeSuggestions,
+    acceptAiSuggestion,
+    dismissAiSuggestion,
+    acceptAllAiSuggestions,
+    dismissAllAiSuggestions,
     setCredential,
     setFieldValue,
     mergeFieldValues,
@@ -197,6 +205,11 @@ export function NodeConfig() {
   const queryFields = useMemo(() => fields.filter((f) => f.path.startsWith('query.')), [fields]);
   const headerFields = useMemo(() => fields.filter((f) => f.path.startsWith('header.')), [fields]);
   const bodyFields = useMemo(() => fields.filter((f) => f.path.startsWith('body.')), [fields]);
+  // What requestNodeSuggestions actually asks the model about — path/query/body,
+  // never header, never a field the schema can't represent. Mirrors
+  // slices/aiSlice.ts's own suggestableFieldsOf so the button's enabled state
+  // matches what a click would actually do.
+  const suggestableFields = useMemo(() => fields.filter((f) => f.supported && !f.path.startsWith('header.')), [fields]);
 
   const [switchError, setSwitchError] = useState<string | null>(null);
   const [pendingFormSwitch, setPendingFormSwitch] = useState<Record<string, FieldValue> | null>(null);
@@ -341,6 +354,13 @@ export function NodeConfig() {
   const bodyMode = isMultipart ? 'form' : (node.requestMode ?? 'form');
   const hasRequestToggle =
     !isMultipart && (pathFields.length > 0 || queryFields.length > 0 || Boolean(operation.requestBodySchema));
+  // Suggest-values only makes sense in Form mode — Raw mode edits path/query/body
+  // as JSON with its own tag-chip mapping UI, not the per-field rows renderField
+  // produces suggestion panels under.
+  const canSuggestNode = Boolean(aiCapabilities?.enabled) && bodyMode === 'form' && suggestableFields.length > 0;
+  const nodeSuggestionLoading = suggestableFields.some(
+    (f) => aiSuggestionsByKey[aiSuggestionKey(node!.id, f.path)]?.status === 'loading'
+  );
   const selectedCredential = credentials.find((c) => c.id === node.credentialId) ?? null;
   // Only these two grant types have extraTokenParams at all — see
   // WorkflowNode.credentialExtraParamOverrides's own comment on why this
@@ -419,11 +439,78 @@ export function NodeConfig() {
     setPendingFormSwitch(null);
   }
 
+  // One-line preview of an AI-suggested value, shown in the accept/reject
+  // panel before the user commits — mirrors how a Mapped field's own two
+  // selects would read once applied, so the preview text and the field's
+  // eventual post-Use appearance say the same thing.
+  function describeAiSuggestion(fieldValue: FieldValue): string {
+    if (fieldValue.source === 'mapped') {
+      return `mapped from "${nodeLabels.get(fieldValue.fromNodeId) ?? fieldValue.fromNodeId}" → "${fieldValue.fromResponseFieldPath}"`;
+    }
+    if (fieldValue.source === 'static') {
+      return String(fieldValue.value);
+    }
+    return '';
+  }
+
+  /**
+   * Node-wide summary banner, shown once a requestNodeSuggestions call for
+   * the selected node has resolved (not while it's still loading — the
+   * per-field/per-credential panels below already cover that) and at least
+   * one entry exists. "Accept all" applies every currently-'suggested'
+   * field plus the credential suggestion in one go (acceptAllAiSuggestions)
+   * — the granular per-field Use/Dismiss panels in renderField still work
+   * independently for anyone who wants to cherry-pick instead.
+   */
+  function renderAiSuggestionBanner() {
+    const prefix = `${node!.id}::`;
+    const fieldEntries = Object.entries(aiSuggestionsByKey).filter(([key]) => key.startsWith(prefix));
+    const credentialEntry = aiCredentialSuggestionByNodeId[node!.id];
+    if (fieldEntries.length === 0 && !credentialEntry) return null;
+
+    const anyLoading = fieldEntries.some(([, e]) => e.status === 'loading') || credentialEntry?.status === 'loading';
+    if (anyLoading) return null;
+
+    const suggestedFieldCount = fieldEntries.filter(([, e]) => e.status === 'suggested').length;
+    const credentialSuggested = credentialEntry?.status === 'suggested';
+    const totalSuggested = suggestedFieldCount + (credentialSuggested ? 1 : 0);
+
+    const credentialName = credentialSuggested
+      ? (credentials.find((c) => c.id === credentialEntry.credentialId)?.name ?? credentialEntry.credentialId)
+      : null;
+
+    const parts = [
+      suggestedFieldCount > 0 ? `${suggestedFieldCount} field${suggestedFieldCount === 1 ? '' : 's'}` : null,
+      credentialName ? `credential "${credentialName}"` : null,
+    ].filter((p): p is string => p !== null);
+    const summary = totalSuggested === 0 ? 'AI found no suggestions for this node.' : `AI suggested ${parts.join(' and ')}.`;
+
+    return (
+      // Reuses the same per-field suggestion-panel chrome (.node-config__ai-suggestion)
+      // rather than a bespoke banner style — same visual language, just placed once
+      // under the header instead of once per field.
+      <div className="node-config__ai-suggestion node-config__ai-suggestion--banner">
+        <span className="node-config__ai-suggestion-text">{summary}</span>
+        {totalSuggested > 0 && (
+          <button type="button" onClick={() => acceptAllAiSuggestions(node!.id)}>
+            Accept all
+          </button>
+        )}
+        <button type="button" onClick={() => dismissAllAiSuggestions(node!.id)}>
+          Dismiss all
+        </button>
+      </div>
+    );
+  }
+
   function renderField(field: SchemaField) {
     const fieldValue = node!.fieldValues[field.path];
     const isFileField = field.format === 'binary';
     const isMapped = !isFileField && fieldValue?.source === 'mapped';
     const disabled = !field.supported;
+    // Populated (if at all) by the node-level Suggest button above, not a
+    // per-field affordance here — see canSuggestNode/requestNodeSuggestions.
+    const suggestionEntry = aiSuggestionsByKey[aiSuggestionKey(node!.id, field.path)];
 
     // Nested/array fields are still shown, just disabled — a missing
     // field looks like a bug, a disabled one with a reason doesn't.
@@ -622,6 +709,46 @@ export function NodeConfig() {
             </>
           )}
         </div>
+
+        {suggestionEntry && suggestionEntry.status !== 'loading' && (
+          <div className="node-config__ai-suggestion">
+            {suggestionEntry.status === 'suggested' && (
+              <>
+                <span className="node-config__ai-suggestion-text">
+                  AI suggests: {describeAiSuggestion(suggestionEntry.fieldValue)}
+                </span>
+                <button type="button" onClick={() => acceptAiSuggestion(node!.id, field.path)}>
+                  Use
+                </button>
+                <button type="button" onClick={() => dismissAiSuggestion(node!.id, field.path)}>
+                  Dismiss
+                </button>
+              </>
+            )}
+            {suggestionEntry.status === 'none' && (
+              <>
+                <span className="node-config__ai-suggestion-text">No suggestion available.</span>
+                <button type="button" onClick={() => dismissAiSuggestion(node!.id, field.path)}>
+                  Dismiss
+                </button>
+              </>
+            )}
+            {suggestionEntry.status === 'error' && (
+              <>
+                <span className="node-config__ai-suggestion-text node-config__ai-suggestion-text--error">
+                  {suggestionEntry.error}
+                </span>
+                {/* No per-field retry endpoint exists anymore — this re-runs the whole node's single suggestion call, same as the Suggest button above. */}
+                <button type="button" title="Re-run AI suggestions for this node" onClick={() => requestNodeSuggestions(node!.id)}>
+                  Retry
+                </button>
+                <button type="button" onClick={() => dismissAiSuggestion(node!.id, field.path)}>
+                  Dismiss
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -747,6 +874,21 @@ export function NodeConfig() {
           </button>
           <span className={`method-badge method-badge--${operation.method}`}>{operation.method.toUpperCase()}</span>
           <h2 className="node-config__path">{operation.path}</h2>
+          {canSuggestNode && (
+            <button
+              type="button"
+              className={`node-config__ai-suggest-node${nodeSuggestionLoading ? ' node-config__ai-suggest-node--loading' : ''}`}
+              title="Suggest values for this node (AI)"
+              aria-label="Suggest values for this node (AI)"
+              // disabled only to prevent duplicate clicks while this one
+              // request resolves — every field in this panel stays fully
+              // interactive throughout, per the non-blocking requirement.
+              disabled={nodeSuggestionLoading}
+              onClick={() => requestNodeSuggestions(node!.id)}
+            >
+              <SparkleIcon />
+            </button>
+          )}
         </div>
         {credPickerOpen && (
           <ul className="node-config__cred-menu" role="listbox" aria-label="Available credentials">
@@ -783,6 +925,8 @@ export function NodeConfig() {
           </ul>
         )}
       </div>
+
+      {renderAiSuggestionBanner()}
 
       {extraParamKeys.length > 0 && (
         <section className="node-config__section">

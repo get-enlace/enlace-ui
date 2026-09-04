@@ -120,6 +120,15 @@ export function LockIcon() {
   );
 }
 
+/** AI-suggest affordance (NodeConfig.tsx field rows) — same outline family/size as the other 24×24 icons above. A four-point sparkle, not a wand/stars cluster, so it stays legible at 14×14. */
+export function SparkleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.5 6.5l2 2M15.5 15.5l2 2M6.5 17.5l2-2M15.5 8.5l2-2" />
+    </svg>
+  );
+}
+
 export function UploadIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

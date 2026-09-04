@@ -173,6 +173,96 @@
   cursor: not-allowed;
 }
 
+/* Node-level AI-suggest affordance — one icon-only button per node (not per
+   field), sitting in the header row right after the path, so it reads as
+   "🔒 POST /path ✨". Suggests values for every suggestable field on the
+   node, plus a credential recommendation, in a single call; see
+   store/slices/aiSlice.ts's requestNodeSuggestions. Same compact
+   icon-button sizing as .node-config__cred-lock, its neighbor in that row. */
+.node-config__ai-suggest-node {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.node-config__ai-suggest-node:hover:not(:disabled) {
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.node-config__ai-suggest-node:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.node-config__ai-suggest-node--loading svg {
+  animation: node-config-ai-suggest-spin 1s linear infinite;
+}
+
+@keyframes node-config-ai-suggest-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Accept/reject panel under a field whose Suggest button has a result —
+   same tier as .node-config__hint, just per-field rather than section-wide. */
+.node-config__ai-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-topbar-bg);
+  font-size: 12px;
+}
+
+.node-config__ai-suggestion-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--color-text);
+  overflow-wrap: break-word;
+}
+
+/* The one node-wide summary banner (renderAiSuggestionBanner), vs. the
+   otherwise-identical per-field panel — sits right under the header instead
+   of under a single field, so it gets its own top/bottom spacing instead of
+   the per-field 4px. */
+.node-config__ai-suggestion--banner {
+  margin: 0 0 14px;
+}
+
+.node-config__ai-suggestion-text--error {
+  color: var(--color-error);
+}
+
+.node-config__ai-suggestion button {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-topbar-bg);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.node-config__ai-suggestion button:hover {
+  background: var(--color-border);
+}
+
 .node-config__field--disabled label {
   font-style: italic;
 }

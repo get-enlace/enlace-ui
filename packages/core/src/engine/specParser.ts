@@ -1,4 +1,5 @@
-import type { HttpMethod, Operation, OperationParameter } from '../types.js';
+import { securitySchemeCredentialType } from './securitySchemes.js';
+import type { CredentialType, HttpMethod, Operation, OperationParameter } from '../types.js';
 
 const HTTP_METHODS: HttpMethod[] = ['get', 'post', 'put', 'patch', 'delete'];
 
@@ -34,6 +35,7 @@ export function parseOperations(spec: Record<string, any>): Operation[] {
       );
       const requestBodySchema = resolveSchemaRefs(spec, rawBodySchema);
       const responseSchema = resolveSchemaRefs(spec, extractSuccessResponseSchema(op.responses));
+      const requiredCredentialTypes = resolveRequiredCredentialTypes(spec, op);
 
       operations.push({
         id: `${method.toUpperCase()} ${path}`,
@@ -46,6 +48,7 @@ export function parseOperations(spec: Record<string, any>): Operation[] {
         requestBodySchema,
         requestBodyContentType,
         responseSchema,
+        requiredCredentialTypes,
       });
     }
   }
@@ -69,6 +72,38 @@ function pickRequestBody(
     return { schema: content['multipart/form-data'].schema, contentType: 'multipart/form-data' };
   }
   return { schema: null, contentType: null };
+}
+
+/**
+ * Resolves an operation's OpenAPI `security` requirement — its own
+ * `security` array if declared, else the spec's top-level `security`
+ * (standard OpenAPI inheritance; an operation-level `security: []`
+ * deliberately overrides to "no auth", which collapses to the same empty
+ * result here as "nothing declared at all" — an acceptable simplification,
+ * see Operation.requiredCredentialTypes's own comment) — into the
+ * `CredentialType`s that satisfy it. A `security` requirement can name
+ * several schemes (each entry is a distinct way to authenticate; OpenAPI
+ * treats them as alternatives), so this returns every type any of them
+ * resolves to, deduped, in first-seen order. Schemes this phase can't
+ * resolve to a `CredentialType` (or that a `security` entry references but
+ * `components.securitySchemes` doesn't declare) are silently skipped, not
+ * an error.
+ */
+function resolveRequiredCredentialTypes(spec: Record<string, any>, op: any): CredentialType[] | undefined {
+  const requirements: Array<Record<string, unknown>> = op.security ?? spec.security ?? [];
+  const schemeNames = new Set<string>();
+  for (const requirement of requirements) {
+    for (const schemeName of Object.keys(requirement ?? {})) schemeNames.add(schemeName);
+  }
+
+  const schemes = spec?.components?.securitySchemes ?? {};
+  const types: CredentialType[] = [];
+  for (const schemeName of schemeNames) {
+    const type = securitySchemeCredentialType(schemes[schemeName]);
+    if (type && !types.includes(type)) types.push(type);
+  }
+
+  return types.length ? types : undefined;
 }
 
 function extractSuccessResponseSchema(responses: Record<string, any> | undefined) {

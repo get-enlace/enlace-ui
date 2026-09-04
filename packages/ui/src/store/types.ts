@@ -1,4 +1,6 @@
 import type { DeclaredCredential } from '@get-enlace/core';
+import type { AiCapabilitiesResponse } from '../api/aiClient.js';
+import type { AiCredentialSuggestionEntry, AiSuggestionEntry } from './slices/aiSlice.js';
 import type {
   AssertCheck,
   Credential,
@@ -185,6 +187,21 @@ export interface WorkflowState {
    * in the header where there's no room and nothing to act on.
    */
   credentialReview: CredentialReview | null;
+  /**
+   * Whether the adapter has AI assist configured — `null` until
+   * `loadAiCapabilities()` resolves. Every AI-related render anywhere must
+   * gate on `aiCapabilities?.enabled === true`; both `null` and
+   * `{enabled:false}` render nothing (see api/aiClient.ts's
+   * fetchAiCapabilities, which degrades to `{enabled:false}` rather than
+   * throwing on any failure — AI's absence is never a blocking app error).
+   */
+  aiCapabilities: AiCapabilitiesResponse | null;
+  /** Live AI field-suggestion state, keyed by `aiSuggestionKey(nodeId, fieldPath)` — see slices/aiSlice.ts. */
+  aiSuggestionsByKey: Record<string, AiSuggestionEntry>;
+  /** Live AI credential-suggestion state, keyed by nodeId — populated alongside aiSuggestionsByKey by the same requestNodeSuggestions call. See slices/aiSlice.ts. */
+  aiCredentialSuggestionByNodeId: Record<string, AiCredentialSuggestionEntry>;
+  /** Stale-reply guard for in-flight suggestion requests, keyed by nodeId — one requestNodeSuggestions call resolves every suggestable field (and the credential) on that node together, so one counter per node covers all of them. See slices/aiSlice.ts. */
+  aiSuggestionGenerationByNodeId: Record<string, number>;
 
   loadOperations: () => Promise<void>;
   /**
@@ -357,4 +374,24 @@ export interface WorkflowState {
    * admission of new nodes while in-flight requests still finish.
    */
   run: (options?: { useBreakpoints?: boolean }) => Promise<void>;
+
+  /** Fetches AI capabilities once, on mount (see App.tsx) — never throws; degrades to {enabled:false}. */
+  loadAiCapabilities: () => Promise<void>;
+  /**
+   * Fire-and-forget: never awaited by the caller, never touches
+   * isRunning/isLocked, never disables any field itself — only the
+   * node-level Suggest button's own state reflects 'loading'. One LLM call
+   * covers every suggestable field on the node at once, not one call per
+   * field. See slices/aiSlice.ts for the full non-blocking request
+   * lifecycle.
+   */
+  requestNodeSuggestions: (nodeId: string) => void;
+  /** Applies a 'suggested' entry's fieldValue via the existing (already isLocked-guarded) setFieldValue, then clears the entry. No-op if the entry isn't currently 'suggested'. */
+  acceptAiSuggestion: (nodeId: string, fieldPath: string) => void;
+  /** Clears a suggestion entry without touching fieldValues. */
+  dismissAiSuggestion: (nodeId: string, fieldPath: string) => void;
+  /** Applies every currently-'suggested' field and credential suggestion on the node in one go, via the same setFieldValue/setCredential calls as accepting each individually, then clears all of that node's entries. */
+  acceptAllAiSuggestions: (nodeId: string) => void;
+  /** Clears every suggestion entry (fields and credential) for the node without applying any of them. */
+  dismissAllAiSuggestions: (nodeId: string) => void;
 }

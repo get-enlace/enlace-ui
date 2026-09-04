@@ -17,3 +17,6 @@ export * from './engine/path.js';
 export * from './bodyTags.js';
 export * from './nodeLabel.js';
 export * from './collectionCrypto.js';
+
+export * from './ai/types.js';
+export * from './ai/prompts.js';
