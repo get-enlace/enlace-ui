@@ -133,7 +133,7 @@ export function resolveConsoleFocus(args: {
 
   const operationPathFor = (nodeId: string): string | undefined => {
     const n = nodes.find((x) => x.id === nodeId);
-    if (!n?.operationId) return undefined;
+    if (!n || n.kind === 'presets' || !n.operationId) return undefined;
     return operationsById.get(n.operationId)?.path;
   };
 

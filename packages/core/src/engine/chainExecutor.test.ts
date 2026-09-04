@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  buildRequest,
   computeExecutionLevels,
   connectionKey,
   CyclicWorkflowError,
   executeChain,
-  getByPath,
   topologicalSort,
 } from './chainExecutor.js';
 import { __clearCredentialTokenCacheForTests, resolveCredentialInjection } from './credentials.js';
-import type { Credential, Operation, RunControl, RunEvent, WorkflowConnection, WorkflowNode } from '../types.js';
+import type { Credential, Operation, PresetsNode, RunControl, RunEvent, WorkflowConnection, WorkflowNode } from '../types.js';
+import { buildRequest } from './handlers/index.js';
 
 /** Flushes every currently-pending microtask (fetch mocks resolving, buildRequest's own promise chain, etc.) without advancing real time, so a paused/settled state has fully landed before assertions run. */
 function flushMicrotasks(): Promise<void> {
@@ -1270,7 +1269,7 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
   });
 });
 
-function presetsNode(id: string, presets: WorkflowNode['presets']): WorkflowNode {
+function presetsNode(id: string, presets: PresetsNode['presets']): PresetsNode {
   return { id, kind: 'presets', credentialId: null, fieldValues: {}, presets };
 }
 
@@ -1510,17 +1509,5 @@ describe('executeChain — assert presets', () => {
 
     const gStep = result.steps.find((s) => s.nodeId === 'g')!;
     expect(gStep.error).toMatch(/Check 1:.*no captured response/);
-  });
-});
-
-describe('getByPath', () => {
-  it('resolves nested and array paths', () => {
-    const obj = { order: { items: [{ id: 'abc' }] } };
-    expect(getByPath(obj, 'order.items[0].id')).toBe('abc');
-  });
-
-  it('returns undefined for missing paths without throwing', () => {
-    expect(getByPath({ a: 1 }, 'a.b.c')).toBeUndefined();
-    expect(getByPath(null, 'a.b')).toBeUndefined();
   });
 });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { connectionKey } from '@get-enlace/core';
 import { useWorkflowStore } from './workflowStore.js';
 import { serializeCollection } from '../utils/workflowDocument.js';
-import type { AssertPreset, Preset, WaitPreset } from '../types.js';
+import type { AssertPreset, Preset, PresetsNode, WaitPreset, WorkflowNode } from '../types.js';
 
 // Preset is a real discriminated union (WaitPreset | AssertPreset) — these
 // narrow-or-throw so a test that just added/expects one kind can read its
@@ -16,6 +16,13 @@ function asWaitPreset(preset: Preset): WaitPreset {
 function asAssertPreset(preset: Preset): AssertPreset {
   if (preset.kind !== 'assert') throw new Error(`expected an assert preset, got "${preset.kind}"`);
   return preset;
+}
+
+// Same "narrow-or-throw" idiom, one level up — WorkflowNode is itself now a
+// discriminated union (OperationNode | PresetsNode).
+function asPresetsNode(node: WorkflowNode): PresetsNode {
+  if (node.kind !== 'presets') throw new Error('expected a presets collection, got an operation node');
+  return node;
 }
 
 // Reset to a clean slate before each test — zustand stores are module-level
@@ -51,7 +58,7 @@ describe('addPresetsNode / presets', () => {
     const id = addPresetsNode({ x: 5, y: 5 });
 
     const state = useWorkflowStore.getState();
-    const node = state.nodes.find((n) => n.id === id)!;
+    const node = asPresetsNode(state.nodes.find((n) => n.id === id)!);
     expect(node.kind).toBe('presets');
     expect(node.presets).toEqual([]);
     expect(state.selectedNodeId).toBe(id);
@@ -62,7 +69,7 @@ describe('addPresetsNode / presets', () => {
     const { addPresetsNode } = useWorkflowStore.getState();
     const id = addPresetsNode({ x: 10, y: 20 }, { kind: 'wait', durationMs: 1500 });
 
-    const node = useWorkflowStore.getState().nodes.find((n) => n.id === id)!;
+    const node = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === id)!);
     expect(node.presets).toHaveLength(1);
     expect(node.presets![0]).toMatchObject({ kind: 'wait', durationMs: 1500 });
     expect(useWorkflowStore.getState().nodePositions[id]).toEqual({ x: 10, y: 20 });
@@ -89,7 +96,7 @@ describe('addPresetsNode / presets', () => {
     addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
     addPreset(presetsId, { kind: 'wait', durationMs: 2000 });
 
-    const presets = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    const presets = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!;
     expect(presets).toHaveLength(2);
     expect(presets[0]).toMatchObject({ kind: 'wait', durationMs: 1000 });
     expect(presets[1]).toMatchObject({ kind: 'wait', durationMs: 2000 });
@@ -100,7 +107,10 @@ describe('addPresetsNode / presets', () => {
     const { addNode, addPreset } = useWorkflowStore.getState();
     const opId = addNode('GET /a');
     addPreset(opId, { kind: 'wait', durationMs: 1000 });
-    expect(useWorkflowStore.getState().nodes.find((n) => n.id === opId)!.presets).toBeUndefined();
+    // Deliberately a runtime shape check, not asPresetsNode (which would
+    // throw here) — the point of this test is that an OperationNode never
+    // grows a stray presets field, which the type system alone can't verify.
+    expect((useWorkflowStore.getState().nodes.find((n) => n.id === opId) as unknown as { presets?: unknown[] }).presets).toBeUndefined();
   });
 
   it('addPreset selects the newly appended preset — the only way to add one to an existing card', () => {
@@ -110,7 +120,7 @@ describe('addPresetsNode / presets', () => {
     addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
 
     const state = useWorkflowStore.getState();
-    const preset = state.nodes.find((n) => n.id === presetsId)!.presets![0];
+    const preset = asPresetsNode(state.nodes.find((n) => n.id === presetsId)!).presets![0];
     expect(state.selectedNodeId).toBe(presetsId);
     expect(state.selectedPresetId).toBe(preset.id);
   });
@@ -120,14 +130,14 @@ describe('addPresetsNode / presets', () => {
     const presetsId = addPresetsNode();
     addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
     addPreset(presetsId, { kind: 'wait', durationMs: 2000 });
-    const [first, second] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    const [first, second] = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!;
 
     selectPreset(presetsId, second.id);
     removePreset(presetsId, first.id);
     expect(useWorkflowStore.getState().selectedPresetId).toBe(second.id); // unrelated removal leaves it alone
 
     removePreset(presetsId, second.id);
-    const presets = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    const presets = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!;
     expect(presets).toEqual([]);
     expect(useWorkflowStore.getState().selectedPresetId).toBeNull();
   });
@@ -138,20 +148,20 @@ describe('addPresetsNode / presets', () => {
     addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
     addPreset(presetsId, { kind: 'wait', durationMs: 2000 });
     addPreset(presetsId, { kind: 'wait', durationMs: 3000 });
-    const ids = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!.map((p) => p.id);
+    const ids = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!.map((p) => p.id);
 
     movePreset(presetsId, ids[0], 'up'); // already first — no-op
-    expect(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!.map((p) => p.id)).toEqual(ids);
+    expect(asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!.map((p) => p.id)).toEqual(ids);
 
     movePreset(presetsId, ids[0], 'down');
-    expect(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!.map((p) => p.id)).toEqual([
+    expect(asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!.map((p) => p.id)).toEqual([
       ids[1],
       ids[0],
       ids[2],
     ]);
 
     movePreset(presetsId, ids[2], 'down'); // already last — no-op
-    expect(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!.map((p) => p.id)).toEqual([
+    expect(asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!.map((p) => p.id)).toEqual([
       ids[1],
       ids[0],
       ids[2],
@@ -163,11 +173,11 @@ describe('addPresetsNode / presets', () => {
     const presetsId = addPresetsNode();
     addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
     addPreset(presetsId, { kind: 'wait', durationMs: 2000 });
-    const [first, second] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    const [first, second] = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!;
 
     setPresetDurationMs(presetsId, first.id, 9000);
 
-    const presets = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    const presets = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!;
     expect(asWaitPreset(presets.find((p) => p.id === first.id)!).durationMs).toBe(9000);
     expect(asWaitPreset(presets.find((p) => p.id === second.id)!).durationMs).toBe(2000);
   });
@@ -176,11 +186,11 @@ describe('addPresetsNode / presets', () => {
     const { addPresetsNode, addPreset, addAssertCheck } = useWorkflowStore.getState();
     const presetsId = addPresetsNode();
     addPreset(presetsId, { kind: 'assert', checks: [] });
-    const [assertPreset] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    const [assertPreset] = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!;
 
     addAssertCheck(presetsId, assertPreset.id);
 
-    const checks = asAssertPreset(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]).checks;
+    const checks = asAssertPreset(asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets![0]).checks;
     expect(checks).toHaveLength(1);
     expect(checks[0]).toMatchObject({ operator: 'equals', source: { type: 'response_body' } });
   });
@@ -189,16 +199,16 @@ describe('addPresetsNode / presets', () => {
     const { addPresetsNode, addPreset, addAssertCheck, removeAssertCheck } = useWorkflowStore.getState();
     const presetsId = addPresetsNode();
     addPreset(presetsId, { kind: 'assert', checks: [] });
-    const [assertPreset] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    const [assertPreset] = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!;
     addAssertCheck(presetsId, assertPreset.id);
     addAssertCheck(presetsId, assertPreset.id);
     const [first, second] = asAssertPreset(
-      useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]
+      asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets![0]
     ).checks;
 
     removeAssertCheck(presetsId, assertPreset.id, first.id);
 
-    const checks = asAssertPreset(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]).checks;
+    const checks = asAssertPreset(asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets![0]).checks;
     expect(checks.map((c) => c.id)).toEqual([second.id]);
   });
 
@@ -206,16 +216,16 @@ describe('addPresetsNode / presets', () => {
     const { addPresetsNode, addPreset, addAssertCheck, updateAssertCheck } = useWorkflowStore.getState();
     const presetsId = addPresetsNode();
     addPreset(presetsId, { kind: 'assert', checks: [] });
-    const [assertPreset] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
+    const [assertPreset] = asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets!;
     addAssertCheck(presetsId, assertPreset.id);
     addAssertCheck(presetsId, assertPreset.id);
     const [first, second] = asAssertPreset(
-      useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]
+      asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets![0]
     ).checks;
 
     updateAssertCheck(presetsId, assertPreset.id, first.id, { operator: 'greaterThan', expected: '10' });
 
-    const checks = asAssertPreset(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]).checks;
+    const checks = asAssertPreset(asPresetsNode(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!).presets![0]).checks;
     expect(checks.find((c) => c.id === first.id)).toMatchObject({ operator: 'greaterThan', expected: '10' });
     expect(checks.find((c) => c.id === second.id)).toMatchObject({ operator: 'equals' });
   });
@@ -238,7 +248,7 @@ describe('selectPreset', () => {
     const { addPresetsNode, addPreset, selectNode, selectPreset } = useWorkflowStore.getState();
     const presetsId = addPresetsNode();
     addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
-    const presetId = useWorkflowStore.getState().nodes[0].presets![0].id;
+    const presetId = asPresetsNode(useWorkflowStore.getState().nodes[0]).presets![0].id;
     selectNode(null); // not already the selected node
 
     selectPreset(presetsId, presetId);
@@ -251,7 +261,7 @@ describe('selectPreset', () => {
     const { addPresetsNode, addPreset, addNode, selectNode, selectPreset } = useWorkflowStore.getState();
     const presetsId = addPresetsNode();
     addPreset(presetsId, { kind: 'wait', durationMs: 1000 });
-    const presetId = useWorkflowStore.getState().nodes[0].presets![0].id;
+    const presetId = asPresetsNode(useWorkflowStore.getState().nodes[0]).presets![0].id;
     selectPreset(presetsId, presetId);
 
     const otherId = addNode('GET /a');

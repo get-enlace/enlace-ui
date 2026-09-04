@@ -21,6 +21,11 @@ import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../types.js
 import type { OAuth2ClientAuthMethod } from '../types.js';
 import { isDraftComplete, toDraft } from './credentialDraft.js';
 
+/** A `kind: 'presets'` collection has no `operationId` at all — `undefined` in that case, same as a plain missing one. */
+function operationIdOf(node: WorkflowNode): string | undefined {
+  return node.kind === 'presets' ? undefined : node.operationId;
+}
+
 /** Keys that authenticate. Stripped exports never write or read these. */
 const SECRET_KEYS = ['token', 'password', 'key', 'clientSecret'] as const;
 
@@ -58,7 +63,7 @@ export function serializeCollection(input: SerializeWorkflowInput): EnlaceCollec
   // Wait (and any future non-'operation' kind) has no operationId at all —
   // filtered out here rather than coerced to a placeholder string, so it
   // never shows up as a bogus "unknown operation" specHint entry on import.
-  const operationIds = [...new Set(nodes.map((n) => n.operationId).filter((id): id is string => typeof id === 'string'))];
+  const operationIds = [...new Set(nodes.map(operationIdOf).filter((id): id is string => typeof id === 'string'))];
   const specHint: CollectionWorkflow['specHint'] = { operationIds };
   if (input.specInfo?.title) specHint.title = input.specInfo.title;
   if (input.specInfo?.version) specHint.version = input.specInfo.version;
@@ -238,7 +243,7 @@ export function parseCollection(
       : [
           ...new Set(
             nodes
-              .map((n) => n.operationId)
+              .map(operationIdOf)
               .filter((id): id is string => typeof id === 'string' && !knownOperations.has(id))
           ),
         ];
@@ -904,7 +909,7 @@ function parseSpecHint(raw: unknown, nodes: WorkflowNode[]): CollectionWorkflow[
   const operationIds =
     isRecord(raw) && Array.isArray(raw.operationIds)
       ? raw.operationIds.filter((id): id is string => typeof id === 'string')
-      : [...new Set(nodes.map((n) => n.operationId).filter((id): id is string => typeof id === 'string'))];
+      : [...new Set(nodes.map(operationIdOf).filter((id): id is string => typeof id === 'string'))];
   const hint: CollectionWorkflow['specHint'] = { operationIds };
   if (isRecord(raw) && typeof raw.title === 'string') hint.title = raw.title;
   if (isRecord(raw) && typeof raw.version === 'string') hint.version = raw.version;

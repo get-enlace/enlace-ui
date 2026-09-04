@@ -46,7 +46,7 @@ export function buildDependencyGraph(
   // Skipped entirely while the override is toggled off: an inert map
   // shouldn't force an ordering edge that only matters once it's live.
   for (const node of nodes) {
-    if (!node.credentialExtraParamOverridesEnabled) continue;
+    if (node.kind === 'presets' || !node.credentialExtraParamOverridesEnabled) continue;
     for (const fieldValue of Object.values(node.credentialExtraParamOverrides ?? {})) {
       if (fieldValue.source === 'mapped' && byId.has(fieldValue.fromNodeId)) {
         dependsOn.get(node.id)!.add(fieldValue.fromNodeId);
@@ -61,6 +61,7 @@ export function buildDependencyGraph(
   // the two loops above — every AssertCheck.source is inherently a
   // reference to another step (no 'static' variant to gate on).
   for (const node of nodes) {
+    if (node.kind !== 'presets') continue;
     for (const preset of node.presets ?? []) {
       if (preset.kind !== 'assert') continue;
       for (const check of preset.checks) {

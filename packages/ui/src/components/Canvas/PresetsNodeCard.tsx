@@ -3,15 +3,15 @@ import { Handle, Position, useStore, type NodeProps } from 'reactflow';
 import { formatPresetLabel } from '@get-enlace/core';
 import { useWorkflowStore } from '../../store/workflowStore.js';
 import { DEFAULT_WAIT_DURATION_MS } from '../../store/slices/graphSlice.js';
-import type { RunStepStatus, WorkflowNode } from '../../types.js';
+import type { PresetsNode, RunStepStatus } from '../../types.js';
 import { DeleteNodeIcon, LeaveGroupIcon, STATUS_BADGE_GLYPH } from '../chromeIcons.js';
 
 /** Every `text/preset-kind` value the palette (OperationList.tsx) can drag — the only thing this card's own drop zone ever accepts. */
 const KNOWN_PRESET_KINDS = new Set(['wait', 'assert']);
 
 export interface PresetsNodeData {
-  /** `kind: 'presets'` — carries the ordered `presets` this card renders. */
-  node: WorkflowNode;
+  /** Carries the ordered `presets` this card renders. */
+  node: PresetsNode;
   /** View-only chrome from the store's `presetsCollapsed` map — see WorkflowState's own comment. */
   collapsed: boolean;
   selected: boolean;

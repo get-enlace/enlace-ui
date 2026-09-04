@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Credential, CredentialStub, Operation, WorkflowNode } from '../types.js';
+import type { Credential, CredentialStub, Operation, OperationNode, WorkflowNode } from '../types.js';
 import { ENLACE_COLLECTION_FORMAT, ENLACE_COLLECTION_VERSION } from '../types.js';
 import {
   collectionFilename,
@@ -10,6 +10,15 @@ import {
   referencedIncompleteCredentials,
   serializeCollection,
 } from './workflowDocument.js';
+
+// Same "narrow-or-throw" idiom used elsewhere — WorkflowNode is a
+// discriminated union (OperationNode | PresetsNode); a serialized/parsed
+// node read back off a collection is typed as the union even though these
+// fixtures are always operation nodes.
+function asOperationNode(node: WorkflowNode): OperationNode {
+  if (node.kind === 'presets') throw new Error('expected an operation node, got a presets collection');
+  return node;
+}
 
 const operation: Operation = {
   id: 'POST /orders',
@@ -560,9 +569,9 @@ describe('hydrateCollection / helpers', () => {
       nodePositions: {},
       credentials: [],
     });
-    expect(doc.workflows[0].nodes[0].requestMode).toBe('raw');
-    expect(doc.workflows[0].nodes[0].rawPath).toEqual({ template: '{"id":"c1"}', tags: {} });
-    expect(doc.workflows[0].nodes[0].rawQuery).toEqual({ template: '{"dryRun":true}', tags: {} });
+    expect(asOperationNode(doc.workflows[0].nodes[0]).requestMode).toBe('raw');
+    expect(asOperationNode(doc.workflows[0].nodes[0]).rawPath).toEqual({ template: '{"id":"c1"}', tags: {} });
+    expect(asOperationNode(doc.workflows[0].nodes[0]).rawQuery).toEqual({ template: '{"dryRun":true}', tags: {} });
 
     const legacy = parseCollection({
       format: ENLACE_COLLECTION_FORMAT,
@@ -593,8 +602,8 @@ describe('hydrateCollection / helpers', () => {
     });
     expect(legacy.ok).toBe(true);
     if (legacy.ok) {
-      expect(legacy.collection.workflows[0].nodes[0].requestMode).toBe('raw');
-      expect(legacy.collection.workflows[0].nodes[0].rawBody).toEqual({ template: '{}', tags: {} });
+      expect(asOperationNode(legacy.collection.workflows[0].nodes[0]).requestMode).toBe('raw');
+      expect(asOperationNode(legacy.collection.workflows[0].nodes[0]).rawBody).toEqual({ template: '{}', tags: {} });
     }
   });
 

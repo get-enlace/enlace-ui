@@ -2,7 +2,16 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { Canvas } from './index.js';
 import { useWorkflowStore } from '../../store/workflowStore.js';
-import type { Operation } from '../../types.js';
+import type { Operation, OperationNode, PresetsNode, WorkflowNode } from '../../types.js';
+
+function asOperationNode(node: WorkflowNode): OperationNode {
+  if (node.kind === 'presets') throw new Error('expected an operation node, got a presets collection');
+  return node;
+}
+function asPresetsNode(node: WorkflowNode): PresetsNode {
+  if (node.kind !== 'presets') throw new Error('expected a presets collection, got an operation node');
+  return node;
+}
 
 const petOperation: Operation = {
   id: 'POST /pet',
@@ -42,7 +51,7 @@ describe('Canvas', () => {
     });
 
     expect(useWorkflowStore.getState().nodes).toHaveLength(1);
-    expect(useWorkflowStore.getState().nodes[0].operationId).toBe('POST /pet');
+    expect(asOperationNode(useWorkflowStore.getState().nodes[0]).operationId).toBe('POST /pet');
   });
 
   it('adds a presets collection seeded with one Wait preset when the Wait preset is dropped onto the canvas', () => {
@@ -58,9 +67,8 @@ describe('Canvas', () => {
     const nodes = useWorkflowStore.getState().nodes;
     expect(nodes).toHaveLength(1);
     expect(nodes[0].kind).toBe('presets');
-    expect(nodes[0].operationId).toBeUndefined();
-    expect(nodes[0].presets).toHaveLength(1);
-    expect(nodes[0].presets![0]).toMatchObject({ kind: 'wait' });
+    expect(asPresetsNode(nodes[0]).presets).toHaveLength(1);
+    expect(asPresetsNode(nodes[0]).presets![0]).toMatchObject({ kind: 'wait' });
   });
 
   it('adds a presets collection seeded with one empty-checks Assert preset when the Assert preset is dropped onto the canvas', () => {
@@ -76,8 +84,8 @@ describe('Canvas', () => {
     const nodes = useWorkflowStore.getState().nodes;
     expect(nodes).toHaveLength(1);
     expect(nodes[0].kind).toBe('presets');
-    expect(nodes[0].presets).toHaveLength(1);
-    expect(nodes[0].presets![0]).toMatchObject({ kind: 'assert', checks: [] });
+    expect(asPresetsNode(nodes[0]).presets).toHaveLength(1);
+    expect(asPresetsNode(nodes[0]).presets![0]).toMatchObject({ kind: 'assert', checks: [] });
   });
 
   it('does nothing when the drop carries no operation id (e.g. a stray file drop)', () => {
