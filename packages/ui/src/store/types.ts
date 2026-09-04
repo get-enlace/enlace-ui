@@ -4,7 +4,7 @@ import type {
   Credential,
   EnlaceCollection,
   FieldValue,
-  Preset,
+  NewPreset,
   NewCredential,
   NodeGroup,
   Operation,
@@ -204,9 +204,9 @@ export interface WorkflowState {
    * collection's collapsed-diamond/expanded-box chrome, never as a
    * standalone graph node. Same `isLocked`/placement behavior as `addNode`.
    */
-  addPresetsNode: (position?: Position, initialPreset?: Omit<Preset, 'id'>) => string;
+  addPresetsNode: (position?: Position, initialPreset?: NewPreset) => string;
   /** Appends one preset to a collection's ordered `presets` list. No-op if `presetsNodeId` isn't a presets node. */
-  addPreset: (presetsNodeId: string, preset: Omit<Preset, 'id'>) => void;
+  addPreset: (presetsNodeId: string, preset: NewPreset) => void;
   /** Removes one preset from a collection by its preset id. */
   removePreset: (presetsNodeId: string, presetId: string) => void;
   /** Swaps a preset with its immediate up/down neighbor — "linear order only" (see the issue this implements), no arbitrary reordering. A no-op at either end of the list. */

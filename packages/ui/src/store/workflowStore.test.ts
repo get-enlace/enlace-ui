@@ -2,6 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { connectionKey } from '@get-enlace/core';
 import { useWorkflowStore } from './workflowStore.js';
 import { serializeCollection } from '../utils/workflowDocument.js';
+import type { AssertPreset, Preset, WaitPreset } from '../types.js';
+
+// Preset is a real discriminated union (WaitPreset | AssertPreset) — these
+// narrow-or-throw so a test that just added/expects one kind can read its
+// kind-specific field directly, instead of every call site repeating an
+// `as`/`!` that would silently hide a wrong-kind preset instead of failing
+// the test on it.
+function asWaitPreset(preset: Preset): WaitPreset {
+  if (preset.kind !== 'wait') throw new Error(`expected a wait preset, got "${preset.kind}"`);
+  return preset;
+}
+function asAssertPreset(preset: Preset): AssertPreset {
+  if (preset.kind !== 'assert') throw new Error(`expected an assert preset, got "${preset.kind}"`);
+  return preset;
+}
 
 // Reset to a clean slate before each test — zustand stores are module-level
 // singletons, so state otherwise leaks across tests.
@@ -153,8 +168,8 @@ describe('addPresetsNode / presets', () => {
     setPresetDurationMs(presetsId, first.id, 9000);
 
     const presets = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
-    expect(presets.find((p) => p.id === first.id)!.durationMs).toBe(9000);
-    expect(presets.find((p) => p.id === second.id)!.durationMs).toBe(2000);
+    expect(asWaitPreset(presets.find((p) => p.id === first.id)!).durationMs).toBe(9000);
+    expect(asWaitPreset(presets.find((p) => p.id === second.id)!).durationMs).toBe(2000);
   });
 
   it('addAssertCheck appends a blank check to the targeted assert preset', () => {
@@ -165,7 +180,7 @@ describe('addPresetsNode / presets', () => {
 
     addAssertCheck(presetsId, assertPreset.id);
 
-    const checks = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+    const checks = asAssertPreset(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]).checks;
     expect(checks).toHaveLength(1);
     expect(checks[0]).toMatchObject({ operator: 'equals', source: { type: 'response_body' } });
   });
@@ -177,11 +192,13 @@ describe('addPresetsNode / presets', () => {
     const [assertPreset] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
     addAssertCheck(presetsId, assertPreset.id);
     addAssertCheck(presetsId, assertPreset.id);
-    const [first, second] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+    const [first, second] = asAssertPreset(
+      useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]
+    ).checks;
 
     removeAssertCheck(presetsId, assertPreset.id, first.id);
 
-    const checks = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+    const checks = asAssertPreset(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]).checks;
     expect(checks.map((c) => c.id)).toEqual([second.id]);
   });
 
@@ -192,11 +209,13 @@ describe('addPresetsNode / presets', () => {
     const [assertPreset] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets!;
     addAssertCheck(presetsId, assertPreset.id);
     addAssertCheck(presetsId, assertPreset.id);
-    const [first, second] = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+    const [first, second] = asAssertPreset(
+      useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]
+    ).checks;
 
     updateAssertCheck(presetsId, assertPreset.id, first.id, { operator: 'greaterThan', expected: '10' });
 
-    const checks = useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0].checks!;
+    const checks = asAssertPreset(useWorkflowStore.getState().nodes.find((n) => n.id === presetsId)!.presets![0]).checks;
     expect(checks.find((c) => c.id === first.id)).toMatchObject({ operator: 'greaterThan', expected: '10' });
     expect(checks.find((c) => c.id === second.id)).toMatchObject({ operator: 'equals' });
   });

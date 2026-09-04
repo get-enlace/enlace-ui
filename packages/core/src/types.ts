@@ -85,13 +85,13 @@ export interface RawBody {
  * more presets (`presets`) as one executable unit in the main graph — see
  * `Preset` below; this is the *only* way a preset ever reaches the canvas,
  * even a single Wait (see utils/workflowDocument.ts and the store's
- * `addPresetsNode`). `'wait'`/`'assert'` never appear as a real top-level
- * node's `kind` — each exists only as the synthetic kind
- * engine/nodeHandlers.ts's `presetAsNode` gives the preset it runs, so the
- * same per-kind handler registry can dispatch it exactly like a top-level
- * node would.
+ * `addPresetsNode`). A preset's own `kind` (`PresetKind`, below) is a
+ * separate, smaller union — `'wait'`/`'assert'` never appear here, since a
+ * preset is never itself a top-level graph node (see `Preset`'s own
+ * comment); it's run by `engine/nodeHandlers.ts`'s own `presetHandlers`
+ * registry, keyed by `PresetKind`, not by this one.
  */
-export type WorkflowNodeKind = 'operation' | 'wait' | 'presets' | 'assert';
+export type WorkflowNodeKind = 'operation' | 'presets';
 
 /**
  * The kind a single preset inside a `kind: 'presets'` node's `presets` list
@@ -130,24 +130,47 @@ export interface AssertCheck {
  * smaller, self-contained sibling of `WorkflowNode` for the presets a
  * collection can hold (presets only, never `'operation'`). `id` is unique
  * only within the collection's own `presets` array (used for reorder/remove
- * and as the synthetic node id a preset runs under — see
- * engine/nodeHandlers.ts's `presetsNodeHandler`, which reuses the exact same
- * per-kind handler each preset's `kind` would use standalone). Deliberately
- * not itself a `WorkflowNode`: a preset has no `credentialId`/`fieldValues`/
- * graph position of its own, and — per the issue's "Inside the collection:
+ * and as the id suffix a preset's own `RunStep` is stamped with — see
+ * `engine/nodeHandlers.ts`'s `presetsNodeHandler`). Deliberately not itself
+ * a `WorkflowNode`: a preset has no `credentialId`/`fieldValues`/graph
+ * position of its own, and — per the issue's "Inside the collection:
  * presets only, linear order only" — never participates in
  * `WorkflowConnection`/the main dependency graph individually; only the
  * collection as a whole does (see dependencyGraph.ts's own `checks` loop
  * for how an assert preset's ancestor dependency still gets there).
+ *
+ * A real discriminated union (one variant per `PresetKind`, each carrying
+ * only the fields its own kind needs) rather than one flat shape with
+ * optional fields — same pattern `Credential` already uses in this file.
+ * `engine/nodeHandlers.ts`'s `presetHandlers` registry dispatches on
+ * `preset.kind` and narrows (or asserts, backed by that same dispatch) to
+ * the matching variant before reading `durationMs`/`checks`.
  */
-export interface Preset {
+export type Preset = WaitPreset | AssertPreset;
+
+export interface WaitPreset {
   id: string;
-  kind: PresetKind;
-  /** `kind: 'wait'` only — same meaning as `WorkflowNode.durationMs`. */
-  durationMs?: number;
-  /** `kind: 'assert'` only — every check must pass or the preset (and its collection) fails. */
-  checks?: AssertCheck[];
+  kind: 'wait';
+  /** How long this preset pauses execution, in milliseconds, once its turn in the collection comes up. */
+  durationMs: number;
 }
+
+export interface AssertPreset {
+  id: string;
+  kind: 'assert';
+  /** Every check must pass, in order, or the preset (and its collection) fails at the first one that doesn't. */
+  checks: AssertCheck[];
+}
+
+/**
+ * What the palette/store hand around before a preset has an `id` yet
+ * (`addPreset`/`addPresetsNode`'s own `initialPreset`) — `DistributiveOmit`
+ * (defined further down, alongside `NewCredential`, its other user) so this
+ * stays the proper union of "each variant minus id" rather than collapsing
+ * to just the shared `kind` field the way a plain `Omit<Preset, 'id'>`
+ * would.
+ */
+export type NewPreset = DistributiveOmit<Preset, 'id'>;
 
 export interface WorkflowNode {
   id: string; // unique per canvas instance
@@ -161,30 +184,17 @@ export interface WorkflowNode {
   kind?: WorkflowNodeKind;
   /**
    * References an Operation.id. Required in practice for `kind: 'operation'`
-   * (the default) — optional on the type only because other kinds (e.g.
-   * `'wait'`) don't have one at all and still need to satisfy this same
-   * interface (see this file's own note on why `WorkflowNode` stays one
-   * flat shape rather than a discriminated union: every existing consumer
-   * already treats most of these fields as optional/absent-safe).
+   * (the default) — optional on the type only because `kind: 'presets'`
+   * doesn't have one at all and still needs to satisfy this same interface.
+   * `WorkflowNode` stays one flat shape covering both kinds (rather than a
+   * discriminated union like `Credential`/`Preset`) because every existing
+   * consumer already treats most of these fields as optional/absent-safe —
+   * revisiting that is a separate, larger change (see the workspace-level
+   * ROADMAP.md) than the `Preset` union above.
    */
   operationId?: string;
   credentialId: string | null;
   fieldValues: Record<string, FieldValue>;
-  /**
-   * `kind: 'wait'` only — how long the node pauses execution, in
-   * milliseconds, once its dependencies are satisfied and no breakpoint
-   * gates it. Ignored by every other kind. In practice only ever set on the
-   * synthetic per-preset `WorkflowNode` engine/nodeHandlers.ts's
-   * `presetAsNode` builds internally — no real top-level node carries it.
-   */
-  durationMs?: number;
-  /**
-   * `kind: 'assert'` only — same meaning as `Preset.checks`. Ignored by
-   * every other kind. In practice only ever set on the synthetic
-   * per-preset `WorkflowNode` `presetAsNode` builds internally, same as
-   * `durationMs` above — no real top-level node carries it.
-   */
-  checks?: AssertCheck[];
   /**
    * `kind: 'presets'` only — the ordered presets this node runs as one
    * unit once its own dependencies are satisfied (see `Preset` and
@@ -568,8 +578,11 @@ export type Credential =
   | CookieCredential;
 
 // Omit doesn't distribute over a union on its own (it'd collapse to the
-// intersection of keys) — this does, so NewCredential stays a proper union
-// of "each variant minus id".
+// intersection of keys) — this does. Shared by NewCredential here and
+// NewPreset above, so both stay a proper union of "each variant minus id"
+// instead of collapsing to just their common fields (Preset's case:
+// `Omit<Preset, 'id'>` alone would silently lose `durationMs`/`checks`
+// entirely, keeping only `kind`).
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 export type NewCredential = DistributiveOmit<Credential, 'id'>;
 

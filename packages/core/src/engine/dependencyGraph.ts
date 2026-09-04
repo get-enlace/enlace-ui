@@ -62,7 +62,8 @@ export function buildDependencyGraph(
   // reference to another step (no 'static' variant to gate on).
   for (const node of nodes) {
     for (const preset of node.presets ?? []) {
-      for (const check of preset.checks ?? []) {
+      if (preset.kind !== 'assert') continue;
+      for (const check of preset.checks) {
         if (byId.has(check.source.sourceNodeId)) {
           dependsOn.get(node.id)!.add(check.source.sourceNodeId);
         }

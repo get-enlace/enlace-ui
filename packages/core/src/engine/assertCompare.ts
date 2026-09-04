@@ -20,8 +20,8 @@ function looseEquals(actual: unknown, expected: string): boolean {
 
 /**
  * Runs one `AssertCheck`'s comparison — `actual` already resolved (see
- * engine/nodeHandlers.ts's `assertNodeHandler`, which resolves `source` via
- * bodyTags.ts's `resolveTagValue` before calling this). Returns `null` on
+ * engine/nodeHandlers.ts's `assertPresetHandler`, which resolves `source`
+ * via bodyTags.ts's `resolveTagValue` before calling this). Returns `null` on
  * pass, a human-readable failure reason on fail — never throws; a
  * non-numeric operand for `greaterThan`/`lessThan` is a failed check with a
  * clear reason, not a crash.
