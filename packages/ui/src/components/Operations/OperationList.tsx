@@ -119,7 +119,7 @@ export function OperationList({ operations }: Props) {
       <div className="operation-list__search">
         <input
           type="text"
-          placeholder="Search by name, /path…, or .preset…"
+          placeholder="Search by operationId or preset, /path…, .preset…"
           aria-label="Search operations and presets"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
