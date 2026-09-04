@@ -1,7 +1,6 @@
 import { buildDependencyGraph } from './dependencyGraph.js';
 import { buildNodeLabels } from '../nodeLabel.js';
-import { getByPath, setByPath } from './path.js';
-import { buildRequest, nodeHandlers, type NodeHandlerContext } from './nodeHandlers.js';
+import { nodeHandlers, type NodeHandlerContext } from './handlers/index.js';
 import type {
   Credential,
   Operation,
@@ -15,14 +14,6 @@ import type {
   WorkflowConnection,
   WorkflowNode,
 } from '../types.js';
-
-// Re-exported so every existing `import { getByPath, buildRequest } from
-// './chainExecutor.js'` (this package's own tests, and utils/bodyTemplate.ts
-// via the @get-enlace/core barrel) keeps working unchanged even though both
-// now actually live in path.ts / nodeHandlers.ts — split out so
-// chainExecutor.ts and nodeHandlers.ts can depend on path.ts without
-// depending on each other.
-export { getByPath, setByPath, buildRequest };
 
 /**
  * The key a `WorkflowConnection` is armed/looked-up under in a breakpoints
