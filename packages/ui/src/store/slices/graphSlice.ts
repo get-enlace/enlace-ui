@@ -103,7 +103,14 @@ export const createGraphSlice: StateCreator<WorkflowState, [], [], GraphSlice> =
   addNode: (operationId, position) => {
     if (isLocked(get())) return '';
     const id = randomId();
-    const node: WorkflowNode = { id, operationId, credentialId: null, fieldValues: {} };
+    const node: WorkflowNode = {
+      id,
+      kind: 'operation',
+      operationId,
+      requestMode: 'form',
+      credentialId: null,
+      fieldValues: {},
+    };
     set((state) => {
       const desired = position ?? defaultPosition(state.nodes.length);
       const obstacles = Object.values(state.nodePositions);

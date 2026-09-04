@@ -9,6 +9,7 @@ function op(requestBodySchema: Record<string, any> | null): Operation {
     path: '/orders',
     parameters: [],
     requestBodySchema,
+    requestBodyContentType: requestBodySchema ? 'application/json' : null,
     responseSchema: null,
   };
 }
@@ -100,6 +101,7 @@ describe('buildRawParamsFromForm / convertRawParamsToFieldValues', () => {
       { name: 'notify', in: 'query', required: false, schema: { type: 'boolean' } },
     ],
     requestBodySchema: null,
+    requestBodyContentType: null,
     responseSchema: null,
   };
 

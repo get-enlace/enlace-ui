@@ -79,7 +79,7 @@ describe('ChromeSettingsMenu', () => {
   it('Export menu item opens the export dialog when the canvas has nodes', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'n1', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'n1', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} }],
       nodePositions: { n1: { x: 0, y: 0 } },
     });
     render(<ChromeSettingsMenu />);

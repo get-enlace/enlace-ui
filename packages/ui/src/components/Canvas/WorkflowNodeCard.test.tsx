@@ -4,10 +4,18 @@ import userEvent from '@testing-library/user-event';
 import { ReactFlowProvider, Position, useStoreApi, type NodeProps } from 'reactflow';
 import { WorkflowNodeCard, type WorkflowNodeData } from './WorkflowNodeCard.js';
 import { useWorkflowStore } from '../../store/workflowStore.js';
-import type { Operation, WorkflowNode } from '../../types.js';
+import type { Operation, OperationNode } from '../../types.js';
 
-function makeNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
-  return { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {}, ...overrides };
+function makeNode(overrides: Partial<OperationNode> = {}): OperationNode {
+  return {
+    id: 'node-1',
+    kind: 'operation',
+    operationId: 'POST /pet',
+    requestMode: 'form',
+    credentialId: null,
+    fieldValues: {},
+    ...overrides,
+  };
 }
 
 function makeOperation(overrides: Partial<Operation> = {}): Operation {
@@ -17,6 +25,7 @@ function makeOperation(overrides: Partial<Operation> = {}): Operation {
     path: '/pet',
     parameters: [],
     requestBodySchema: null,
+    requestBodyContentType: null,
     responseSchema: null,
     ...overrides,
   };

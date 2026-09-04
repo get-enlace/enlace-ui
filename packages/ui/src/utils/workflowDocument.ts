@@ -354,11 +354,12 @@ function serializeNode(node: WorkflowNode): WorkflowNode {
 
   const out: WorkflowNode = {
     id: node.id,
+    kind: 'operation',
     operationId: node.operationId,
+    requestMode: node.requestMode,
     credentialId: node.credentialId ?? null,
     fieldValues: { ...node.fieldValues },
   };
-  if (node.requestMode) out.requestMode = node.requestMode;
   if (node.rawPath) out.rawPath = cloneRawBody(node.rawPath);
   if (node.rawQuery) out.rawQuery = cloneRawBody(node.rawQuery);
   if (node.rawBody) out.rawBody = cloneRawBody(node.rawBody);
@@ -516,7 +517,7 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
   // 'presets' packages an ordered list of presets as one executable unit —
   // needs no operationId at all, just its own `presets` array to validate.
   // Every node without this exact `kind` falls through to the 'operation'
-  // shape below, exactly as before this field existed.
+  // shape below.
   if (raw.kind === 'presets') {
     const presets = parsePresetsList(raw.presets, raw.id);
     if (typeof presets === 'string') return presets;
@@ -531,16 +532,18 @@ function parseNode(raw: unknown, index: number): WorkflowNode | string {
   }
   const fieldValues = parseFieldValues(raw.fieldValues, raw.id);
   if (typeof fieldValues === 'string') return fieldValues;
+  if (raw.requestMode !== 'form' && raw.requestMode !== 'raw') {
+    return `Enlace collection node "${raw.id}" has an invalid requestMode.`;
+  }
 
   const node: WorkflowNode = {
     id: raw.id,
+    kind: 'operation',
     operationId: raw.operationId,
+    requestMode: raw.requestMode,
     credentialId: typeof raw.credentialId === 'string' ? raw.credentialId : null,
     fieldValues,
   };
-  // Prefer requestMode; accept legacy bodyMode from older collections.
-  const mode = raw.requestMode ?? raw.bodyMode;
-  if (mode === 'form' || mode === 'raw') node.requestMode = mode;
 
   for (const key of ['rawPath', 'rawQuery', 'rawBody'] as const) {
     if (raw[key] != null) {

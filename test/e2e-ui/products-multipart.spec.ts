@@ -20,7 +20,9 @@ const productCollection = {
       nodes: [
         {
           id: 'product-1',
+          kind: 'operation',
           operationId: 'POST /products',
+          requestMode: 'form',
           credentialId: null,
           fieldValues: {
             'body.name': { source: 'static', value: 'Gadget' },

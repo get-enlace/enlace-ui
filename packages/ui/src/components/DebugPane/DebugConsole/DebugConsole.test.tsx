@@ -20,7 +20,7 @@ import {
 import type { Operation, RunStep, WorkflowNode } from '../../../types.js';
 
 function node(id: string, operationId = 'GET /customers/{id}'): WorkflowNode {
-  return { id, operationId, credentialId: null, fieldValues: {} };
+  return { id, kind: 'operation', operationId, requestMode: 'form', credentialId: null, fieldValues: {} };
 }
 
 const customerOp: Operation = {
@@ -29,6 +29,7 @@ const customerOp: Operation = {
   path: '/customers/{id}',
   parameters: [],
   requestBodySchema: null,
+  requestBodyContentType: null,
   responseSchema: null,
   operationId: 'getCustomerById',
 };

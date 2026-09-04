@@ -94,7 +94,7 @@ describe('App', () => {
       useWorkflowStore.setState({
         isRunning: true,
         isDebugRun: true,
-        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+        nodes: [{ id: 'a', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} }],
         stepStatusByNodeId: { a: 'paused' },
         activeControl: { continue: vi.fn(), step: vi.fn(), stop: vi.fn() },
       });
@@ -110,8 +110,8 @@ describe('App', () => {
         isRunning: true,
         isDebugRun: true,
         nodes: [
-          { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
-          { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+          { id: 'a', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} },
+          { id: 'b', kind: 'operation', operationId: 'GET /b', requestMode: 'form', credentialId: null, fieldValues: {} },
         ],
         stepStatusByNodeId: { a: 'paused', b: 'paused' },
         activeControl: { continue: vi.fn(), step: vi.fn(), stop: vi.fn() },
@@ -133,7 +133,7 @@ describe('App', () => {
       useWorkflowStore.setState({
         isRunning: true,
         isDebugRun: true,
-        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+        nodes: [{ id: 'a', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} }],
         stepStatusByNodeId: { a: 'paused' },
         activeControl: control,
       });
@@ -153,8 +153,8 @@ describe('App', () => {
         isRunning: true,
         isDebugRun: true,
         nodes: [
-          { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
-          { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+          { id: 'a', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} },
+          { id: 'b', kind: 'operation', operationId: 'GET /b', requestMode: 'form', credentialId: null, fieldValues: {} },
         ],
         stepStatusByNodeId: { a: 'paused', b: 'paused' },
         selectedNodeId: 'b',
@@ -173,8 +173,8 @@ describe('App', () => {
         isRunning: true,
         isDebugRun: true,
         nodes: [
-          { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
-          { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+          { id: 'a', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} },
+          { id: 'b', kind: 'operation', operationId: 'GET /b', requestMode: 'form', credentialId: null, fieldValues: {} },
         ],
         stepStatusByNodeId: { a: 'paused', b: 'paused' },
         selectedNodeId: null,
@@ -190,7 +190,7 @@ describe('App', () => {
       useWorkflowStore.setState({
         isRunning: true,
         isDebugRun: true,
-        nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+        nodes: [{ id: 'a', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} }],
         stepStatusByNodeId: { a: 'in-flight' },
         activeControl: { continue: vi.fn(), step: vi.fn(), stop: vi.fn() },
       });

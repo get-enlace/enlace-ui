@@ -26,11 +26,13 @@ const operation: Operation = {
   path: '/orders',
   parameters: [],
   requestBodySchema: null,
+  requestBodyContentType: null,
   responseSchema: null,
 };
 
 const node: WorkflowNode = {
   id: 'n1',
+  kind: 'operation',
   operationId: 'POST /orders',
   credentialId: 'c-bearer',
   fieldValues: {
@@ -119,9 +121,9 @@ describe('serializeCollection', () => {
     const doc = serializeCollection({
       name: 'Grouped',
       nodes: [
-        { id: 'n1', operationId: 'GET /a', credentialId: null, fieldValues: {} },
-        { id: 'n2', operationId: 'GET /b', credentialId: null, fieldValues: {} },
-        { id: 'n3', operationId: 'GET /c', credentialId: null, fieldValues: {} },
+        { id: 'n1', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'n2', kind: 'operation', operationId: 'GET /b', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'n3', kind: 'operation', operationId: 'GET /c', requestMode: 'form', credentialId: null, fieldValues: {} },
       ],
       connections: [],
       nodePositions: { n1: { x: 0, y: 0 }, n2: { x: 10, y: 10 }, n3: { x: 200, y: 0 } },
@@ -553,13 +555,14 @@ describe('hydrateCollection / helpers', () => {
     ).toBe("Operations POST /missing, GET /gone aren't in the loaded spec — load the matching spec before running.");
   });
 
-  it('accepts legacy bodyMode on import as requestMode, and round-trips rawPath/rawQuery', () => {
+  it('round-trips rawPath/rawQuery', () => {
     const withParams: WorkflowNode = {
       id: 'n-patch',
+      kind: 'operation',
       operationId: 'PATCH /customers/{id}',
+      requestMode: 'raw',
       credentialId: null,
       fieldValues: {},
-      requestMode: 'raw',
       rawPath: { template: '{"id":"c1"}', tags: {} },
       rawQuery: { template: '{"dryRun":true}', tags: {} },
     };
@@ -572,45 +575,36 @@ describe('hydrateCollection / helpers', () => {
     expect(asOperationNode(doc.workflows[0].nodes[0]).requestMode).toBe('raw');
     expect(asOperationNode(doc.workflows[0].nodes[0]).rawPath).toEqual({ template: '{"id":"c1"}', tags: {} });
     expect(asOperationNode(doc.workflows[0].nodes[0]).rawQuery).toEqual({ template: '{"dryRun":true}', tags: {} });
+  });
 
-    const legacy = parseCollection({
+  it('rejects an operation node with no requestMode', () => {
+    const result = parseCollection({
       format: ENLACE_COLLECTION_FORMAT,
       version: ENLACE_COLLECTION_VERSION,
-      name: 'Legacy',
+      name: 'Broken',
       exportedAt: '',
       secrets: 'stripped',
       credentials: [],
       workflows: [
         {
           id: 'workflow-1',
-          name: 'Legacy',
+          name: 'Broken',
           specHint: { operationIds: [] },
-          nodes: [
-            {
-              id: 'n1',
-              operationId: 'POST /x',
-              credentialId: null,
-              fieldValues: {},
-              bodyMode: 'raw',
-              rawBody: { template: '{}', tags: {} },
-            },
-          ],
+          nodes: [{ id: 'n1', operationId: 'POST /x', credentialId: null, fieldValues: {} }],
           connections: [],
           nodePositions: {},
         },
       ],
     });
-    expect(legacy.ok).toBe(true);
-    if (legacy.ok) {
-      expect(asOperationNode(legacy.collection.workflows[0].nodes[0]).requestMode).toBe('raw');
-      expect(asOperationNode(legacy.collection.workflows[0].nodes[0]).rawBody).toEqual({ template: '{}', tags: {} });
-    }
+    expect(result.ok).toBe(false);
   });
 
   it('round-trips a file FieldValue marker (fileName only — no bytes)', () => {
     const withFile: WorkflowNode = {
       id: 'n-product',
+      kind: 'operation',
       operationId: 'POST /products',
+      requestMode: 'form',
       credentialId: null,
       fieldValues: {
         'body.image': { source: 'file', fileName: 'gadget.png' },

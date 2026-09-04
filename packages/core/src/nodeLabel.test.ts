@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildNodeLabels, formatPresetsSummary, formatWaitDuration } from './nodeLabel.js';
-import type { Operation, PresetsNode, WorkflowNode } from './types.js';
+import type { Operation, OperationNode, PresetsNode } from './types.js';
 
 function makeOperation(overrides: Partial<Operation> = {}): Operation {
   return {
@@ -9,15 +9,18 @@ function makeOperation(overrides: Partial<Operation> = {}): Operation {
     path: '/customers',
     parameters: [],
     requestBodySchema: null,
+    requestBodyContentType: null,
     responseSchema: null,
     ...overrides,
   };
 }
 
-function makeNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
+function makeNode(overrides: Partial<OperationNode> = {}): OperationNode {
   return {
     id: 'node-1',
+    kind: 'operation',
     operationId: 'POST /customers',
+    requestMode: 'form',
     credentialId: null,
     fieldValues: {},
     ...overrides,
@@ -72,7 +75,7 @@ describe('buildNodeLabels', () => {
   });
 
   it('labels a presets node by its preset summary', () => {
-    const node: WorkflowNode = {
+    const node: PresetsNode = {
       id: 'g1',
       kind: 'presets',
       credentialId: null,
@@ -86,7 +89,7 @@ describe('buildNodeLabels', () => {
   });
 
   it('labels an empty presets collection plainly rather than blank', () => {
-    const node: WorkflowNode = { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [] };
+    const node: PresetsNode = { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [] };
     expect(buildNodeLabels([node], new Map()).get('g1')).toBe('Presets: Empty');
   });
 

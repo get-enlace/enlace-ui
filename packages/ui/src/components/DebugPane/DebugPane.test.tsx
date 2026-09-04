@@ -28,6 +28,7 @@ const petOp = {
   path: '/pet',
   parameters: [],
   requestBodySchema: null,
+  requestBodyContentType: null,
   responseSchema: null,
 };
 
@@ -81,7 +82,7 @@ describe('DebugPane (Results)', () => {
   it('redacts the Authorization header in the request panels', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
       operations: [petOp],
       runResult: {
         steps: [
@@ -107,7 +108,7 @@ describe('DebugPane (Results)', () => {
   it('redacts an apiKey-in-query credential value in the request panel URL', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
       operations: [petOp],
       runResult: {
         steps: [
@@ -136,8 +137,8 @@ describe('DebugPane (Results)', () => {
   it('summarizes each step with the canvas node label, including #N for duplicates', () => {
     useWorkflowStore.setState({
       nodes: [
-        { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
-        { id: 'node-2', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+        { id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'node-2', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} },
       ],
       operations: [petOp],
       runResult: { steps: [makeStep(), makeStep({ nodeId: 'node-2' })] },
@@ -153,7 +154,7 @@ describe('DebugPane (Results)', () => {
   it('shows request and response bodies in expand panels', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
       operations: [petOp],
       runResult: { steps: [makeStep()] },
       stepStatusByNodeId: { 'node-1': 'completed' },
@@ -169,7 +170,7 @@ describe('DebugPane (Results)', () => {
   it('shows a credentials: include chip on the request panel', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
       operations: [petOp],
       runResult: { steps: [makeStep({ request: { ...makeStep().request, credentials: 'include' } })] },
       stepStatusByNodeId: { 'node-1': 'completed' },
@@ -183,8 +184,8 @@ describe('DebugPane (Results)', () => {
   it('shows a status summary and status badges', () => {
     useWorkflowStore.setState({
       nodes: [
-        { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
-        { id: 'node-2', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+        { id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'node-2', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} },
       ],
       operations: [petOp],
       runResult: { steps: [makeStep(), makeStep({ nodeId: 'node-2' })] },
@@ -199,7 +200,7 @@ describe('DebugPane (Results)', () => {
   it('shows ERROR status and the error message for a failed step', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
       operations: [petOp],
       runResult: { steps: [makeStep({ response: undefined, error: 'Network request failed' })] },
       stepStatusByNodeId: { 'node-1': 'failed' },
@@ -213,7 +214,7 @@ describe('DebugPane (Results)', () => {
 
   it('hides the body when collapsed', () => {
     useWorkflowStore.setState({
-      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
       operations: [petOp],
       runResult: { steps: [makeStep()] },
       stepStatusByNodeId: { 'node-1': 'completed' },
@@ -239,8 +240,8 @@ describe('DebugPane (Results)', () => {
   it('does not list canvas nodes as pending before any run', () => {
     useWorkflowStore.setState({
       nodes: [
-        { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
-        { id: 'node-2', operationId: 'POST /pet', credentialId: null, fieldValues: {} },
+        { id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'node-2', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} },
       ],
       operations: [petOp],
     });
@@ -252,7 +253,7 @@ describe('DebugPane (Results)', () => {
   it('clears results when Clear is clicked', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'node-1', kind: 'operation', operationId: 'POST /pet', requestMode: 'form', credentialId: null, fieldValues: {} }],
       operations: [petOp],
       runResult: { steps: [makeStep()] },
       stepStatusByNodeId: { 'node-1': 'completed' },
@@ -271,10 +272,10 @@ describe('DebugPane (Results)', () => {
     const user = userEvent.setup();
     const stepNode = vi.fn();
     useWorkflowStore.setState({
-      nodes: [{ id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'a', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} }],
       connections: [],
       operations: [
-        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
+        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, requestBodyContentType: null, responseSchema: null },
       ],
       stepStatusByNodeId: { a: 'paused' },
       previewRequestByNodeId: {
@@ -296,13 +297,13 @@ describe('DebugPane (Results)', () => {
   it('lists every node with live status once the canvas has steps', () => {
     useWorkflowStore.setState({
       nodes: [
-        { id: 'a', operationId: 'GET /a', credentialId: null, fieldValues: {} },
-        { id: 'b', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+        { id: 'a', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'b', kind: 'operation', operationId: 'GET /b', requestMode: 'form', credentialId: null, fieldValues: {} },
       ],
       connections: [{ fromNodeId: 'a', toNodeId: 'b' }],
       operations: [
-        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
-        { id: 'GET /b', method: 'get', path: '/b', parameters: [], requestBodySchema: null, responseSchema: null },
+        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, requestBodyContentType: null, responseSchema: null },
+        { id: 'GET /b', method: 'get', path: '/b', parameters: [], requestBodySchema: null, requestBodyContentType: null, responseSchema: null },
       ],
       stepStatusByNodeId: { a: 'completed', b: 'paused' },
     });
