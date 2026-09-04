@@ -159,9 +159,13 @@
   min-width: 0;
 }
 
-/* --- Preset palette: non-HTTP nodes (Wait today) — same drag mechanism as
-   an operation row (see OperationList.tsx), distinct chrome so it never
-   reads as "just another operation." --- */
+/* --- Preset palette: an icon-grid "library" for non-HTTP nodes (Wait,
+   Assert), not a list of rows like Operations below — same drag mechanism
+   as an operation row (see OperationList.tsx). Bare colored icons, no
+   card/box chrome around them — each icon's own accent (--color-wait,
+   --color-presets, ...) is the only thing that has to carry its identity
+   here. Each icon's name is a hover tooltip + aria-label, not visible text
+   (see OperationList.tsx's own comment on why). --- */
 
 .preset-list {
   margin: 0 0 14px;
@@ -169,33 +173,45 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.preset-list__item {
+/* Fixed 5 columns (not auto-fill) — a library grid reads better at a
+   consistent cell size than one that keeps stretching as the sidebar
+   resizes. Capped at ~3 rows' worth of height and scrolls beyond that
+   (`overflow-y: auto`) rather than growing the sidebar indefinitely as
+   more presets land — revisit the 128px figure if the cell size or gap
+   above ever changes, it isn't derived from them. */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  max-height: 128px;
+  overflow-y: auto;
+}
+
+.preset-grid__item {
   display: flex;
-  gap: 8px;
   align-items: center;
-  min-width: 0;
-  padding: 8px 10px;
-  margin: 0 0 8px;
-  border: 1px dashed var(--color-wait);
+  justify-content: center;
+  aspect-ratio: 1;
+  border: none;
+  background: none;
   border-radius: 4px;
-  background: var(--color-wait-bg);
   cursor: grab;
-  font-size: 13px;
 }
 
-.preset-list__item:hover {
-  border-color: var(--color-focus);
+.preset-grid__item:hover {
+  background: var(--color-node-bg);
 }
 
-.preset-list__icon {
-  font-size: 13px;
+.preset-grid__icon {
+  font-size: 18px;
   line-height: 1;
 }
 
-.preset-list__label {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text);
+.preset-grid__icon--wait {
+  color: var(--color-wait);
+}
+
+.preset-grid__icon--assert {
+  color: var(--color-presets);
 }
 

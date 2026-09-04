@@ -7,6 +7,17 @@ interface Props {
 
 const UNTAGGED = '(untagged)';
 
+// No-shift character (unlike '@'/'#'/'!') — and neither a path (always
+// starts with '/') nor an operationId can plausibly start with '.', so it
+// never collides with a real match in either other mode.
+const PRESET_SEARCH_TRIGGER = '.';
+
+/** Every preset the palette grid can drag — same two kinds PresetsNodeCard.tsx/graphSlice.ts know about, named here for search matching. */
+const PRESET_DEFS: Array<{ kind: 'wait' | 'assert'; label: string; icon: string }> = [
+  { kind: 'wait', label: 'Wait', icon: '⏱' },
+  { kind: 'assert', label: 'Assert', icon: '✓' },
+];
+
 function groupOperations(ops: Operation[]): Array<{ tag: string; operations: Operation[] }> {
   const order: string[] = [];
   const map = new Map<string, Operation[]>();
@@ -34,21 +45,44 @@ export function OperationList({ operations }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const trimmedQuery = query.trim().toLowerCase();
-  // Path search when the query starts with '/', operationId search otherwise.
-  // This keeps the two search modes distinct — typing "pet" searches operationIds;
-  // typing "/pet" searches the path, so accidental path matches don't pollute
-  // the operationId results.
-  const filtered = trimmedQuery
-    ? operations.filter((op) =>
-        trimmedQuery.startsWith('/')
-          ? op.path.toLowerCase().includes(trimmedQuery)
-          : op.operationId?.toLowerCase().includes(trimmedQuery)
-      )
-    : operations;
+  const searching = trimmedQuery.length > 0;
+  // Three search modes, one search box: a leading '/' searches operation
+  // paths only (unchanged from before presets joined this search); a
+  // leading PRESET_SEARCH_TRIGGER searches preset names only; anything
+  // else is a combined operationId + preset-name search, so plain typing
+  // finds either kind without needing a prefix. Each trigger is exclusive
+  // of the other results — a path search shows no presets, a preset
+  // search shows no operations — same reasoning the original path/operationId
+  // split already had: keep the modes distinct so an accidental match in
+  // the "wrong" field doesn't pollute results.
+  const isPathSearch = trimmedQuery.startsWith('/');
+  const isPresetSearch = !isPathSearch && trimmedQuery.startsWith(PRESET_SEARCH_TRIGGER);
+  const presetMatchText = isPresetSearch ? trimmedQuery.slice(PRESET_SEARCH_TRIGGER.length) : trimmedQuery;
+
+  const filtered = !searching
+    ? operations
+    : isPresetSearch
+      ? []
+      : operations.filter((op) =>
+          isPathSearch ? op.path.toLowerCase().includes(trimmedQuery) : op.operationId?.toLowerCase().includes(trimmedQuery)
+        );
+
+  const filteredPresets = !searching
+    ? PRESET_DEFS
+    : isPathSearch
+      ? []
+      : PRESET_DEFS.filter((p) => p.label.toLowerCase().includes(presetMatchText));
+
+  // Only reached when both are empty (see the render below) — worded per
+  // mode so a preset-only search never says "No operations match", etc.
+  const emptyMessage = isPathSearch
+    ? `No operations match "${query}".`
+    : isPresetSearch
+      ? `No presets match "${query}".`
+      : `No operations or presets match "${query}".`;
 
   const groups = groupOperations(filtered);
   const multipleGroups = groups.length > 1 || (groups.length === 1 && groups[0].tag !== UNTAGGED);
-  const searching = trimmedQuery.length > 0;
 
   const allTags = groups.map((g) => g.tag);
   const allExpanded = allTags.length > 0 && allTags.every((tag) => expanded.has(tag));
@@ -78,26 +112,50 @@ export function OperationList({ operations }: Props) {
 
   return (
     <aside className="operation-list">
-      {/* Deliberately not a <ul>/<li> like the Operations list below — a
-          single fixed preset today, and the two lists' `listitem` roles
-          would otherwise collide in "how many operations matched" counts.
-          Only real presets live here — there's no "collection" item to
-          drag; dropping any preset onto the canvas always creates/uses a
-          `kind: 'presets'` collection, even for just this one (see
-          Canvas.tsx's onDrop). */}
-      <section className="preset-list">
-        <h2>Presets</h2>
-        <div
-          className="preset-list__item"
-          draggable
-          onDragStart={(e) => e.dataTransfer.setData('text/preset-kind', 'wait')}
-        >
-          <span className="preset-list__icon" aria-hidden="true">
-            ⏱
-          </span>
-          <span className="preset-list__label">Wait</span>
-        </div>
-      </section>
+      {/* One search box up top governs both sections below it (see the three
+          modes computed above) — search reads as "search this whole panel",
+          not "search Operations", so it belongs above both, not wedged
+          between them. */}
+      <div className="operation-list__search">
+        <input
+          type="text"
+          placeholder="Search by name, /path…, or .preset…"
+          aria-label="Search operations and presets"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+      {/* Icon-grid "library" — not the Operations list's row-per-item shape
+          below: a small, fixed set of presets, meant to scan at a glance
+          rather than read. Each cell's name is a hover tooltip (`title`) +
+          `aria-label`, not visible text. Only real presets live here —
+          there's no "collection" item to drag; dropping any preset onto the
+          canvas always creates/uses a `kind: 'presets'` collection, even for
+          just this one (see Canvas.tsx's onDrop). Hidden entirely (not just
+          emptied) once a search excludes every preset — same "a group with
+          no matches just doesn't render" behavior Operations' own tag
+          groups already have below, rather than showing an empty header. */}
+      {filteredPresets.length > 0 && (
+        <section className="preset-list">
+          <h2>Presets</h2>
+          <div className="preset-grid">
+            {filteredPresets.map((preset) => (
+              <div
+                key={preset.kind}
+                className="preset-grid__item"
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData('text/preset-kind', preset.kind)}
+                title={preset.label}
+                aria-label={preset.label}
+              >
+                <span className={`preset-grid__icon preset-grid__icon--${preset.kind}`} aria-hidden="true">
+                  {preset.icon}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="operation-list__heading">
         <h2>Operations</h2>
         {multipleGroups && !searching && (
@@ -106,18 +164,9 @@ export function OperationList({ operations }: Props) {
           </button>
         )}
       </div>
-      <div className="operation-list__search">
-        <input
-          type="text"
-          placeholder="Search by operationId or /path…"
-          aria-label="Search operations by operationId"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
-      {searching && filtered.length === 0 ? (
-        <p className="operation-list__empty">No operations match &quot;{query}&quot;.</p>
-      ) : multipleGroups ? (
+      {searching && filtered.length === 0 && filteredPresets.length === 0 ? (
+        <p className="operation-list__empty">{emptyMessage}</p>
+      ) : filtered.length === 0 ? null : multipleGroups ? (
         <div className="operation-list__groups">
           {groups.map(({ tag, operations: groupOps }) => {
             // While searching, every remaining group has a match — expand them

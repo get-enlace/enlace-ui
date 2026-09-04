@@ -57,15 +57,27 @@ describe('OperationList', () => {
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/operation-id', 'POST /pet');
   });
 
-  it('renders a Wait preset that sets a distinct preset-kind drag payload', () => {
+  it('renders a Wait preset icon (labeled via hover tooltip/aria-label, not visible text) that sets a distinct preset-kind drag payload', () => {
     render(<OperationList operations={[]} />);
 
     expect(screen.getByText('Presets')).toBeInTheDocument();
-    const item = screen.getByText('Wait').closest('div')!;
+    const item = screen.getByLabelText('Wait');
+    expect(item).toHaveAttribute('title', 'Wait');
     const dataTransfer = { setData: vi.fn() };
     fireEvent.dragStart(item, { dataTransfer });
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/preset-kind', 'wait');
+  });
+
+  it('renders an Assert preset icon that sets a distinct preset-kind drag payload', () => {
+    render(<OperationList operations={[]} />);
+
+    const item = screen.getByLabelText('Assert');
+    expect(item).toHaveAttribute('title', 'Assert');
+    const dataTransfer = { setData: vi.fn() };
+    fireEvent.dragStart(item, { dataTransfer });
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/preset-kind', 'assert');
   });
 
   describe('search', () => {
@@ -85,19 +97,22 @@ describe('OperationList', () => {
     it('filters by a case-insensitive operationId substring', () => {
       render(<OperationList operations={operations} />);
 
-      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
         target: { value: 'PET' },
       });
 
       expect(screen.getAllByRole('listitem')).toHaveLength(2);
       expect(screen.getByText('addPet')).toBeInTheDocument();
       expect(screen.getByText('getPetById')).toBeInTheDocument();
+      // Neither preset name contains "pet" — the Presets section just
+      // doesn't render, same as an unmatched Operations tag group.
+      expect(screen.queryByText('Presets')).not.toBeInTheDocument();
     });
 
     it('narrows further on a more specific query', () => {
       render(<OperationList operations={operations} />);
 
-      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
         target: { value: 'addPet' },
       });
 
@@ -105,30 +120,82 @@ describe('OperationList', () => {
       expect(screen.getByText('addPet')).toBeInTheDocument();
     });
 
-    it('shows an empty-state message, not an empty list, when nothing matches', () => {
+    it('shows an empty-state message naming both operations and presets, not an empty list, when nothing matches either', () => {
       render(<OperationList operations={operations} />);
 
-      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
         target: { value: 'nonexistent' },
       });
 
       expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-      expect(screen.getByText('No operations match "nonexistent".')).toBeInTheDocument();
+      expect(screen.getByText('No operations or presets match "nonexistent".')).toBeInTheDocument();
     });
 
-    it('also matches on /path prefix search', () => {
+    it('also matches on /path prefix search, and hides Presets entirely (path search is operations-only)', () => {
       const mixedOps = [
         makeOperation({ id: 'GET /pets', path: '/pets', operationId: 'listPets' }),
         makeOperation({ id: 'POST /orders', path: '/orders', operationId: 'createOrder' }),
       ];
       render(<OperationList operations={mixedOps} />);
 
-      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
         target: { value: '/orders' },
       });
 
       expect(screen.getAllByRole('listitem')).toHaveLength(1);
       expect(screen.getByText('createOrder')).toBeInTheDocument();
+      expect(screen.queryByText('Presets')).not.toBeInTheDocument();
+    });
+
+    it('a /path search with no operation match shows the operations-only empty message, not the combined one', () => {
+      render(<OperationList operations={operations} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
+        target: { value: '/nonexistent' },
+      });
+
+      expect(screen.getByText('No operations match "/nonexistent".')).toBeInTheDocument();
+    });
+
+    it('a plain-text search also matches preset names, alongside operationIds', () => {
+      render(<OperationList operations={operations} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
+        target: { value: 'wait' },
+      });
+
+      // No operationId in this fixture contains "wait" — Operations comes up empty...
+      expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+      expect(screen.queryByText('No operations or presets match "wait".')).not.toBeInTheDocument();
+      // ...but the Presets grid still shows its one match, narrowed to just Wait.
+      expect(screen.getByLabelText('Wait')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Assert')).not.toBeInTheDocument();
+    });
+
+    it('the . trigger searches presets only, excluding operations even when their operationId would also match', () => {
+      const opsWithWaitId = [...operations, makeOperation({ id: 'POST /wait', operationId: 'waitForIt' })];
+      render(<OperationList operations={opsWithWaitId} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
+        target: { value: '.wait' },
+      });
+
+      expect(screen.getByLabelText('Wait')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Assert')).not.toBeInTheDocument();
+      // "waitForIt" would match a plain "wait" search, but not a preset-only one.
+      expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+      expect(screen.queryByText('Operations')).toBeInTheDocument(); // heading itself always stays
+    });
+
+    it('. with no preset match shows the presets-only empty message', () => {
+      render(<OperationList operations={operations} />);
+
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
+        target: { value: '.nonexistent' },
+      });
+
+      expect(screen.getByText('No presets match ".nonexistent".')).toBeInTheDocument();
+      expect(screen.queryByText('Presets')).not.toBeInTheDocument();
     });
   });
 
@@ -184,7 +251,7 @@ describe('OperationList', () => {
     it('search expands matching groups and hides empty ones', () => {
       render(<OperationList operations={taggedOps} />);
 
-      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
         target: { value: 'order' },
       });
 
@@ -195,7 +262,7 @@ describe('OperationList', () => {
     it('clearing the search returns groups to collapsed', () => {
       render(<OperationList operations={taggedOps} />);
 
-      const input = screen.getByLabelText('Search operations by operationId');
+      const input = screen.getByLabelText('Search operations and presets');
       fireEvent.change(input, { target: { value: 'order' } });
       expect(screen.getByText('listOrders')).toBeInTheDocument();
 
@@ -225,7 +292,7 @@ describe('OperationList', () => {
     it('hides the expand/collapse toggle while searching', () => {
       render(<OperationList operations={taggedOps} />);
 
-      fireEvent.change(screen.getByLabelText('Search operations by operationId'), {
+      fireEvent.change(screen.getByLabelText('Search operations and presets'), {
         target: { value: 'order' },
       });
 
