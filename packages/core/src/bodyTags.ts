@@ -77,8 +77,16 @@ export function getHeaderCaseInsensitive(headers: Record<string, string>, name: 
  * node ids into the same names the canvas/chips show — error text is for
  * people, so a UUID must never appear in it.
  */
+/**
+ * `tag` is `Omit<BodyTag, 'id'>`, not `BodyTag` — this never reads `.id`
+ * (only meaningful as a dictionary key in `RawBody.tags`), so widening the
+ * parameter lets a directly-embedded reference that isn't stored in such a
+ * dictionary (an `AssertCheck.source`, see types.ts) reuse this function
+ * with no vestigial `id` field of its own. Every real `BodyTag` still
+ * satisfies this widened type, so no call site changes.
+ */
 export function resolveTagValue(
-  tag: BodyTag,
+  tag: Omit<BodyTag, 'id'>,
   stepsByNodeId: Map<string, RunStep>,
   nodeLabels?: Map<string, string>
 ): unknown {
@@ -93,6 +101,8 @@ export function resolveTagValue(
       return resolveJsonPath(step.response.body, tag.jsonPath);
     case 'response_raw':
       return step.response.body;
+    case 'response_status':
+      return step.response.status;
     case 'response_header': {
       const name = tag.headerName ?? '';
       const value = getHeaderCaseInsensitive(step.response.headers, name);

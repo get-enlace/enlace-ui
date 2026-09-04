@@ -1,8 +1,13 @@
+import { useState } from 'react';
 import { Handle, Position, useStore, type NodeProps } from 'reactflow';
-import { formatPresetLabel, formatWaitDuration } from '@get-enlace/core';
+import { formatPresetLabel } from '@get-enlace/core';
 import { useWorkflowStore } from '../../store/workflowStore.js';
+import { DEFAULT_WAIT_DURATION_MS } from '../../store/slices/graphSlice.js';
 import type { RunStepStatus, WorkflowNode } from '../../types.js';
 import { DeleteNodeIcon, LeaveGroupIcon, STATUS_BADGE_GLYPH } from '../chromeIcons.js';
+
+/** Every `text/preset-kind` value the palette (OperationList.tsx) can drag — the only thing this card's own drop zone ever accepts. */
+const KNOWN_PRESET_KINDS = new Set(['wait', 'assert']);
 
 export interface PresetsNodeData {
   /** `kind: 'presets'` — carries the ordered `presets` this card renders. */
@@ -30,6 +35,12 @@ export interface PresetsNodeData {
  * other node. This is the *only* card a preset dropped from the palette ever
  * renders as — even a single preset gets this collection chrome, never
  * `WorkflowNodeCard`'s (see Canvas.tsx's `onDrop`).
+ *
+ * A preset row here is a *summary* only (icon + `formatPresetLabel`) —
+ * every kind renders the same shape, so the card stays a fixed width
+ * regardless of which presets it holds. The actual editor (Wait's
+ * duration, Assert's checks) lives in NodeConfig.tsx, keyed by the store's
+ * `selectedPresetId`; clicking a row here is just `selectPreset`.
  */
 export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
   const { node, collapsed, selected, status, groupId, groupName } = data;
@@ -40,7 +51,8 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
   const addPreset = useWorkflowStore((s) => s.addPreset);
   const removePreset = useWorkflowStore((s) => s.removePreset);
   const movePreset = useWorkflowStore((s) => s.movePreset);
-  const setPresetDurationMs = useWorkflowStore((s) => s.setPresetDurationMs);
+  const selectedPresetId = useWorkflowStore((s) => s.selectedPresetId);
+  const selectPreset = useWorkflowStore((s) => s.selectPreset);
   const isRunning = useWorkflowStore((s) => s.isRunning);
   // Same reasoning as WorkflowNodeCard's own elementsSelectable read — this
   // card's buttons are plain DOM, not React Flow machinery, so the canvas
@@ -58,6 +70,44 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
   const targetHandle = <Handle type="target" position={Position.Left} title="Drop here to connect" />;
   const sourceHandle = <Handle type="source" position={Position.Right} title="Drag to connect" />;
 
+  // Drag a preset icon straight from the palette (OperationList.tsx) onto
+  // this card to append it — the only way to add a preset to an *existing*
+  // collection now (see the "+ Add Wait"/"+ Add Assert" buttons this
+  // replaced: they don't scale past a couple of preset kinds). Deliberately
+  // wired here, not on WorkflowNodeCard — dropping a preset "into" an
+  // operation node isn't a thing; Canvas.tsx's own onDrop still handles a
+  // preset dropped on empty canvas (or, today, over an unrelated node) by
+  // creating a new collection there, same as always. `dataTransfer.getData`
+  // is unreadable during dragover/dragenter in most browsers (security
+  // restriction) — only `.types` is, so that's what gates the hover state;
+  // the real kind is only read (and acted on) at the actual drop.
+  const [isDragOver, setIsDragOver] = useState(false);
+  const isPresetDrag = (e: React.DragEvent) => e.dataTransfer.types.includes('text/preset-kind');
+  const dropZoneProps = {
+    onDragEnter: (e: React.DragEvent) => {
+      if (!isPresetDrag(e)) return;
+      e.preventDefault();
+      setIsDragOver(true);
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (!isPresetDrag(e)) return;
+      e.preventDefault(); // required for onDrop to fire at all
+    },
+    onDragLeave: () => setIsDragOver(false),
+    onDrop: (e: React.DragEvent) => {
+      setIsDragOver(false);
+      const presetKind = e.dataTransfer.getData('text/preset-kind');
+      if (!KNOWN_PRESET_KINDS.has(presetKind)) return; // not a preset drag — let Canvas.tsx's own onDrop handle it
+      e.preventDefault();
+      e.stopPropagation(); // don't also let Canvas.tsx create a second, brand-new collection at this position
+      if (chromeDisabled) return;
+      addPreset(
+        node.id,
+        presetKind === 'wait' ? { kind: 'wait', durationMs: DEFAULT_WAIT_DURATION_MS } : { kind: 'assert', checks: [] }
+      );
+    },
+  };
+
   if (collapsed) {
     // Hover-only detail — the visible chrome deliberately stays to "Presets"
     // + count (see the expanded titlebar's own comment); a per-preset
@@ -66,8 +116,9 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
     return (
       <div className="workflow-node-shell">
         <div
-          className={`presets-node presets-node--collapsed${selected ? ' presets-node--selected' : ''}${status ? ` presets-node--${status}` : ''}`}
+          className={`presets-node presets-node--collapsed${selected ? ' presets-node--selected' : ''}${status ? ` presets-node--${status}` : ''}${isDragOver ? ' presets-node--drag-over' : ''}`}
           title={chromeDisabled ? undefined : 'Click to expand'}
+          {...dropZoneProps}
         >
           {targetHandle}
           {badgeGlyph && (
@@ -83,7 +134,11 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
               disabled={chromeDisabled}
               title={lockTitle ?? 'Expand collection'}
               aria-label="Expand collection"
-              onClick={() => setPresetsCollapsed(node.id, false)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPresetsCollapsed(node.id, false);
+              }}
             >
               ›
             </button>
@@ -115,7 +170,8 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
   return (
     <div className="workflow-node-shell">
       <div
-        className={`presets-node presets-node--expanded${selected ? ' presets-node--selected' : ''}${status ? ` presets-node--${status}` : ''}${groupId ? ' presets-node--grouped' : ''}`}
+        className={`presets-node presets-node--expanded${selected ? ' presets-node--selected' : ''}${status ? ` presets-node--${status}` : ''}${groupId ? ' presets-node--grouped' : ''}${isDragOver ? ' presets-node--drag-over' : ''}`}
+        {...dropZoneProps}
       >
         {targetHandle}
         {badgeGlyph && (
@@ -130,7 +186,11 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
             disabled={chromeDisabled}
             title={lockTitle ?? 'Collapse collection'}
             aria-label="Collapse collection"
-            onClick={() => setPresetsCollapsed(node.id, true)}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setPresetsCollapsed(node.id, true);
+            }}
           >
             ⌄
           </button>
@@ -142,38 +202,56 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
         </div>
         {status === 'paused' && <div className="workflow-node__paused-label">⏸ Paused here</div>}
         {presets.length === 0 ? (
-          <p className="presets-node__empty-hint">No presets yet — add one below.</p>
+          <p className="presets-node__empty-hint">Drag a preset here to add it.</p>
         ) : (
           <ul className="nodrag nopan presets-node__steps">
             {presets.map((preset, index) => (
-              <li key={preset.id} className="presets-node__step">
+              <li
+                key={preset.id}
+                className={`presets-node__step${selectedPresetId === preset.id ? ' presets-node__step--selected' : ''}`}
+              >
                 <span className="presets-node__step-connector" aria-hidden="true" />
-                <span className="wait-node__icon" aria-hidden="true">
-                  ⏱
-                </span>
-                <span className="presets-node__step-label">Wait</span>
-                <input
-                  type="number"
-                  className="presets-node__step-duration"
-                  min={0}
-                  step={0.1}
+                {/* Every button in this row needs its click stopped from
+                    bubbling to Canvas.tsx's ReactFlow onNodeClick — that
+                    handler calls selectNode(node.id) on *any* click inside
+                    the card, and selectNode always resets selectedPresetId
+                    to null (see WorkflowState's own comment on it). Without
+                    this, selectPreset's own state update would win the
+                    click, then get immediately clobbered by the bubbled
+                    onNodeClick right after — a preset was only ever
+                    configurable once, right when addPreset auto-selected it
+                    (that path sets the store directly, no click involved). */}
+                <button
+                  type="button"
+                  className="nodrag nopan presets-node__step-select"
                   disabled={chromeDisabled}
-                  aria-label={`Preset ${index + 1} duration in seconds`}
-                  title={formatWaitDuration(preset.durationMs)}
-                  value={preset.durationMs / 1000}
-                  onChange={(e) => {
-                    const seconds = Number(e.target.value);
-                    const nextMs = Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1000) : 0;
-                    setPresetDurationMs(node.id, preset.id, nextMs);
+                  aria-pressed={selectedPresetId === preset.id}
+                  title={chromeDisabled ? undefined : 'Configure this preset'}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectPreset(node.id, preset.id);
                   }}
-                />
+                >
+                  <span
+                    className={`presets-node__step-icon${preset.kind === 'assert' ? ' presets-node__step-icon--assert' : ' presets-node__step-icon--wait'}`}
+                    aria-hidden="true"
+                  >
+                    {preset.kind === 'wait' ? '⏱' : '✓'}
+                  </span>
+                  <span className="presets-node__step-label">{formatPresetLabel(preset)}</span>
+                </button>
                 <button
                   type="button"
                   className="presets-node__step-move"
                   disabled={chromeDisabled || index === 0}
                   aria-label={`Move preset ${index + 1} up`}
                   title="Move up"
-                  onClick={() => movePreset(node.id, preset.id, 'up')}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    movePreset(node.id, preset.id, 'up');
+                  }}
                 >
                   ↑
                 </button>
@@ -183,7 +261,11 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
                   disabled={chromeDisabled || index === presets.length - 1}
                   aria-label={`Move preset ${index + 1} down`}
                   title="Move down"
-                  onClick={() => movePreset(node.id, preset.id, 'down')}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    movePreset(node.id, preset.id, 'down');
+                  }}
                 >
                   ↓
                 </button>
@@ -193,7 +275,11 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
                   disabled={chromeDisabled}
                   aria-label={`Remove preset ${index + 1}`}
                   title="Remove preset"
-                  onClick={() => removePreset(node.id, preset.id)}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removePreset(node.id, preset.id);
+                  }}
                 >
                   ×
                 </button>
@@ -201,14 +287,6 @@ export function PresetsNodeCard({ data }: NodeProps<PresetsNodeData>) {
             ))}
           </ul>
         )}
-        <button
-          type="button"
-          className="nodrag nopan presets-node__add-step"
-          disabled={chromeDisabled}
-          onClick={() => addPreset(node.id, { kind: 'wait', durationMs: 1000 })}
-        >
-          + Add Wait
-        </button>
         {sourceHandle}
       </div>
       {groupId && (

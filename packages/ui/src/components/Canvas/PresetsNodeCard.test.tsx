@@ -10,8 +10,8 @@ function makePresetsNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
   return { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [], ...overrides };
 }
 
-function renderCard(data: PresetsNodeData) {
-  const props: NodeProps<PresetsNodeData> = {
+function cardProps(data: PresetsNodeData): NodeProps<PresetsNodeData> {
+  return {
     id: data.node.id,
     data,
     dragHandle: undefined,
@@ -25,9 +25,29 @@ function renderCard(data: PresetsNodeData) {
     targetPosition: Position.Left,
     sourcePosition: Position.Right,
   };
+}
+
+function renderCard(data: PresetsNodeData) {
   return render(
     <ReactFlowProvider>
-      <PresetsNodeCard {...props} />
+      <PresetsNodeCard {...cardProps(data)} />
+    </ReactFlowProvider>
+  );
+}
+
+// Canvas.tsx's real <ReactFlow> wires `onNodeClick={(_, node) => selectNode(node.id)}`
+// on every node — a plain DOM listener, so it sees any click that bubbles
+// out of this card unless a row button stops it first. `renderCard` above
+// doesn't reproduce that (no <ReactFlow> present), so a real bubble-order
+// regression (a row button's own state update getting clobbered by
+// selectNode resetting selectedPresetId right after) wouldn't fail there —
+// only here, where the wrapper reproduces exactly that listener.
+function renderCardInsideSimulatedCanvas(data: PresetsNodeData) {
+  return render(
+    <ReactFlowProvider>
+      <div onClick={() => useWorkflowStore.getState().selectNode(data.node.id)}>
+        <PresetsNodeCard {...cardProps(data)} />
+      </div>
     </ReactFlowProvider>
   );
 }
@@ -39,6 +59,7 @@ describe('PresetsNodeCard', () => {
       nodePositions: {},
       connections: [],
       selectedNodeId: null,
+      selectedPresetId: null,
       isRunning: false,
       presetsCollapsed: {},
     });
@@ -87,36 +108,124 @@ describe('PresetsNodeCard', () => {
     expect(screen.queryByText(/Wait 1s · Wait 1s/)).not.toBeInTheDocument();
   });
 
-  it('expanded with no presets shows an empty hint and an Add Wait button', () => {
+  function presetDataTransfer(kind: string) {
+    return { getData: (type: string) => (type === 'text/preset-kind' ? kind : ''), types: ['text/preset-kind'] };
+  }
+
+  it('expanded with no presets shows an empty hint to drag one in — no "+ Add" button', () => {
     const presetsNode = makePresetsNode();
     useWorkflowStore.setState({ nodes: [presetsNode] });
     renderCard({ node: presetsNode, collapsed: false, selected: false });
 
-    expect(screen.getByText('No presets yet — add one below.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '+ Add Wait' })).toBeInTheDocument();
+    expect(screen.getByText('Drag a preset here to add it.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add Wait/ })).not.toBeInTheDocument();
   });
 
-  it('Add Wait appends a preset to the store', async () => {
-    const user = userEvent.setup();
+  it('dropping a Wait preset from the palette appends it to the collection', () => {
     const presetsNode = makePresetsNode();
     useWorkflowStore.setState({ nodes: [presetsNode] });
-    renderCard({ node: presetsNode, collapsed: false, selected: false });
+    const { container } = renderCard({ node: presetsNode, collapsed: false, selected: false });
 
-    await user.click(screen.getByRole('button', { name: '+ Add Wait' }));
+    const card = container.querySelector('.presets-node--expanded')!;
+    fireEvent.drop(card, { dataTransfer: presetDataTransfer('wait') });
+
     expect(useWorkflowStore.getState().nodes[0].presets).toHaveLength(1);
     expect(useWorkflowStore.getState().nodes[0].presets![0]).toMatchObject({ kind: 'wait' });
   });
 
-  it('renders each preset with a duration input, and editing it updates the store', () => {
+  it('dropping a Wait preset onto the collapsed card also appends it', () => {
+    const presetsNode = makePresetsNode();
+    useWorkflowStore.setState({ nodes: [presetsNode] });
+    const { container } = renderCard({ node: presetsNode, collapsed: true, selected: false });
+
+    const card = container.querySelector('.presets-node--collapsed')!;
+    fireEvent.drop(card, { dataTransfer: presetDataTransfer('wait') });
+
+    expect(useWorkflowStore.getState().nodes[0].presets).toHaveLength(1);
+  });
+
+  it('ignores a drop that is not a known preset kind (e.g. an operation drag)', () => {
+    const presetsNode = makePresetsNode();
+    useWorkflowStore.setState({ nodes: [presetsNode] });
+    const { container } = renderCard({ node: presetsNode, collapsed: false, selected: false });
+
+    const card = container.querySelector('.presets-node--expanded')!;
+    fireEvent.drop(card, { dataTransfer: { getData: () => '', types: [] } });
+
+    expect(useWorkflowStore.getState().nodes[0].presets).toEqual([]);
+  });
+
+  it('renders each preset as a uniform summary row — icon + formatPresetLabel, same shape for every kind', () => {
+    const presetsNode = makePresetsNode({
+      presets: [
+        { id: 's1', kind: 'wait', durationMs: 1000 },
+        { id: 'p1', kind: 'assert', checks: [{ id: 'c1', source: { type: 'response_body', sourceNodeId: '' }, operator: 'equals' }] },
+      ],
+    });
+    useWorkflowStore.setState({ nodes: [presetsNode] });
+    renderCard({ node: presetsNode, collapsed: false, selected: false });
+
+    expect(screen.getByRole('button', { name: 'Wait 1s' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Assert (1 check)' })).toBeInTheDocument();
+    // No per-kind editor leaks onto the card — that's NodeConfig's job now.
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByText('+ Add check')).not.toBeInTheDocument();
+  });
+
+  it('clicking a preset row opens its config via selectPreset', async () => {
+    const user = userEvent.setup();
     const presetsNode = makePresetsNode({ presets: [{ id: 's1', kind: 'wait', durationMs: 1000 }] });
     useWorkflowStore.setState({ nodes: [presetsNode] });
     renderCard({ node: presetsNode, collapsed: false, selected: false });
 
-    const input = screen.getByLabelText('Preset 1 duration in seconds');
-    expect(input).toHaveValue(1);
+    await user.click(screen.getByRole('button', { name: 'Wait 1s' }));
 
-    fireEvent.change(input, { target: { value: '3' } });
-    expect(useWorkflowStore.getState().nodes[0].presets![0].durationMs).toBe(3000);
+    expect(useWorkflowStore.getState().selectedNodeId).toBe('g1');
+    expect(useWorkflowStore.getState().selectedPresetId).toBe('s1');
+  });
+
+  it('highlights the selected preset row', () => {
+    const presetsNode = makePresetsNode({
+      presets: [
+        { id: 's1', kind: 'wait', durationMs: 1000 },
+        { id: 's2', kind: 'wait', durationMs: 2000 },
+      ],
+    });
+    useWorkflowStore.setState({ nodes: [presetsNode], selectedNodeId: 'g1', selectedPresetId: 's2' });
+    renderCard({ node: presetsNode, collapsed: false, selected: false });
+
+    expect(screen.getByRole('button', { name: 'Wait 1s' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Wait 2s' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('regression: selecting a preset survives the click bubbling to Canvas.tsx\'s onNodeClick (which would otherwise reset selectedPresetId via selectNode)', async () => {
+    const user = userEvent.setup();
+    const presetsNode = makePresetsNode({ presets: [{ id: 's1', kind: 'wait', durationMs: 1000 }] });
+    useWorkflowStore.setState({ nodes: [presetsNode] });
+    renderCardInsideSimulatedCanvas({ node: presetsNode, collapsed: false, selected: false });
+
+    await user.click(screen.getByRole('button', { name: 'Wait 1s' }));
+
+    expect(useWorkflowStore.getState().selectedNodeId).toBe('g1');
+    expect(useWorkflowStore.getState().selectedPresetId).toBe('s1'); // not clobbered back to null
+  });
+
+  it('regression: move/remove row buttons and the collapse chevron also stop the bubble, so a live preset selection survives clicking them', async () => {
+    const user = userEvent.setup();
+    const presetsNode = makePresetsNode({
+      presets: [
+        { id: 's1', kind: 'wait', durationMs: 1000 },
+        { id: 's2', kind: 'wait', durationMs: 2000 },
+      ],
+    });
+    useWorkflowStore.setState({ nodes: [presetsNode], selectedNodeId: 'g1', selectedPresetId: 's1' });
+    renderCardInsideSimulatedCanvas({ node: presetsNode, collapsed: false, selected: false });
+
+    await user.click(screen.getByRole('button', { name: 'Move preset 1 down' }));
+    expect(useWorkflowStore.getState().selectedPresetId).toBe('s1');
+
+    await user.click(screen.getByRole('button', { name: 'Collapse collection' }));
+    expect(useWorkflowStore.getState().selectedPresetId).toBe('s1');
   });
 
   it('removes a preset via its × button', async () => {
@@ -157,13 +266,51 @@ describe('PresetsNodeCard', () => {
     expect(useWorkflowStore.getState().nodes).toEqual([]);
   });
 
-  it('disables editing chrome while the workflow is running', () => {
+  it('disables editing chrome (including a preset drop) while the workflow is running', () => {
     const presetsNode = makePresetsNode({ presets: [{ id: 's1', kind: 'wait', durationMs: 1000 }] });
     useWorkflowStore.setState({ nodes: [presetsNode], isRunning: true });
-    renderCard({ node: presetsNode, collapsed: false, selected: false });
+    const { container } = renderCard({ node: presetsNode, collapsed: false, selected: false });
 
-    expect(screen.getByRole('button', { name: '+ Add Wait' })).toBeDisabled();
-    expect(screen.getByLabelText('Preset 1 duration in seconds')).toBeDisabled();
+    const card = container.querySelector('.presets-node--expanded')!;
+    fireEvent.drop(card, { dataTransfer: presetDataTransfer('wait') });
+    expect(useWorkflowStore.getState().nodes[0].presets).toHaveLength(1); // unchanged — drop is a no-op while locked
+
+    expect(screen.getByRole('button', { name: 'Wait 1s' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Remove this collection' })).toBeDisabled();
+  });
+
+  describe('assert presets', () => {
+    it('dropping an Assert preset from the palette appends it with no checks', () => {
+      const presetsNode = makePresetsNode();
+      useWorkflowStore.setState({ nodes: [presetsNode] });
+      const { container } = renderCard({ node: presetsNode, collapsed: false, selected: false });
+
+      const card = container.querySelector('.presets-node--expanded')!;
+      fireEvent.drop(card, { dataTransfer: presetDataTransfer('assert') });
+
+      const presets = useWorkflowStore.getState().nodes[0].presets!;
+      expect(presets).toHaveLength(1);
+      expect(presets[0]).toMatchObject({ kind: 'assert', checks: [] });
+    });
+
+    it('labels a collapsed assert preset by its check count via formatPresetLabel', () => {
+      const presetsNode = makePresetsNode({
+        presets: [
+          {
+            id: 'p1',
+            kind: 'assert',
+            checks: [
+              { id: 'c1', source: { type: 'response_body', sourceNodeId: 'n1' }, operator: 'exists' },
+              { id: 'c2', source: { type: 'response_status', sourceNodeId: 'n1' }, operator: 'equals', expected: '200' },
+            ],
+          },
+        ],
+      });
+      useWorkflowStore.setState({ nodes: [presetsNode] });
+      renderCard({ node: presetsNode, collapsed: true, selected: false });
+
+      expect(screen.getByText('1')).toBeInTheDocument(); // preset count
+      expect(screen.getByText('Presets')).toHaveAttribute('title', 'Assert (2 checks)');
+    });
   });
 });

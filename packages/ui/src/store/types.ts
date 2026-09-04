@@ -1,5 +1,6 @@
 import type { DeclaredCredential } from '@get-enlace/core';
 import type {
+  AssertCheck,
   Credential,
   EnlaceCollection,
   FieldValue,
@@ -121,6 +122,16 @@ export interface WorkflowState {
   /** Pre-fill templates read from the loaded spec's own `components.securitySchemes` — see engine/securitySchemes.ts. Empty until loadOperations() resolves; never gates manually creating any credential type regardless of what's in here. */
   declaredCredentials: DeclaredCredential[];
   selectedNodeId: string | null;
+  /**
+   * Which preset inside `selectedNodeId`'s `presets` (when it's a `kind:
+   * 'presets'` node) has its configuration open in NodeConfig — a preset
+   * has no config UI on its own canvas card (just a summary row), so this
+   * is the only way to know which one's editor to render. Meaningless
+   * whenever `selectedNodeId` isn't a presets node; `selectNode` always
+   * resets it to `null`, so selecting a different (or no) node never
+   * leaves a stale preset's editor showing.
+   */
+  selectedPresetId: string | null;
   runResult: RunResult | null;
   /**
    * Live per-node status for the current/last run, keyed by node id — reset
@@ -200,8 +211,19 @@ export interface WorkflowState {
   removePreset: (presetsNodeId: string, presetId: string) => void;
   /** Swaps a preset with its immediate up/down neighbor — "linear order only" (see the issue this implements), no arbitrary reordering. A no-op at either end of the list. */
   movePreset: (presetsNodeId: string, presetId: string, direction: 'up' | 'down') => void;
-  /** Sets one preset's `durationMs` (currently the only editable field any preset has). */
+  /** Sets one Wait preset's `durationMs`. */
   setPresetDurationMs: (presetsNodeId: string, presetId: string, durationMs: number) => void;
+  /** Appends one blank check to an assert preset's `checks` list. No-op if `presetsNodeId`/`presetId` don't resolve to an assert preset. */
+  addAssertCheck: (presetsNodeId: string, presetId: string) => void;
+  /** Removes one check from an assert preset by its check id. */
+  removeAssertCheck: (presetsNodeId: string, presetId: string, checkId: string) => void;
+  /** Shallow-merges `patch` into one assert check — same "patch one field at a time" shape as `setFieldValue`. */
+  updateAssertCheck: (
+    presetsNodeId: string,
+    presetId: string,
+    checkId: string,
+    patch: Partial<Omit<AssertCheck, 'id'>>
+  ) => void;
   /** Toggles a collection's collapsed (diamond) / expanded (preset-list box) chrome — view-only, see `presetsCollapsed`. */
   setPresetsCollapsed: (presetsNodeId: string, collapsed: boolean) => void;
   /**
@@ -220,7 +242,10 @@ export interface WorkflowState {
    * silently resolve to `undefined` at run time instead of failing loudly).
    */
   removeNode: (nodeId: string) => void;
+  /** Also clears `selectedPresetId` — a preset selection never survives switching (or clearing) the selected node. */
   selectNode: (nodeId: string | null) => void;
+  /** Opens one preset's config in NodeConfig — sets `selectedNodeId` to the owning collection and `selectedPresetId` to the preset, in one step (so clicking a preset row selects the collection too, even if it wasn't already). */
+  selectPreset: (presetsNodeId: string, presetId: string) => void;
   setCredential: (nodeId: string, credentialId: string | null) => void;
   setFieldValue: (nodeId: string, fieldPath: string, value: FieldValue) => void;
   /** Batch version of setFieldValue — sets several field paths in one `set()`, so a Raw->Form conversion (which can touch many leaves at once, see utils/bodyTemplate.ts) doesn't trigger a render per leaf. */

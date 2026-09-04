@@ -89,6 +89,32 @@ describe('buildNodeLabels', () => {
     const node: WorkflowNode = { id: 'g1', kind: 'presets', credentialId: null, fieldValues: {}, presets: [] };
     expect(buildNodeLabels([node], new Map()).get('g1')).toBe('Presets: Empty');
   });
+
+  it('labels an assert preset by its check count, singular and plural', () => {
+    const node: WorkflowNode = {
+      id: 'g1',
+      kind: 'presets',
+      credentialId: null,
+      fieldValues: {},
+      presets: [{ id: 's1', kind: 'assert', checks: [{ id: 'c1', source: { type: 'response_status', sourceNodeId: 'n0' }, operator: 'equals', expected: '200' }] }],
+    };
+    expect(buildNodeLabels([node], new Map()).get('g1')).toBe('Presets: Assert (1 check)');
+
+    const twoChecks: WorkflowNode = {
+      ...node,
+      presets: [
+        {
+          id: 's1',
+          kind: 'assert',
+          checks: [
+            { id: 'c1', source: { type: 'response_status', sourceNodeId: 'n0' }, operator: 'equals', expected: '200' },
+            { id: 'c2', source: { type: 'response_body', sourceNodeId: 'n0', jsonPath: 'id' }, operator: 'exists' },
+          ],
+        },
+      ],
+    };
+    expect(buildNodeLabels([twoChecks], new Map()).get('g1')).toBe('Presets: Assert (2 checks)');
+  });
 });
 
 describe('formatPresetsSummary', () => {

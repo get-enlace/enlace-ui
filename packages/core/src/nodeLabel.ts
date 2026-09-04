@@ -18,7 +18,11 @@ export function formatWaitDuration(durationMs: number): string {
 export function formatPresetLabel(preset: Preset): string {
   switch (preset.kind) {
     case 'wait':
-      return `Wait ${formatWaitDuration(preset.durationMs)}`;
+      return `Wait ${formatWaitDuration(preset.durationMs ?? 0)}`;
+    case 'assert': {
+      const n = preset.checks?.length ?? 0;
+      return `Assert (${n} check${n === 1 ? '' : 's'})`;
+    }
   }
 }
 

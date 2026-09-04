@@ -138,8 +138,8 @@ function CanvasInner() {
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      // The palette only ever offers real presets (Wait, later Assert) —
-      // there's no "collection" item to drag. Dropping one always creates a
+      // The palette only ever offers real presets (Wait, Assert) — there's
+      // no "collection" item to drag. Dropping one always creates a
       // `kind: 'presets'` collection seeded with that one preset, never a
       // standalone graph node — see addPresetsNode's own comment.
       const presetKind = e.dataTransfer.getData('text/preset-kind');
@@ -148,6 +148,10 @@ function CanvasInner() {
           kind: 'wait',
           durationMs: DEFAULT_WAIT_DURATION_MS,
         });
+        return;
+      }
+      if (presetKind === 'assert') {
+        addPresetsNode(screenToFlowPosition({ x: e.clientX, y: e.clientY }), { kind: 'assert', checks: [] });
         return;
       }
       const operationId = e.dataTransfer.getData('text/operation-id');

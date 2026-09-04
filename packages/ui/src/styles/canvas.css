@@ -343,13 +343,6 @@
   overflow-wrap: anywhere;
 }
 
-/* Shared by every place a Wait preset shows its clock icon — the palette
-   row and each preset row inside an expanded presets-node card. */
-.wait-node__icon {
-  font-size: 13px;
-  line-height: 1;
-}
-
 /* --- presets-node: the only chrome a preset dropped from the palette ever
    renders as (see PresetsNodeCard.tsx) — even a single preset. Distinct
    visual model from .workflow-node/.node-group — a real diamond marker
@@ -465,6 +458,12 @@
   font-size: 12px;
 }
 
+/* Selected — this preset's config is the one showing in NodeConfig. */
+.presets-node__step--selected .presets-node__step-select {
+  background: var(--color-node-bg);
+  outline: 1px solid var(--color-focus);
+}
+
 /* The issue's "simple vertical order lines — not real connectors/handles":
    a plain border segment per row, not a React Flow edge/Handle. */
 .presets-node__step-connector {
@@ -476,20 +475,57 @@
   border-left: 2px solid var(--color-presets);
 }
 
+/* Every preset's row summary — icon + formatPresetLabel text, in a
+   clickable button (`selectPreset`) so the whole row stays one uniform
+   shape regardless of kind; the real editor lives in NodeConfig.tsx,
+   keyed off `selectedPresetId`. Also used (icon classes only) by
+   NodeConfig's own preset-config header, so it stays visually the same
+   preset once its editor opens. */
+.presets-node__step-select {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.presets-node__step-select:hover:not(:disabled) {
+  background: var(--color-node-bg);
+}
+
+.presets-node__step-select:disabled {
+  cursor: not-allowed;
+}
+
+.presets-node__step-icon {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.presets-node__step-icon--wait {
+  color: var(--color-wait);
+}
+
+.presets-node__step-icon--assert {
+  color: var(--color-presets);
+}
+
 .presets-node__step-label {
   font-family: var(--font-mono);
   font-weight: 600;
-}
-
-.presets-node__step-duration {
-  width: 48px;
-  min-width: 0;
-  font-size: 11px;
-  background: var(--color-panel-bg);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-  border-radius: 3px;
-  padding: 1px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .presets-node__step-move,
@@ -515,31 +551,19 @@
   cursor: not-allowed;
 }
 
-.presets-node__add-step {
-  width: 100%;
-  margin-top: 6px;
-  padding: 4px 6px;
-  background: none;
-  border: 1px dashed var(--color-presets);
-  border-radius: 4px;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.presets-node__add-step:hover:not(:disabled) {
-  color: var(--color-text);
-  border-color: var(--color-focus);
-}
-
-.presets-node__add-step:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .presets-node--selected {
   border-width: 2px;
   border-color: var(--color-focus);
+}
+
+/* A preset icon dragged from the palette is hovering over this card — see
+   PresetsNodeCard.tsx's own `dropZoneProps`. Border + background only (no
+   layout shift), so the card doesn't jump around while something's
+   dragging over it. */
+.presets-node--drag-over {
+  border-color: var(--color-focus);
+  border-width: 2px;
+  background: var(--color-node-bg);
 }
 
 .presets-node--in-flight {

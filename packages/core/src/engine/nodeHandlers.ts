@@ -1,7 +1,8 @@
 import { resolveCredentialInjection } from './credentials.js';
 import { resolveRawBody } from './rawBodyResolver.js';
 import { getByPath, setByPath } from './path.js';
-import { resolveTagsInValue } from '../bodyTags.js';
+import { resolveTagsInValue, resolveTagValue } from '../bodyTags.js';
+import { evaluateCheck } from './assertCompare.js';
 import type {
   Credential,
   FieldValue,
@@ -440,6 +441,63 @@ export const waitNodeHandler: NodeHandler = {
 };
 
 /**
+ * The Assert preset — a run of `checks` against an already-captured
+ * response (see ARCHITECTURE.md's "Preset nodes" section), each resolved
+ * via bodyTags.ts's `resolveTagValue` (the same "reference into a prior
+ * step's result" machinery Raw JSON tag chips use) and compared via
+ * engine/assertCompare.ts's `evaluateCheck`. Checks run strictly in order
+ * and stop at the first failure — same "no partial recovery" rule
+ * `presetsNodeHandler`'s own preset loop follows — rather than collecting
+ * every failure before reporting one.
+ *
+ * `resolveTagValue` throws if the source step never captured a response,
+ * or a named header is missing — caught here and folded into the same
+ * failed-check reporting as an ordinary comparison failure, so a bad
+ * reference surfaces as this preset's `error`, not an uncaught rejection.
+ */
+export const assertNodeHandler: NodeHandler = {
+  checkReady() {
+    return null;
+  },
+  async execute(node, ctx) {
+    const checks = node.checks ?? [];
+    const timestampStart = new Date().toISOString();
+    let error: string | undefined;
+
+    for (const [index, check] of checks.entries()) {
+      try {
+        const actual = resolveTagValue(check.source, ctx.stepsByNodeId, ctx.nodeLabels);
+        const failure = evaluateCheck(actual, check.operator, check.expected);
+        if (failure) {
+          error = `Check ${index + 1}: ${failure}`;
+          break;
+        }
+      } catch (err) {
+        error = `Check ${index + 1}: ${err instanceof Error ? err.message : String(err)}`;
+        break;
+      }
+    }
+
+    return {
+      nodeId: node.id,
+      request: {
+        method: 'ASSERT',
+        url: `assert:${checks.length} check${checks.length === 1 ? '' : 's'}`,
+        headers: {},
+        credentials: 'omit',
+      },
+      timestampStart,
+      timestampEnd: new Date().toISOString(),
+      ...(error ? { error } : {}),
+    };
+  },
+  async preview() {
+    // Nothing to preview — an Assert node has no request to resolve ahead of firing.
+    return null;
+  },
+};
+
+/**
  * Adapts one `Preset` into the `WorkflowNode` shape its own `kind`'s handler
  * expects — lets `presetsNodeHandler` reuse `nodeHandlers[preset.kind]`
  * exactly as `chainExecutor.ts` does for a top-level node, instead of
@@ -455,6 +513,7 @@ function presetAsNode(presetsNodeId: string, preset: Preset): WorkflowNode {
     credentialId: null,
     fieldValues: {},
     durationMs: preset.durationMs,
+    checks: preset.checks,
   };
 }
 
@@ -536,4 +595,5 @@ export const nodeHandlers: Record<WorkflowNodeKind, NodeHandler> = {
   operation: operationNodeHandler,
   wait: waitNodeHandler,
   presets: presetsNodeHandler,
+  assert: assertNodeHandler,
 };
