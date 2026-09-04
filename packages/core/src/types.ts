@@ -22,14 +22,7 @@ export interface Operation {
   tags?: string[];
   parameters: OperationParameter[];
   requestBodySchema: Record<string, any> | null;
-  /**
-   * Which requestBody content type `requestBodySchema` came from.
-   * Prefer `application/json` when the op offers both; `multipart/form-data`
-   * only when JSON is absent. Null when there is no request body. Optional
-   * so older test fixtures keep compiling — treat absent as JSON whenever a
-   * schema is present.
-   */
-  requestBodyContentType?: 'application/json' | 'multipart/form-data' | null;
+  requestBodyContentType: 'application/json' | 'multipart/form-data' | null;
   responseSchema: Record<string, any> | null;
 }
 
@@ -179,29 +172,19 @@ interface WorkflowNodeBase {
 }
 
 /**
- * The everyday node: fires an HTTP call described by `operationId`. `kind`
- * is optional and absent means `'operation'` — every pre-existing
- * `WorkflowNode` literal (fixtures, older in-memory state, older `.enlace`
- * imports) keeps compiling and behaving exactly as before with no migration
- * step of its own. See utils/workflowDocument.ts for the explicit `kind` an
- * import writes/reads today.
+ * The everyday node: fires an HTTP call described by `operationId`.
  */
 export interface OperationNode extends WorkflowNodeBase {
-  kind?: 'operation';
+  kind: 'operation';
   /** References an Operation.id. */
-  operationId?: string;
+  operationId: string;
   /**
-   * Optional (not required) so every pre-existing `OperationNode` literal
-   * (fixtures, older in-memory state) keeps compiling/behaving unchanged —
-   * treat an absent value as `'form'`. Orthogonal to `fieldValues`: raw
-   * mode stops reading/writing `path.*` / `query.*` / `body.*` keys from
-   * `fieldValues` and uses `rawPath` / `rawQuery` / `rawBody` instead.
-   * Header fields always stay on the form.
-   *
-   * Older collections may still serialize this as `bodyMode` — import
-   * accepts either key (see utils/workflowDocument.ts).
+   * `'form'` reads/writes `path.*` / `query.*` / `body.*` keys from
+   * `fieldValues`; `'raw'` uses `rawPath` / `rawQuery` / `rawBody` instead
+   * for those same three sections. Orthogonal to `fieldValues` — header
+   * fields always stay on the form regardless of this setting.
    */
-  requestMode?: 'form' | 'raw';
+  requestMode: 'form' | 'raw';
   rawPath?: RawBody | null;
   rawQuery?: RawBody | null;
   rawBody?: RawBody | null;
@@ -243,7 +226,7 @@ export interface OperationNode extends WorkflowNodeBase {
 /**
  * A `kind: 'presets'` collection — no `operationId`/raw body/credential
  * overrides of its own, just an ordered run of `presets` (see `Preset`
- * above and engine/nodeHandlers.ts's `presetsNodeHandler`). `credentialId`/
+ * above and engine/handlers/presetsNodeHandler.ts). `credentialId`/
  * `fieldValues` stay on the shared base even though a presets collection
  * never uses either today — keeping them here (rather than moving them onto
  * `OperationNode` too) avoids widening every existing "any `WorkflowNode`"
@@ -252,17 +235,7 @@ export interface OperationNode extends WorkflowNodeBase {
  */
 export interface PresetsNode extends WorkflowNodeBase {
   kind: 'presets';
-  /**
-   * The ordered presets this node runs as one unit once its own
-   * dependencies are satisfied. Empty/absent means an empty collection — a
-   * valid, if useless, state (nothing to run, settles immediately) rather
-   * than an error, same as a group with no members being cleaned up
-   * elsewhere rather than rejected here. In practice the canvas never
-   * creates one empty — dropping a preset from the palette always creates a
-   * collection with that one preset already in it (see
-   * store/slices/graphSlice.ts's `addPresetsNode`).
-   */
-  presets?: Preset[];
+  presets: Preset[];
 }
 
 /**
@@ -356,7 +329,7 @@ export type CredentialStub =
       clientId?: string;
       scope?: string;
       extraTokenParams?: Record<string, string>;
-      clientAuthMethod?: OAuth2ClientAuthMethod;
+      clientAuthMethod: OAuth2ClientAuthMethod;
     }
   | {
       id: string;
@@ -368,7 +341,7 @@ export type CredentialStub =
       clientId?: string;
       scope?: string;
       extraTokenParams?: Record<string, string>;
-      clientAuthMethod?: OAuth2ClientAuthMethod;
+      clientAuthMethod: OAuth2ClientAuthMethod;
     }
   | { id: string; name: string; fromSecurityScheme?: string; type: 'cookie'; loginUrl?: string };
 
@@ -383,11 +356,10 @@ export interface CollectionWorkflow {
   groups: NodeGroup[];
   /**
    * Collapsed/expanded chrome for `kind: 'presets'` nodes, keyed by node id —
-   * same tier as `nodePositions`/`groups`. Optional so a collection from
-   * before presets existed parses unchanged; an absent entry (including for
-   * every collection predating this field) means expanded.
+   * same tier as `nodePositions`/`groups`. A node id absent from this map
+   * means expanded.
    */
-  presetsCollapsed?: Record<string, boolean>;
+  presetsCollapsed: Record<string, boolean>;
 }
 
 export type CollectionSecretsMode = 'stripped' | 'included';

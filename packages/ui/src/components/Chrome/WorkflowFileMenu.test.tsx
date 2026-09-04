@@ -64,7 +64,7 @@ describe('WorkflowFileMenu', () => {
     const user = userEvent.setup();
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     useWorkflowStore.setState({
-      nodes: [{ id: 'n1', operationId: 'GET /a', credentialId: 'c1', fieldValues: {} }],
+      nodes: [{ id: 'n1', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: 'c1', fieldValues: {} }],
       nodePositions: { n1: { x: 0, y: 0 } },
       credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'super-secret-token' }],
     });
@@ -94,7 +94,7 @@ describe('WorkflowFileMenu', () => {
     const user = userEvent.setup();
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     useWorkflowStore.setState({
-      nodes: [{ id: 'n1', operationId: 'GET /a', credentialId: 'c1', fieldValues: {} }],
+      nodes: [{ id: 'n1', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: 'c1', fieldValues: {} }],
       credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'super-secret-token' }],
     });
     render(<WorkflowFileMenu />);
@@ -139,11 +139,11 @@ describe('WorkflowFileMenu', () => {
   it('asks to confirm before replacing a non-empty canvas, then replaces on confirm', async () => {
     const user = userEvent.setup();
     useWorkflowStore.setState({
-      nodes: [{ id: 'old', operationId: 'GET /old', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'old', kind: 'operation', operationId: 'GET /old', requestMode: 'form', credentialId: null, fieldValues: {} }],
       nodePositions: { old: { x: 0, y: 0 } },
     });
     const incoming = serializeCollection({
-      nodes: [{ id: 'n-new', operationId: 'GET /new', credentialId: null, fieldValues: {} }],
+      nodes: [{ id: 'n-new', kind: 'operation', operationId: 'GET /new', requestMode: 'form', credentialId: null, fieldValues: {} }],
       connections: [],
       nodePositions: { 'n-new': { x: 8, y: 16 } },
       credentials: [],
@@ -170,7 +170,7 @@ describe('WorkflowFileMenu', () => {
     const incoming = serializeCollection({
       name: 'Private backup',
       includeSecrets: true,
-      nodes: [{ id: 'n-new', operationId: 'GET /new', credentialId: 'c1', fieldValues: {} }],
+      nodes: [{ id: 'n-new', kind: 'operation', operationId: 'GET /new', requestMode: 'form', credentialId: 'c1', fieldValues: {} }],
       connections: [],
       nodePositions: {},
       credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'imported-secret' }],
@@ -197,7 +197,7 @@ describe('WorkflowFileMenu', () => {
     const incoming = serializeCollection({
       name: 'Private backup',
       includeSecrets: true,
-      nodes: [{ id: 'n-new', operationId: 'GET /new', credentialId: 'c1', fieldValues: {} }],
+      nodes: [{ id: 'n-new', kind: 'operation', operationId: 'GET /new', requestMode: 'form', credentialId: 'c1', fieldValues: {} }],
       connections: [],
       nodePositions: {},
       credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'imported-secret' }],
@@ -246,7 +246,7 @@ describe('WorkflowFileMenu', () => {
   it('hands stripped credentials to the drawer for review instead of naming them in the header', async () => {
     const user = userEvent.setup();
     const incoming = serializeCollection({
-      nodes: [{ id: 'n-new', operationId: 'GET /new', credentialId: 'c1', fieldValues: {} }],
+      nodes: [{ id: 'n-new', kind: 'operation', operationId: 'GET /new', requestMode: 'form', credentialId: 'c1', fieldValues: {} }],
       connections: [],
       nodePositions: {},
       credentials: [{ id: 'c1', name: 'staging', type: 'bearer', token: 'super-secret-token' }],
@@ -284,7 +284,7 @@ describe('WorkflowFileMenu', () => {
             id: 'workflow-1',
             name: 'Imported',
             specHint: { operationIds: [] },
-            nodes: [{ id: 'n1', operationId: 'GET /a', credentialId: null, fieldValues: {} }],
+            nodes: [{ id: 'n1', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} }],
             connections: [],
             nodePositions: { n1: { x: 1, y: 2 } },
             groups: [],

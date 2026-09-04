@@ -541,6 +541,7 @@ describe('run', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
@@ -592,6 +593,7 @@ describe('run', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
@@ -631,6 +633,7 @@ describe('run', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
@@ -666,6 +669,7 @@ describe('run', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     useWorkflowStore.setState({ baseUrl: 'http://example.test', operations: [noop] });
@@ -752,6 +756,7 @@ describe('replaceWorkflow', () => {
       path: '/kept',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     useWorkflowStore.setState({
@@ -777,7 +782,9 @@ describe('replaceWorkflow', () => {
 
     const incoming = serializeCollection({
       name: 'Orders sandbox',
-      nodes: [{ id: 'n-new', operationId: 'POST /orders', credentialId: 'c-new', fieldValues: {} }],
+      nodes: [
+        { id: 'n-new', kind: 'operation', operationId: 'POST /orders', requestMode: 'form', credentialId: 'c-new', fieldValues: {} },
+      ],
       connections: [],
       nodePositions: { 'n-new': { x: 40, y: 80 } },
       credentials: [{ id: 'c-new', name: 'imported', type: 'bearer', token: 'must-not-survive' }],
@@ -785,7 +792,9 @@ describe('replaceWorkflow', () => {
     replaceWorkflow(incoming);
 
     const state = useWorkflowStore.getState();
-    expect(state.nodes).toEqual([{ id: 'n-new', operationId: 'POST /orders', credentialId: 'c-new', fieldValues: {} }]);
+    expect(state.nodes).toEqual([
+      { id: 'n-new', kind: 'operation', operationId: 'POST /orders', requestMode: 'form', credentialId: 'c-new', fieldValues: {} },
+    ]);
     expect(state.nodePositions).toEqual({ 'n-new': { x: 40, y: 80 } });
     expect(state.credentials).toEqual([{ id: 'c-new', name: 'imported', type: 'bearer', token: '' }]);
     expect(state.selectedNodeId).toBeNull();
@@ -811,6 +820,7 @@ describe('run incomplete-credential guard', () => {
           path: '/noop',
           parameters: [],
           requestBodySchema: null,
+          requestBodyContentType: null,
           responseSchema: null,
         },
       ],
@@ -927,9 +937,9 @@ describe('workflowStore node groups', () => {
       nodePositions: {},
       groups: [],
       operations: [
-        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, responseSchema: null },
-        { id: 'GET /b', method: 'get', path: '/b', parameters: [], requestBodySchema: null, responseSchema: null },
-        { id: 'GET /c', method: 'get', path: '/c', parameters: [], requestBodySchema: null, responseSchema: null },
+        { id: 'GET /a', method: 'get', path: '/a', parameters: [], requestBodySchema: null, requestBodyContentType: null, responseSchema: null },
+        { id: 'GET /b', method: 'get', path: '/b', parameters: [], requestBodySchema: null, requestBodyContentType: null, responseSchema: null },
+        { id: 'GET /c', method: 'get', path: '/c', parameters: [], requestBodySchema: null, requestBodyContentType: null, responseSchema: null },
       ],
       selectedNodeId: null,
       isRunning: false,
@@ -1143,8 +1153,8 @@ describe('workflowStore node groups', () => {
     const incoming = serializeCollection({
       name: 'Imported',
       nodes: [
-        { id: 'n-new', operationId: 'GET /a', credentialId: null, fieldValues: {} },
-        { id: 'n-new-2', operationId: 'GET /b', credentialId: null, fieldValues: {} },
+        { id: 'n-new', kind: 'operation', operationId: 'GET /a', requestMode: 'form', credentialId: null, fieldValues: {} },
+        { id: 'n-new-2', kind: 'operation', operationId: 'GET /b', requestMode: 'form', credentialId: null, fieldValues: {} },
       ],
       connections: [],
       nodePositions: { 'n-new': { x: 40, y: 80 }, 'n-new-2': { x: 60, y: 80 } },

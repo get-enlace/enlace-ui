@@ -6,11 +6,19 @@ import { buildNodeLabels } from '@get-enlace/core';
 import type { Operation, WorkflowNode } from '../../types.js';
 
 function node(id: string, operationId: string): WorkflowNode {
-  return { id, operationId, credentialId: null, fieldValues: {} };
+  return { id, kind: 'operation', operationId, requestMode: 'form', credentialId: null, fieldValues: {} };
 }
 
 const ops: Operation[] = [
-  { id: 'GET /orders/{id}', method: 'get', path: '/orders/{id}', parameters: [], requestBodySchema: null, responseSchema: null },
+  {
+    id: 'GET /orders/{id}',
+    method: 'get',
+    path: '/orders/{id}',
+    parameters: [],
+    requestBodySchema: null,
+    requestBodyContentType: null,
+    responseSchema: null,
+  },
 ];
 const opsById = new Map(ops.map((o) => [o.id, o]));
 const labelsFor = (nodes: WorkflowNode[]) => buildNodeLabels(nodes, opsById);

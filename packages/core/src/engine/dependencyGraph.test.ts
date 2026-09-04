@@ -3,7 +3,7 @@ import { computeAncestors } from './dependencyGraph.js';
 import type { OperationNode, WorkflowConnection, WorkflowNode } from '../types.js';
 
 function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): OperationNode {
-  return { id, operationId: id, credentialId: null, fieldValues };
+  return { id, kind: 'operation', operationId: id, requestMode: 'form', credentialId: null, fieldValues };
 }
 
 describe('computeAncestors', () => {

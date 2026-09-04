@@ -16,12 +16,20 @@ function flushMicrotasks(): Promise<void> {
 }
 
 function node(id: string, fieldValues: WorkflowNode['fieldValues'] = {}): WorkflowNode {
-  return { id, operationId: id, credentialId: null, fieldValues };
+  return { id, kind: 'operation', operationId: id, requestMode: 'form', credentialId: null, fieldValues };
 }
 
 /** A minimal Operation whose `id` and `path` are both derived from `id`, so `operationsById.get(id)` and the mocked fetch's URL both key off the same identifier. */
 function op(id: string, path: string): Operation {
-  return { id, method: 'get', path, parameters: [], requestBodySchema: null, responseSchema: null };
+  return {
+    id,
+    method: 'get',
+    path,
+    parameters: [],
+    requestBodySchema: null,
+    requestBodyContentType: null,
+    responseSchema: null,
+  };
 }
 
 function mockResponse(status: number, body: unknown) {
@@ -119,6 +127,7 @@ describe('executeChain', () => {
       path: '/orders',
       parameters: [],
       requestBodySchema: { type: 'object', properties: { item: { type: 'string' } } },
+      requestBodyContentType: 'application/json',
       responseSchema: null,
     };
     const getOrder: Operation = {
@@ -127,11 +136,14 @@ describe('executeChain', () => {
       path: '/orders/{id}',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
 
     const n1: WorkflowNode = {
       id: 'n1',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'POST /orders',
       credentialId: null,
       fieldValues: {
@@ -141,6 +153,8 @@ describe('executeChain', () => {
     };
     const n2: WorkflowNode = {
       id: 'n2',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'GET /orders/{id}',
       credentialId: null,
       fieldValues: {
@@ -190,12 +204,13 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
 
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
-    const b: WorkflowNode = { id: 'b', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
-    const c: WorkflowNode = { id: 'c', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const b: WorkflowNode = { id: 'b', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const c: WorkflowNode = { id: 'c', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
     const connections: WorkflowConnection[] = [
       { fromNodeId: 'a', toNodeId: 'b' },
       { fromNodeId: 'a', toNodeId: 'c' },
@@ -223,9 +238,10 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const credentialsById = new Map<string, Credential>([
       ['cred-1', { id: 'cred-1', name: 'Test', type: 'bearer', token: 'secret-token' }],
     ]);
@@ -251,9 +267,10 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const credentialsById = new Map<string, Credential>([
       ['cred-1', { id: 'cred-1', name: 'Test', type: 'basic', username: 'alice', password: 'hunter2' }],
     ]);
@@ -279,9 +296,10 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const credentialsById = new Map<string, Credential>([
       ['cred-1', { id: 'cred-1', name: 'Test', type: 'apiKey', paramName: 'apiKey', in: 'query', key: 'secret-key' }],
     ]);
@@ -307,9 +325,10 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
@@ -339,9 +358,10 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: null, fieldValues: {} };
 
     await executeChain(
       { nodes: [a], connections: [] },
@@ -373,9 +393,10 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const credentialsById = new Map<string, Credential>([['cred-1', { id: 'cred-1', name: 'Test', type: 'bearer', token: 'secret' }]]);
 
     await executeChain(
@@ -404,9 +425,10 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
@@ -448,12 +470,13 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     // Two independent nodes (no connection between them, same level) sharing
     // one credential — the token endpoint should be hit once, not twice.
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
-    const b: WorkflowNode = { id: 'b', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const b: WorkflowNode = { id: 'b', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
@@ -504,6 +527,7 @@ describe('executeChain', () => {
       path: '/tenant',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     const noop: Operation = {
@@ -512,13 +536,16 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     // No explicit connection from tenant -> b — the mapped override alone
     // must be enough to order b after tenant.
-    const tenant: WorkflowNode = { id: 'tenant', operationId: 'GET /tenant', credentialId: null, fieldValues: {} };
+    const tenant: WorkflowNode = { id: 'tenant', kind: 'operation', requestMode: 'form', operationId: 'GET /tenant', credentialId: null, fieldValues: {} };
     const b: WorkflowNode = {
       id: 'b',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'GET /noop',
       credentialId: 'cred-1',
       fieldValues: {},
@@ -580,15 +607,18 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     // Two nodes sharing the credential: `b` is plain; `a` has an override
     // row added (mapped from `b`, so no cycle) but no response field chosen
     // yet ('' — the UI's "Select field..." state). Both must resolve to
     // the *same*, cached token.
-    const b: WorkflowNode = { id: 'b', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const b: WorkflowNode = { id: 'b', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const a: WorkflowNode = {
       id: 'a',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'GET /noop',
       credentialId: 'cred-1',
       fieldValues: {},
@@ -651,6 +681,7 @@ describe('executeChain', () => {
       path: '/tenant',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     const noop: Operation = {
@@ -659,14 +690,17 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const tenant: WorkflowNode = { id: 'tenant', operationId: 'GET /tenant', credentialId: null, fieldValues: {} };
+    const tenant: WorkflowNode = { id: 'tenant', kind: 'operation', requestMode: 'form', operationId: 'GET /tenant', credentialId: null, fieldValues: {} };
     // Same fully-resolvable mapped override as the enabled-case test above,
     // but with the toggle left off (undefined) — a leftover/previously
     // configured override must stay completely inert.
     const b: WorkflowNode = {
       id: 'b',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'GET /noop',
       credentialId: 'cred-1',
       fieldValues: {},
@@ -718,9 +752,10 @@ describe('executeChain', () => {
       path: '/noop',
       parameters: [],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
-    const a: WorkflowNode = { id: 'a', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
+    const a: WorkflowNode = { id: 'a', kind: 'operation', requestMode: 'form', operationId: 'GET /noop', credentialId: 'cred-1', fieldValues: {} };
     const credentialsById = new Map<string, Credential>([
       [
         'cred-1',
@@ -767,6 +802,7 @@ describe('executeChain', () => {
       path: '/customers',
       parameters: [],
       requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+      requestBodyContentType: 'application/json',
       responseSchema: { type: 'object', properties: { id: { type: 'string' } } },
     };
     const createOrder: Operation = {
@@ -775,17 +811,21 @@ describe('executeChain', () => {
       path: '/orders',
       parameters: [],
       requestBodySchema: { type: 'object', properties: { note: { type: 'string' } } },
+      requestBodyContentType: 'application/json',
       responseSchema: null,
     };
 
     const a: WorkflowNode = {
       id: 'a',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'POST /customers',
       credentialId: null,
       fieldValues: { 'body.name': { source: 'static', value: 'Ada' } },
     };
     const b: WorkflowNode = {
       id: 'b',
+      kind: 'operation',
       operationId: 'POST /orders',
       credentialId: null,
       requestMode: 'form',
@@ -824,11 +864,13 @@ describe('executeChain', () => {
         { name: 'dryRun', in: 'query', required: false, schema: { type: 'boolean' } },
       ],
       requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+      requestBodyContentType: 'application/json',
       responseSchema: null,
     };
 
     const node: WorkflowNode = {
       id: 'n1',
+      kind: 'operation',
       operationId: 'PATCH /customers/{id}',
       credentialId: null,
       requestMode: 'raw',
@@ -1194,6 +1236,8 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     };
     const n: WorkflowNode = {
       id: 'n1',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'POST /products',
       credentialId: null,
       fieldValues: {
@@ -1252,6 +1296,8 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     };
     const n: WorkflowNode = {
       id: 'n1',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'POST /products',
       credentialId: null,
       fieldValues: { 'body.image': { source: 'file', fileName: 'gone.png' } },
@@ -1329,6 +1375,8 @@ describe('executeChain — presets nodes', () => {
     const g = presetsNode('g', [{ id: 's1', kind: 'wait', durationMs: 5 }]);
     const a: WorkflowNode = {
       id: 'a',
+      kind: 'operation',
+      requestMode: 'form',
       operationId: 'a',
       credentialId: null,
       fieldValues: { 'query.x': { source: 'mapped', fromNodeId: 'g', fromResponseFieldPath: 'id' } },

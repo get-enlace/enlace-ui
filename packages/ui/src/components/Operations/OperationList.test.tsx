@@ -11,6 +11,7 @@ function makeOperation(overrides: Partial<Operation>): Operation {
     path: '/pet',
     parameters: [],
     requestBodySchema: null,
+    requestBodyContentType: null,
     responseSchema: null,
     ...overrides,
   };

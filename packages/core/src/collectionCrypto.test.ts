@@ -53,6 +53,7 @@ const collection: EnlaceCollection = {
       connections: [],
       nodePositions: {},
       groups: [],
+      presetsCollapsed: {},
     },
   ],
 };

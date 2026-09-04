@@ -46,6 +46,7 @@ const petOperation: Operation = {
       weird: { oneOf: [{ type: 'string' }, { type: 'integer' }] },
     },
   },
+  requestBodyContentType: 'application/json',
   responseSchema: {
     type: 'object',
     properties: { id: { type: 'integer' }, name: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } },
@@ -58,11 +59,20 @@ const getPetOperation: Operation = {
   path: '/pet/{petId}',
   parameters: [],
   requestBodySchema: null,
+  requestBodyContentType: null,
   responseSchema: petOperation.responseSchema,
 };
 
-function makeNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
-  return { id: 'node-1', operationId: 'POST /pet', credentialId: null, fieldValues: {}, ...overrides };
+function makeNode(overrides: Partial<OperationNode> = {}): OperationNode {
+  return {
+    id: 'node-1',
+    kind: 'operation',
+    operationId: 'POST /pet',
+    requestMode: 'form',
+    credentialId: null,
+    fieldValues: {},
+    ...overrides,
+  };
 }
 
 // Field labels render as one merged text node ("body.name * (string)"), not
@@ -178,6 +188,8 @@ describe('NodeConfig', () => {
       const user = userEvent.setup();
       const opNode: WorkflowNode = {
         id: 'op1',
+        kind: 'operation',
+        requestMode: 'form',
         operationId: 'POST /orders',
         credentialId: null,
         fieldValues: {},
@@ -199,6 +211,7 @@ describe('NodeConfig', () => {
             path: '/orders',
             parameters: [],
             requestBodySchema: null,
+            requestBodyContentType: null,
             responseSchema: null,
           },
         ],
@@ -270,6 +283,7 @@ describe('NodeConfig', () => {
         { name: 'limit', in: 'query', required: false, schema: { type: 'integer' } },
       ],
       requestBodySchema: { type: 'object', properties: { note: { type: 'string' } } },
+      requestBodyContentType: null,
       responseSchema: null,
     };
     useWorkflowStore.setState({
@@ -299,6 +313,7 @@ describe('NodeConfig', () => {
         { name: 'offset', in: 'query', required: false, schema: { type: 'integer' } },
       ],
       requestBodySchema: null,
+      requestBodyContentType: null,
       responseSchema: null,
     };
     useWorkflowStore.setState({
@@ -682,6 +697,7 @@ describe('NodeConfig', () => {
         path: '/plain',
         parameters: [],
         requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+        requestBodyContentType: 'application/json',
         responseSchema: null,
       };
       useWorkflowStore.setState({
@@ -703,6 +719,7 @@ describe('NodeConfig', () => {
         path: '/plain',
         parameters: [],
         requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+        requestBodyContentType: 'application/json',
         responseSchema: null,
       };
       useWorkflowStore.setState({
@@ -739,6 +756,7 @@ describe('NodeConfig', () => {
         path: '/plain',
         parameters: [],
         requestBodySchema: { type: 'object', properties: { name: { type: 'string' } } },
+        requestBodyContentType: 'application/json',
         responseSchema: null,
       };
       useWorkflowStore.setState({
