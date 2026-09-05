@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { areFieldTypesCompatible, flattenRequestFields } from './flattenSchema.js';
+import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from './flattenSchema.js';
 import type { Operation } from '../types.js';
 
 function makeOperation(overrides: Partial<Operation>): Operation {
@@ -117,6 +117,27 @@ describe('flattenRequestFields', () => {
     expect(JSON.parse(tags.reason!)).toEqual([{ id: 0, name: 'string' }]);
   });
 
+  it('stays a single JSON-literal field for an array-of-objects body property — item expansion is response-side only (see flattenResponseFields)', () => {
+    const operation = makeOperation({
+      requestBodySchema: {
+        type: 'object',
+        properties: {
+          tags: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { id: { type: 'integer' }, name: { type: 'string' } },
+            },
+          },
+        },
+      },
+    });
+
+    const fields = flattenRequestFields(operation);
+
+    expect(fields.map((f) => f.path)).toEqual(['body.tags']);
+  });
+
   it('treats an array query parameter the same way as an array body property', () => {
     const operation = makeOperation({
       parameters: [{ name: 'tags', in: 'query', required: false, schema: { type: 'array', items: { type: 'string' } } }],
@@ -186,6 +207,81 @@ describe('flattenRequestFields', () => {
     expect(file.type).toBe('string');
     expect(file.required).toBe(true);
     expect(description.format).toBeUndefined();
+  });
+});
+
+describe('flattenResponseFields', () => {
+  it('offers indexed item fields when the response itself is a bare array of objects (e.g. GET /widgets -> Widget[])', () => {
+    const operation = makeOperation({
+      responseSchema: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { id: { type: 'integer' }, name: { type: 'string' } },
+        },
+      },
+    });
+
+    const fields = flattenResponseFields(operation);
+    const paths = fields.map((f) => f.path);
+
+    // No whole-array field here — there's no property name to hang it on at
+    // the true top level, only the items are selectable. Reaching past
+    // index 0 (a second item, a filtered one) is still Raw mode's job.
+    expect(paths).toEqual(['[0].id', '[0].name']);
+    expect(fields.every((f) => f.supported)).toBe(true);
+  });
+
+  it('offers a single indexed field for a bare array of scalars', () => {
+    const operation = makeOperation({ responseSchema: { type: 'array', items: { type: 'string' } } });
+
+    const [item] = flattenResponseFields(operation);
+
+    expect(item.path).toBe('[0]');
+    expect(item.supported).toBe(true);
+    expect(item.type).toBe('string');
+  });
+
+  it('offers both the whole array and its indexed item fields for an array-of-objects property', () => {
+    const operation = makeOperation({
+      responseSchema: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { id: { type: 'integer' } },
+            },
+          },
+          total: { type: 'integer' },
+        },
+      },
+    });
+
+    const fields = flattenResponseFields(operation);
+    const paths = fields.map((f) => f.path);
+
+    expect(paths).toEqual(['items', 'items[0].id', 'total']);
+    expect(fields.find((f) => f.path === 'items')!.type).toBe('array');
+    expect(fields.every((f) => f.supported)).toBe(true);
+  });
+
+  it('marks an unrecognized item shape unsupported rather than mistreating it as a scalar', () => {
+    const operation = makeOperation({
+      responseSchema: { type: 'array', items: { oneOf: [{ type: 'string' }, { type: 'integer' }] } },
+    });
+
+    const [item] = flattenResponseFields(operation);
+
+    expect(item.path).toBe('[0]');
+    expect(item.supported).toBe(false);
+  });
+
+  it('returns nothing for a missing response schema, same as before', () => {
+    const operation = makeOperation({ responseSchema: null });
+
+    expect(flattenResponseFields(operation)).toEqual([]);
   });
 });
 

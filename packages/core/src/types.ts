@@ -36,30 +36,66 @@ export type FieldValue =
  * What a single inline "tag chip" in a Raw JSON body resolves against —
  * see engine/rawBodyResolver.ts. `response_body` reads a JSONPath-ish
  * filter (utils/bodyTags.ts's `resolveJsonPath`, a thin wrapper over
- * chainExecutor.ts's `getByPath`) out of the source node's parsed response
+ * engine/path.ts's `getByPath`) out of the source node's parsed response
  * body; `response_raw` takes that response body whole, no filter applied;
  * `response_header` reads one named response header (case-insensitively);
- * `response_status` reads the numeric HTTP status code. The same union
- * doubles as an Assert check's `source.type` (see `AssertCheck` below) —
- * "a reference into a prior step's result" is exactly what both need.
+ * `response_status` reads the numeric HTTP status code. `uploaded_file` is
+ * the odd one out — not a reference into a prior step's result at all, but
+ * a local file the user attached directly in the Raw body editor (body
+ * only — a multipart operation's own file field, see
+ * engine/rawBodyResolver.ts's file-swap step); it's deliberately excluded
+ * from `ResponseBodyTag` below, which is the subset an Assert check's
+ * `source.type` actually doubles as — an assertion compares against a
+ * captured response, never a locally-attached file.
  */
-export type BodyTagType = 'response_body' | 'response_raw' | 'response_header' | 'response_status';
+export type BodyTagType = 'response_body' | 'response_raw' | 'response_header' | 'response_status' | 'uploaded_file';
 
-export interface BodyTag {
-  id: string;
-  type: BodyTagType;
-  sourceNodeId: string;
-  /** `response_body` only — dot/bracket path, e.g. "items[0].id"; an optional leading "$."/"$" is stripped. Omitted/empty means "the whole body". */
-  jsonPath?: string;
-  /** `response_header` only. */
-  headerName?: string;
-}
+/**
+ * A discriminated union: the four `response_*` variants reference a prior
+ * step's captured result (`sourceNodeId`, plus a type-specific filter);
+ * `uploaded_file` instead names a local file the user attached directly —
+ * the real `File` lives in the store's `uploadedFiles` map (never
+ * serialized, same "marker only" treatment `FieldValue`'s own
+ * `source: 'file'` variant already gets), keyed off this tag's own `id`
+ * rather than a `sourceNodeId` it doesn't have.
+ */
+export type BodyTag =
+  | {
+      id: string;
+      type: 'response_body';
+      sourceNodeId: string;
+      /** Dot/bracket path, e.g. "items[0].id"; an optional leading "$."/"$" is stripped. Omitted/empty means "the whole body". */
+      jsonPath?: string;
+    }
+  | { id: string; type: 'response_raw'; sourceNodeId: string }
+  | { id: string; type: 'response_header'; sourceNodeId: string; headerName: string }
+  | { id: string; type: 'response_status'; sourceNodeId: string }
+  | { id: string; type: 'uploaded_file'; fileName: string };
+
+/**
+ * The subset of `BodyTag` that references a prior step's result — see
+ * `BodyTagType`'s own comment for why `uploaded_file` is excluded here
+ * rather than folded into the same shape.
+ */
+export type ResponseBodyTag = Extract<BodyTag, { sourceNodeId: string }>;
+
+/**
+ * `ResponseBodyTag` minus `id` — via `DistributiveOmit` (defined further
+ * down alongside its other users), not a plain `Omit`, which would collapse
+ * the union to just its common fields (`type`/`sourceNodeId`), silently
+ * losing `jsonPath`/`headerName`. What `AssertCheck.source` actually is,
+ * and what `bodyTags.ts`'s `resolveTagValue` accepts — exported so that
+ * file (outside this one) can name the same type rather than re-deriving
+ * it.
+ */
+export type ResponseBodyTagRef = DistributiveOmit<ResponseBodyTag, 'id'>;
 
 /**
  * The Raw JSON alternative to per-leaf `fieldValues['body.*']` entries —
  * see utils/bodyTemplate.ts for the Form<->Raw conversion and
  * components/RawBodyEditor.tsx for the editor itself. `template` is
- * always valid JSON text; a mapped value is represented as literal text
+ * always valid JSON text; a mapped value (or an attached file — see
+ * `BodyTag`'s `uploaded_file` variant) is represented as literal text
  * `{{enlace:<tagId>}}` sitting inside an existing string's quotes (see
  * utils/bodyTags.ts's `tagPattern`/`makeTagPlaceholder`), never as a
  * standalone token that would make the JSON invalid.
@@ -106,13 +142,15 @@ export type AssertOperator =
 /**
  * One comparison an `'assert'` preset runs. `source` is the same
  * "reference into a prior step's result" shape a Raw JSON tag chip uses
- * (see `BodyTag`/utils/bodyTags.ts's `resolveTagValue`), minus the `id` a
- * dictionary key would need there — a check isn't stored in a `Record`, so
- * its own `id` below already identifies it.
+ * (see `ResponseBodyTag`/utils/bodyTags.ts's `resolveTagValue`), minus the
+ * `id` a dictionary key would need there — a check isn't stored in a
+ * `Record`, so its own `id` below already identifies it. Narrower than
+ * `BodyTag` itself: an assertion compares against a captured response,
+ * never a locally-attached `uploaded_file`.
  */
 export interface AssertCheck {
   id: string;
-  source: Omit<BodyTag, 'id'>;
+  source: ResponseBodyTagRef;
   operator: AssertOperator;
   /** User-typed comparison value, always a plain string — irrelevant for `exists`/`notExists`. Numeric operators coerce at compare time (engine/assertCompare.ts). */
   expected?: string;

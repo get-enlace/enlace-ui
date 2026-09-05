@@ -69,16 +69,85 @@ function arrayField(path: string, required: boolean, schema: Record<string, any>
   };
 }
 
+/** A scalar leaf's field, or an explicitly-unsupported one when the shape isn't a scalar we recognize (e.g. oneOf/anyOf/allOf) — shared by flattenObjectSchema's own property loop and flattenArrayField's item-expansion below. */
+function scalarOrUnsupportedField(path: string, required: boolean, schema: Record<string, any> | undefined): SchemaField {
+  const knownScalar = SCALAR_TYPES.has(schema?.type) || Boolean(schema?.enum);
+  return knownScalar
+    ? {
+        path,
+        required,
+        supported: true,
+        type: schema?.type,
+        format: typeof schema?.format === 'string' ? schema.format : undefined,
+        enum: schema?.enum,
+      }
+    : { path, required, supported: false, reason: UNKNOWN_SHAPE_REASON };
+}
+
+/**
+ * Handles one array-typed field found while flattening — always
+ * contributes the whole-array field (arrayField above) so "map array ->
+ * array" keeps working (an array-typed source is only ever *enabled* by
+ * NodeConfig.tsx's picker when the target field is itself array-typed —
+ * areFieldTypesCompatible — anything else still means switching to Raw
+ * mode), skipped only when `path` is empty (the true top level: an
+ * operation whose entire response *is* an array — see
+ * flattenResponseFields — has no property name to hang a whole-array field
+ * on; there's nothing there to select besides its items).
+ *
+ * `expandItems`, response-side only (see flattenObjectSchema's own doc),
+ * additionally reaches one representative level into the array as index
+ * `[0]` — object items recurse for their own properties, a nested array
+ * recurses again the same way, and a scalar/unrecognized item becomes one
+ * field. `[0]` stands in for "the first item": deliberately kept despite
+ * not generalizing to a second item or a repeated group — "map from the
+ * first item in the list" is common enough on its own to be worth the
+ * field, and getByPath (path.ts) already resolves bracket-indexed paths
+ * like `items[0].id` at run time regardless, so this is purely the picker
+ * choosing to surface one. Reaching past index 0, or a second/filtered
+ * item, is still what Raw mode's JSONPath filter is for.
+ */
+function flattenArrayField(schema: Record<string, any>, path: string, required: boolean, expandItems: boolean): SchemaField[] {
+  const fields: SchemaField[] = [];
+  if (path) fields.push(arrayField(path, required, schema));
+  if (!expandItems) return fields;
+
+  const items = schema.items;
+  const itemPath = path ? `${path}[0]` : '[0]';
+  if (isObjectSchema(items)) {
+    fields.push(...flattenObjectSchema(items, itemPath, expandItems));
+  } else if (isArraySchema(items)) {
+    fields.push(...flattenArrayField(items, itemPath, false, expandItems));
+  } else {
+    fields.push(scalarOrUnsupportedField(itemPath, false, items));
+  }
+  return fields;
+}
+
 /**
  * Flattens a JSON-schema object's properties into request/response fields,
  * recursing fully through nested objects — setByPath (chainExecutor.ts)
  * already handles arbitrary dotted-path depth when building the request,
  * so there's no reason to cap this at one level. Arrays stop the
- * recursion: "N items, each with M fields" doesn't reduce to a flat field
- * list the same way objects do, so an array is instead edited as a single
- * JSON-literal value (see arrayField above).
+ * recursion by default: "N items, each with M fields" doesn't reduce to a
+ * flat field list the same way objects do, so an array is instead edited
+ * as a single JSON-literal value (see arrayField above) — the request-body
+ * form has no other array editor, and that stays true regardless of
+ * `expandArrayItems` (flattenRequestFields never passes it).
+ *
+ * `expandArrayItems`, true only from the response side
+ * (flattenResponseFields), additionally reaches into an array property's
+ * items (see flattenArrayField above) — response fields have no
+ * free-text/JSON-literal fallback the way request fields do, only a
+ * dropdown of concrete paths, so without this an ancestor whose response
+ * is (or contains) a list has nothing indexable to offer the "Map from..."
+ * picker beyond the whole-array field itself.
  */
-function flattenObjectSchema(schema: Record<string, any> | null | undefined, prefix: string): SchemaField[] {
+function flattenObjectSchema(
+  schema: Record<string, any> | null | undefined,
+  prefix: string,
+  expandArrayItems = false
+): SchemaField[] {
   const fields: SchemaField[] = [];
   const properties = schema?.properties ?? {};
   const required: string[] = schema?.required ?? [];
@@ -88,28 +157,16 @@ function flattenObjectSchema(schema: Record<string, any> | null | undefined, pre
     const isRequired = required.includes(name);
 
     if (isObjectSchema(propSchema)) {
-      fields.push(...flattenObjectSchema(propSchema, path));
+      fields.push(...flattenObjectSchema(propSchema, path, expandArrayItems));
       continue;
     }
 
     if (isArraySchema(propSchema)) {
-      fields.push(arrayField(path, isRequired, propSchema));
+      fields.push(...flattenArrayField(propSchema, path, isRequired, expandArrayItems));
       continue;
     }
 
-    const knownScalar = SCALAR_TYPES.has(propSchema?.type) || Boolean(propSchema?.enum);
-    fields.push(
-      knownScalar
-        ? {
-            path,
-            required: isRequired,
-            supported: true,
-            type: propSchema?.type,
-            format: typeof propSchema?.format === 'string' ? propSchema.format : undefined,
-            enum: propSchema?.enum,
-          }
-        : { path, required: isRequired, supported: false, reason: UNKNOWN_SHAPE_REASON }
-    );
+    fields.push(scalarOrUnsupportedField(path, isRequired, propSchema));
   }
 
   return fields;
@@ -133,9 +190,20 @@ export function flattenRequestFields(operation: Operation): SchemaField[] {
   return [...paramFields, ...flattenObjectSchema(operation.requestBodySchema, 'body')];
 }
 
-/** Response-side fields for the "map from..." picker — same flattening rules, no section prefix. */
+/**
+ * Response-side fields for the "map from..." picker — same flattening
+ * rules as the request side, no section prefix, plus array-item expansion
+ * (see flattenObjectSchema/flattenArrayField above). Also handles the case
+ * flattenObjectSchema itself can't: an operation whose response *is* an
+ * array at the top level (e.g. `GET /widgets` -> `Widget[]`, not wrapped
+ * in an object) — there's no `.properties` to walk there at all, so
+ * without this special case the picker would offer nothing for that
+ * ancestor.
+ */
 export function flattenResponseFields(operation: Operation): SchemaField[] {
-  return flattenObjectSchema(operation.responseSchema, '');
+  const schema = operation.responseSchema ?? undefined;
+  if (isArraySchema(schema)) return flattenArrayField(schema!, '', false, true);
+  return flattenObjectSchema(schema, '', true);
 }
 
 /**

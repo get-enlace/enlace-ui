@@ -63,7 +63,10 @@ test('POST /products multipart: optional image, Run, see imageLocation', async (
 
   await page.locator('.react-flow__node').filter({ hasText: '/products' }).click();
   await expect(page.getByRole('heading', { name: 'Body' })).toBeVisible();
-  await expect(page.getByRole('checkbox', { name: /Switch to Raw view/ })).toHaveCount(0);
+  // Raw mode is no longer form-only for multipart — it can hold a file
+  // field via an uploaded_file tag (see rawBodyResolver.ts) — so the
+  // toggle is present; this test just stays in Form mode throughout.
+  await expect(page.getByRole('checkbox', { name: /Switch to Raw view/ })).toHaveCount(1);
 
   // Attach the oauth2 credential via the lock menu.
   await page.getByRole('button', { name: 'Credential' }).click();

@@ -13,7 +13,7 @@ import {
 import { json } from '@codemirror/lang-json';
 import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
-import { autocompletion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { makeTagPlaceholder, tagPattern } from '@get-enlace/core';
 import { randomId } from '../../utils/randomId.js';
@@ -41,6 +41,10 @@ export interface RawBodyEditorProps {
   readOnly?: boolean;
   /** When false, skip the per-editor "{{" tip — NodeConfig shows one shared hint under Request. */
   showHint?: boolean;
+  /** Body-only, multipart-only: offers "Upload file" in the `{{` popup and the config modal's own type dropdown. Omitted (path/query editors, or a non-multipart body) means neither ever appears — a File has nowhere to go outside a multipart body (see rawBodyResolver.ts). */
+  allowFileUpload?: boolean;
+  /** Required whenever `allowFileUpload` is true — this component only collects the `File` (via TagConfigModal), it never touches the store itself; the caller (NodeConfig.tsx) is what has the node id `uploadedFiles` needs to be keyed under (see bodyTags.ts's `rawFileTagFieldPath`). `file: null` on an edit means "the file was cleared" — currently only reachable by deleting the whole tag instead, kept nullable for symmetry with NodeConfig's own `setUploadedFile`. */
+  onUploadFile?: (tagId: string, file: File | null) => void;
 }
 
 // `json()` only supplies the parser/language — it applies no color on its
@@ -67,10 +71,15 @@ const refreshChips = StateEffect.define<void>();
 export const cloneTagsEffect = StateEffect.define<Record<string, BodyTag>>();
 
 function tagLabel(tag: BodyTag, nodesById: Map<string, WorkflowNode>, nodeLabels: Map<string, string>): string {
-  const label = nodesById.has(tag.sourceNodeId) ? nodeLabels.get(tag.sourceNodeId)! : '(missing)';
+  // uploaded_file has no sourceNodeId at all — a local attachment, not a
+  // reference into another node's response — so it gets its own label
+  // before any of the sourceNodeId-based ones below even run.
+  if (tag.type === 'uploaded_file') return `📎 ${tag.fileName}`;
 
-  if (tag.type === 'response_header') return `${label} → header ${tag.headerName ?? ''}`;
+  const label = nodesById.has(tag.sourceNodeId) ? nodeLabels.get(tag.sourceNodeId)! : '(missing)';
+  if (tag.type === 'response_header') return `${label} → header ${tag.headerName}`;
   if (tag.type === 'response_raw') return `${label} → raw body`;
+  if (tag.type === 'response_status') return `${label} → status code`;
   return `${label} → ${tag.jsonPath || 'body'}`;
 }
 
@@ -137,7 +146,11 @@ function buildDecorations(text: string, config: ChipConfig): DecorationSet {
       continue;
     }
 
-    const broken = !config.nodesById.has(tag.sourceNodeId);
+    // uploaded_file has no sourceNodeId to go stale — whether its actual
+    // File is still around only matters at request time (see
+    // rawBodyResolver.ts's own "re-select the file" error), not something
+    // this decoration plugin has visibility into.
+    const broken = tag.type !== 'uploaded_file' && !config.nodesById.has(tag.sourceNodeId);
     const label = tagLabel(tag, config.nodesById, config.nodeLabels);
     ranges.push(Decoration.replace({ widget: new TagChipWidget(tagId, label, broken, config.onClickChip) }).range(from, to));
   }
@@ -188,7 +201,11 @@ function chipPlugin(configRef: { current: ChipConfig }) {
  * so the worst case is a field that looks cluttered, never one that
  * silently sends an unresolved placeholder.
  */
-function tagCompletionSource(onTrigger: (type: BodyTagType, from: number, to: number) => void) {
+function tagCompletionSource(
+  onTrigger: (type: BodyTagType, from: number, to: number) => void,
+  /** Body-only, multipart-only — see RawBodyEditor's own `allowFileUpload` prop for why this isn't just always offered. */
+  allowFileUpload: boolean
+) {
   return (context: CompletionContext): CompletionResult | null => {
     const match = context.matchBefore(/\{\{\w*/);
     if (!match) return null;
@@ -216,6 +233,9 @@ function tagCompletionSource(onTrigger: (type: BodyTagType, from: number, to: nu
           // something.
           apply: (_view, _completion, from, to) => onTrigger('response_body', from, to),
         },
+        ...(allowFileUpload
+          ? ([{ label: 'Upload file', apply: (_view, _completion, from, to) => onTrigger('uploaded_file', from, to) }] satisfies Completion[])
+          : []),
       ],
     };
   };
@@ -229,14 +249,15 @@ function tagCompletionSource(onTrigger: (type: BodyTagType, from: number, to: nu
  * depends on per-node config.
  */
 export function buildJsonAutocompleteExtensions(
-  onTriggerTag: (type: BodyTagType, from: number, to: number) => void
+  onTriggerTag: (type: BodyTagType, from: number, to: number) => void,
+  allowFileUpload = false
 ): Extension[] {
   return [
     json(),
     syntaxHighlighting(jsonHighlightStyle),
     history(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
-    autocompletion({ override: [tagCompletionSource(onTriggerTag)] }),
+    autocompletion({ override: [tagCompletionSource(onTriggerTag, allowFileUpload)] }),
     EditorView.lineWrapping,
     // CodeMirror defaults to its *light* base theme (caret-color: black)
     // unless told otherwise — our CSS paints this editor with a near-
@@ -319,6 +340,8 @@ export function RawBodyEditor({
   nodeLabels,
   readOnly = false,
   showHint = true,
+  allowFileUpload = false,
+  onUploadFile,
 }: RawBodyEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -368,7 +391,7 @@ export function RawBodyEditor({
     const chipPluginType = chipPlugin(configRef);
 
     const extensions: Extension[] = [
-      ...buildJsonAutocompleteExtensions((type, from, to) => setPendingInsert({ type, from, to })),
+      ...buildJsonAutocompleteExtensions((type, from, to) => setPendingInsert({ type, from, to }), allowFileUpload),
       buildTagAutoCloneExtension(() => liveRef.current.rawBody.tags),
       chipPluginType,
       EditorView.atomicRanges.of((view) => view.plugin(chipPluginType)?.decorations ?? Decoration.none),
@@ -452,7 +475,7 @@ export function RawBodyEditor({
     viewRef.current?.focus();
   }
 
-  function handleInsertConfirm(tag: BodyTag) {
+  function handleInsertConfirm(tag: BodyTag, file?: File) {
     const view = viewRef.current;
     if (!view || !pendingInsert) return;
     const docLength = view.state.doc.length;
@@ -466,6 +489,7 @@ export function RawBodyEditor({
       annotations: scripted.of(true),
     });
     onChange({ template: view.state.doc.toString(), tags: { ...rawBody.tags, [tag.id]: tag } });
+    if (tag.type === 'uploaded_file' && file) onUploadFile?.(tag.id, file);
     setPendingInsert(null);
     refocusEditor();
   }
@@ -476,8 +500,12 @@ export function RawBodyEditor({
     return { from: match.index, to: match.index + match[0].length };
   }
 
-  function handleEditConfirm(tag: BodyTag) {
+  function handleEditConfirm(tag: BodyTag, file?: File) {
     onChange({ template: rawBody.template, tags: { ...rawBody.tags, [tag.id]: tag } });
+    // `file` is only set when the user picked a *new* file while editing —
+    // leaving it unset means "keep whatever's already stored" (see
+    // TagConfigModal's own onConfirm doc), so there's nothing to write here.
+    if (tag.type === 'uploaded_file' && file) onUploadFile?.(tag.id, file);
     setEditingTagId(null);
     refocusEditor();
   }
@@ -489,9 +517,14 @@ export function RawBodyEditor({
     if (span) {
       view.dispatch({ changes: { from: span.from, to: span.to, insert: '' }, annotations: scripted.of(true) });
     }
+    const deletedTag = rawBody.tags[editingTagId];
     const tags = { ...rawBody.tags };
     delete tags[editingTagId];
     onChange({ template: view.state.doc.toString(), tags });
+    // Same tidy-up a removed Form-mode file field already gets — no reason
+    // for its blob to keep sitting in `uploadedFiles` under a tag id
+    // nothing references any more.
+    if (deletedTag?.type === 'uploaded_file') onUploadFile?.(editingTagId, null);
     setEditingTagId(null);
     refocusEditor();
   }
@@ -522,6 +555,7 @@ export function RawBodyEditor({
           ancestorNodes={ancestorNodes}
           nodeLabels={nodeLabels}
           initialType={pendingInsert.type}
+          allowFileUpload={allowFileUpload}
           onConfirm={handleInsertConfirm}
           onCancel={handleCancelInsert}
         />
@@ -533,6 +567,7 @@ export function RawBodyEditor({
           nodeLabels={nodeLabels}
           initialType={editingTag.type}
           initialTag={editingTag}
+          allowFileUpload={allowFileUpload}
           onConfirm={handleEditConfirm}
           onDelete={handleDelete}
           onCancel={handleCancelEdit}

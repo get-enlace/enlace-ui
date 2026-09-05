@@ -571,7 +571,7 @@ function parseAssertChecks(raw: unknown, presetsNodeId: string, presetId: string
       return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" has a duplicate check id "${check.id}".`;
     }
     const source = check.source;
-    if (!isRecord(source) || typeof source.sourceNodeId !== 'string' || !isBodyTagType(source.type)) {
+    if (!isRecord(source) || typeof source.sourceNodeId !== 'string' || !isResponseTagType(source.type)) {
       return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" check "${check.id}" has an invalid source.`;
     }
     if (!isAssertOperator(check.operator)) {
@@ -580,9 +580,15 @@ function parseAssertChecks(raw: unknown, presetsNodeId: string, presetId: string
     if (check.expected !== undefined && typeof check.expected !== 'string') {
       return `Enlace collection presets node "${presetsNodeId}" preset "${presetId}" check "${check.id}" has an invalid expected value.`;
     }
-    const copySource: AssertCheck['source'] = { type: source.type, sourceNodeId: source.sourceNodeId };
-    if (typeof source.jsonPath === 'string') copySource.jsonPath = source.jsonPath;
-    if (typeof source.headerName === 'string') copySource.headerName = source.headerName;
+    // Rebuilt per variant, not one mutable object — ResponseBodyTagRef is a
+    // real discriminated union now (see types.ts), and `source.type` alone
+    // (already narrowed above) is what TS needs to pick the right one.
+    const copySource: AssertCheck['source'] =
+      source.type === 'response_body'
+        ? { type: 'response_body', sourceNodeId: source.sourceNodeId, jsonPath: typeof source.jsonPath === 'string' ? source.jsonPath : undefined }
+        : source.type === 'response_header'
+          ? { type: 'response_header', sourceNodeId: source.sourceNodeId, headerName: typeof source.headerName === 'string' ? source.headerName : '' }
+          : { type: source.type, sourceNodeId: source.sourceNodeId };
     seenIds.add(check.id);
     checks.push({
       id: check.id,
@@ -668,12 +674,30 @@ function parseRawBody(raw: unknown, nodeId: string, fieldName = 'rawBody'): RawB
     if (isUnsafeKey(id)) {
       return `Enlace collection node "${nodeId}" has an invalid ${fieldName} tag id "${id}".`;
     }
-    if (!isRecord(tag) || typeof tag.id !== 'string' || typeof tag.sourceNodeId !== 'string' || !isBodyTagType(tag.type)) {
+    if (!isRecord(tag) || typeof tag.id !== 'string' || !isBodyTagType(tag.type)) {
       return `Enlace collection node "${nodeId}" has an invalid ${fieldName} tag "${id}".`;
     }
-    const copy: BodyTag = { id: tag.id, type: tag.type, sourceNodeId: tag.sourceNodeId };
-    if (typeof tag.jsonPath === 'string') copy.jsonPath = tag.jsonPath;
-    if (typeof tag.headerName === 'string') copy.headerName = tag.headerName;
+    // uploaded_file has no sourceNodeId at all (a local attachment, not a
+    // reference to another node's response — see types.ts's BodyTag) —
+    // validated against `fileName` instead; every other variant still
+    // needs sourceNodeId.
+    let copy: BodyTag;
+    if (tag.type === 'uploaded_file') {
+      if (typeof tag.fileName !== 'string') {
+        return `Enlace collection node "${nodeId}" has an invalid ${fieldName} tag "${id}" (missing fileName).`;
+      }
+      copy = { id: tag.id, type: 'uploaded_file', fileName: tag.fileName };
+    } else {
+      if (typeof tag.sourceNodeId !== 'string') {
+        return `Enlace collection node "${nodeId}" has an invalid ${fieldName} tag "${id}" (missing sourceNodeId).`;
+      }
+      copy =
+        tag.type === 'response_body'
+          ? { id: tag.id, type: 'response_body', sourceNodeId: tag.sourceNodeId, jsonPath: typeof tag.jsonPath === 'string' ? tag.jsonPath : undefined }
+          : tag.type === 'response_header'
+            ? { id: tag.id, type: 'response_header', sourceNodeId: tag.sourceNodeId, headerName: typeof tag.headerName === 'string' ? tag.headerName : '' }
+            : { id: tag.id, type: tag.type, sourceNodeId: tag.sourceNodeId };
+    }
     tags[id] = copy;
   }
   return { template: raw.template, tags };
@@ -946,7 +970,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const BODY_TAG_TYPES: BodyTagType[] = ['response_body', 'response_raw', 'response_header', 'response_status'];
+// Split in two, not one shared list: an AssertCheck.source (ResponseBodyTagRef)
+// must never accept 'uploaded_file' — a check compares against a captured
+// response, never a locally-attached file (see types.ts) — so
+// parseAssertChecks validates against the narrower list only; parseRawBody's
+// tags (RawBody.tags is the full BodyTag union) validates against both.
+// `ResponseTagType` (not `BodyTagType[]`) is what keeps isResponseTagType's
+// predicate actually narrow — annotating the array itself as `BodyTagType[]`
+// would widen `(typeof RESPONSE_TAG_TYPES)[number]` straight back to the
+// full union, silently defeating the exclusion.
+type ResponseTagType = Exclude<BodyTagType, 'uploaded_file'>;
+const RESPONSE_TAG_TYPES: ResponseTagType[] = ['response_body', 'response_raw', 'response_header', 'response_status'];
+const BODY_TAG_TYPES: BodyTagType[] = [...RESPONSE_TAG_TYPES, 'uploaded_file'];
+
+function isResponseTagType(value: unknown): value is ResponseTagType {
+  return typeof value === 'string' && (RESPONSE_TAG_TYPES as string[]).includes(value);
+}
 function isBodyTagType(value: unknown): value is BodyTagType {
   return typeof value === 'string' && (BODY_TAG_TYPES as string[]).includes(value);
 }

@@ -664,22 +664,71 @@ describe('NodeConfig', () => {
     });
     render(<NodeConfig />);
 
-    // body.name is a string — GET /pet/{petId}'s response `tags` is an array.
+    // body.name is a string — GET /pet/{petId}'s response `tags` is an
+    // array. An array source is only ever wired into an array-typed target
+    // (see flattenSchema.ts's flattenObjectSchema doc), so against a string
+    // target it's disabled with a Raw-mode-specific reason, not the generic
+    // "type mismatch" wording another kind of mismatch gets below.
     const row = fieldRow('body.name');
     const [sourceKindSelect] = row.getAllByRole('combobox');
     await user.selectOptions(sourceKindSelect, 'mapped');
     const [, , fieldSelect] = row.getAllByRole('combobox');
-    const tagsOption = within(fieldSelect).getByText(/tags/);
+    const tagsOption = fieldSelect.querySelector('option[value="tags"]')!;
 
-    expect(tagsOption).toHaveTextContent('(type mismatch)');
+    expect(tagsOption).toHaveTextContent('(array — use Raw mode)');
     expect(tagsOption).toBeDisabled();
-    expect(tagsOption).toHaveAttribute('title', expect.stringContaining('Type mismatch'));
+    expect(tagsOption).toHaveAttribute('title', expect.stringContaining('Raw mode'));
 
     const idOption = within(fieldSelect).getByText(/^id/);
     expect(idOption).toBeDisabled(); // integer vs string target — also incompatible
 
     const nameOption = within(fieldSelect).getByText('name');
     expect(nameOption).not.toBeDisabled();
+  });
+
+  it('allows a straight array-to-array mapping when both sides are array-typed', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      nodes: [makeNode(), makeNode({ id: 'node-2', operationId: 'GET /pet/{petId}' })],
+      connections: [{ fromNodeId: 'node-2', toNodeId: 'node-1' }],
+      selectedNodeId: 'node-1',
+    });
+    render(<NodeConfig />);
+
+    // body.photoUrls is an array of strings — so is GET /pet/{petId}'s
+    // response `tags`. A whole-array copy is fine here; only a mismatched
+    // (non-array) target should be pushed toward Raw mode (see above).
+    const row = fieldRow('body.photoUrls');
+    const [sourceKindSelect] = row.getAllByRole('combobox');
+    await user.selectOptions(sourceKindSelect, 'mapped');
+    const [, , fieldSelect] = row.getAllByRole('combobox');
+    const tagsOption = fieldSelect.querySelector('option[value="tags"]')!;
+
+    expect(tagsOption).not.toBeDisabled();
+    expect(tagsOption).not.toHaveTextContent('Raw mode');
+  });
+
+  it('still offers the array\'s 0th item as its own scalar field, enabled when its type matches the target', async () => {
+    const user = userEvent.setup();
+    useWorkflowStore.setState({
+      nodes: [makeNode(), makeNode({ id: 'node-2', operationId: 'GET /pet/{petId}' })],
+      connections: [{ fromNodeId: 'node-2', toNodeId: 'node-1' }],
+      selectedNodeId: 'node-1',
+    });
+    render(<NodeConfig />);
+
+    // body.name is a string — GET /pet/{petId}'s response `tags[0]` (the
+    // array's first item) is a string too, so this is a plain, enabled
+    // scalar mapping, same as `id`/`name` below it — not everything array-
+    // adjacent needs Raw mode, just going past index 0 does.
+    const row = fieldRow('body.name');
+    const [sourceKindSelect] = row.getAllByRole('combobox');
+    await user.selectOptions(sourceKindSelect, 'mapped');
+    const [, , fieldSelect] = row.getAllByRole('combobox');
+    const firstTagOption = fieldSelect.querySelector('option[value="tags[0]"]')!;
+
+    expect(firstTagOption).toBeTruthy();
+    expect(firstTagOption).not.toBeDisabled();
   });
 
   describe('Raw JSON body mode', () => {
@@ -857,7 +906,7 @@ describe('NodeConfig', () => {
       responseSchema: null,
     };
 
-    it('renders a file picker for format: binary and hides the Form/Raw toggle', async () => {
+    it('renders a file picker for format: binary — the Form/Raw toggle is available too (Raw mode can hold a file field via an uploaded_file tag)', async () => {
       const user = userEvent.setup();
       useWorkflowStore.setState({
         nodes: [makeNode({ operationId: productOp.id })],
@@ -867,7 +916,7 @@ describe('NodeConfig', () => {
       });
       render(<NodeConfig />);
 
-      expect(screen.queryByRole('checkbox', { name: /Switch to Raw view/ })).not.toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: /Switch to Raw view/ })).toBeInTheDocument();
       expect(screen.getByText(/body\.image.*\(file\)/)).toBeInTheDocument();
       expect(fieldRow('body.image').getByLabelText('body.image')).toHaveAttribute('type', 'file');
       expect(fieldRow('body.name').getByRole('textbox')).toBeInTheDocument();
@@ -889,6 +938,50 @@ describe('NodeConfig', () => {
       expect(useWorkflowStore.getState().nodes[0].fieldValues['body.image']).toBeUndefined();
       expect(screen.queryByText('gadget.png')).not.toBeInTheDocument();
       expect(fieldRow('body.image').getByLabelText('body.image')).toHaveAttribute('type', 'file');
+    });
+
+    it('switching to Raw turns a set file field into an uploaded_file tag and copies the File across; switching back restores the Form file field', async () => {
+      const user = userEvent.setup();
+      const file = new File(['hello'], 'gadget.png', { type: 'image/png' });
+      useWorkflowStore.setState({
+        nodes: [
+          makeNode({
+            operationId: productOp.id,
+            fieldValues: {
+              'body.name': { source: 'static', value: 'Gadget' },
+              'body.image': { source: 'file', fileName: 'gadget.png' },
+            },
+          }),
+        ],
+        operations: [productOp],
+        selectedNodeId: 'node-1',
+        uploadedFiles: { 'node-1::body.image': file },
+      });
+      render(<NodeConfig />);
+
+      await user.click(screen.getByRole('checkbox', { name: /Switch to Raw view/ }));
+
+      let tagId = '';
+      await waitFor(() => {
+        const state = asOperationNode(useWorkflowStore.getState().nodes[0]);
+        expect(state.requestMode).toBe('raw');
+        const parsed = JSON.parse(state.rawBody!.template);
+        tagId = parsed.image.match(/\{\{enlace:(.+)\}\}/)![1];
+        expect(state.rawBody!.tags[tagId]).toEqual({ id: tagId, type: 'uploaded_file', fileName: 'gadget.png' });
+      });
+      // The File blob followed the field to its new tag-keyed slot — not
+      // just the fileName marker (see bodyTags.ts's rawFileTagFieldPath).
+      expect(useWorkflowStore.getState().uploadedFiles[`node-1::body:tag:${tagId}`]).toBe(file);
+
+      await user.click(screen.getByRole('checkbox', { name: /Switch to Form view/ }));
+
+      await waitFor(() => {
+        const state = asOperationNode(useWorkflowStore.getState().nodes[0]);
+        expect(state.requestMode).toBe('form');
+        expect(state.fieldValues['body.image']).toEqual({ source: 'file', fileName: 'gadget.png' });
+      });
+      // ...and followed it back to the field's own key on the way home.
+      expect(useWorkflowStore.getState().uploadedFiles['node-1::body.image']).toBe(file);
     });
   });
 });

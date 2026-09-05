@@ -28,13 +28,13 @@ describe('buildRawBodyFromForm', () => {
       'body.name': { source: 'static', value: 'widget' },
       'body.category.id': { source: 'static', value: 7 },
     };
-    const raw = buildRawBodyFromForm(op(simpleSchema), fieldValues);
+    const { rawBody: raw } = buildRawBodyFromForm(op(simpleSchema), fieldValues);
     expect(JSON.parse(raw.template)).toEqual({ name: 'widget', category: { id: 7 } });
     expect(raw.tags).toEqual({});
   });
 
   it('uses the schema example for fields with no fieldValue set', () => {
-    const raw = buildRawBodyFromForm(op(simpleSchema), {});
+    const { rawBody: raw } = buildRawBodyFromForm(op(simpleSchema), {});
     expect(JSON.parse(raw.template)).toEqual({ name: '', category: { id: 0 } });
   });
 
@@ -53,7 +53,7 @@ describe('buildRawBodyFromForm', () => {
       // Form mode — that value must win over the "" default entirely.
       'body.name': { source: 'static', value: 'Widget Co' },
     };
-    const raw = buildRawBodyFromForm(op(schema), fieldValues);
+    const { rawBody: raw } = buildRawBodyFromForm(op(schema), fieldValues);
     expect(JSON.parse(raw.template)).toEqual({
       name: 'Widget Co', // untouched by the default — Form's value wins
       active: false, // required, untouched in Form mode -> empty default
@@ -65,7 +65,7 @@ describe('buildRawBodyFromForm', () => {
     const fieldValues: Record<string, FieldValue> = {
       'body.name': { source: 'mapped', fromNodeId: 'node-a', fromResponseFieldPath: 'item.title' },
     };
-    const raw = buildRawBodyFromForm(op(simpleSchema), fieldValues);
+    const { rawBody: raw } = buildRawBodyFromForm(op(simpleSchema), fieldValues);
     const parsed = JSON.parse(raw.template);
 
     const tagId = Object.keys(raw.tags)[0];
@@ -83,10 +83,27 @@ describe('buildRawBodyFromForm', () => {
     const fieldValues: Record<string, FieldValue> = {
       'body.category.id': { source: 'mapped', fromNodeId: 'node-a', fromResponseFieldPath: 'category.id' },
     };
-    const raw = buildRawBodyFromForm(op(simpleSchema), fieldValues);
+    const { rawBody: raw } = buildRawBodyFromForm(op(simpleSchema), fieldValues);
     const parsed = JSON.parse(raw.template);
     const tagId = Object.keys(raw.tags)[0];
     expect(parsed.category.id).toBe(`{{enlace:${tagId}}}`);
+  });
+
+  it('turns a file field into an uploaded_file tag chip, and reports its tag id back so the caller can copy the actual File', () => {
+    const fileSchema = {
+      type: 'object',
+      properties: { name: { type: 'string' }, image: { type: 'string', format: 'binary' } },
+    };
+    const fieldValues: Record<string, FieldValue> = {
+      'body.image': { source: 'file', fileName: 'photo.png' },
+    };
+    const { rawBody: raw, fileFieldTagIds } = buildRawBodyFromForm(op(fileSchema), fieldValues);
+    const parsed = JSON.parse(raw.template);
+
+    expect(fileFieldTagIds).toEqual({ image: expect.any(String) });
+    const tagId = fileFieldTagIds.image;
+    expect(parsed.image).toBe(`{{enlace:${tagId}}}`);
+    expect(raw.tags[tagId]).toEqual({ id: tagId, type: 'uploaded_file', fileName: 'photo.png' });
   });
 });
 
@@ -199,9 +216,38 @@ describe('convertRawBodyToFieldValues', () => {
       'body.name': { source: 'static', value: 'widget' },
       'body.category.id': { source: 'mapped', fromNodeId: 'node-a', fromResponseFieldPath: 'category.id' },
     };
-    const raw = buildRawBodyFromForm(op(simpleSchema), fieldValues);
+    const { rawBody: raw } = buildRawBodyFromForm(op(simpleSchema), fieldValues);
     const result = convertRawBodyToFieldValues(raw, op(simpleSchema));
     expect(result.lossy).toBe(false);
     expect(result.fieldValues).toEqual(fieldValues);
+  });
+
+  it('turns a whole-string uploaded_file tag back into a `source: file` fieldValue, and reports its tag id', () => {
+    const fileSchema = {
+      type: 'object',
+      properties: { name: { type: 'string' }, image: { type: 'string', format: 'binary' } },
+    };
+    const rawBody = {
+      template: JSON.stringify({ name: 'widget', image: '{{enlace:tag1}}' }),
+      tags: { tag1: { id: 'tag1', type: 'uploaded_file' as const, fileName: 'photo.png' } },
+    };
+    const result = convertRawBodyToFieldValues(rawBody, op(fileSchema));
+    expect(result.fieldValues['body.image']).toEqual({ source: 'file', fileName: 'photo.png' });
+    expect(result.fileFieldTagIds).toEqual({ 'body.image': 'tag1' });
+    expect(result.lossy).toBe(false);
+  });
+
+  it('round-trips a file field through buildRawBodyFromForm -> convertRawBodyToFieldValues losslessly, with a fresh tag id each way', () => {
+    const fileSchema = {
+      type: 'object',
+      properties: { image: { type: 'string', format: 'binary' } },
+    };
+    const fieldValues: Record<string, FieldValue> = { 'body.image': { source: 'file', fileName: 'photo.png' } };
+    const { rawBody: raw, fileFieldTagIds: forward } = buildRawBodyFromForm(op(fileSchema), fieldValues);
+    const result = convertRawBodyToFieldValues(raw, op(fileSchema));
+
+    expect(result.lossy).toBe(false);
+    expect(result.fieldValues).toEqual(fieldValues);
+    expect(result.fileFieldTagIds).toEqual({ 'body.image': forward.image });
   });
 });

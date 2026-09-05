@@ -169,4 +169,86 @@ describe('TagConfigModal', () => {
     fireEvent.click(screen.getByText('Save'));
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ sourceNodeId: 'node-b' }));
   });
+
+  describe('uploaded_file', () => {
+    it('does not offer "Upload file" unless allowFileUpload is set', () => {
+      render(
+        <TagConfigModal ancestorNodes={[]} nodeLabels={labelsFor([])} initialType="response_body" onConfirm={() => {}} onCancel={() => {}} />
+      );
+      expect(screen.queryByText('Upload file')).not.toBeInTheDocument();
+    });
+
+    it('inserting a new file: disables Insert until a file is chosen, then confirms with the tag and the File', () => {
+      const onConfirm = vi.fn();
+      render(
+        <TagConfigModal
+          ancestorNodes={[]}
+          nodeLabels={labelsFor([])}
+          initialType="uploaded_file"
+          allowFileUpload
+          onConfirm={onConfirm}
+          onCancel={() => {}}
+        />
+      );
+
+      // No source-node picker for a local file attachment.
+      expect(screen.queryByLabelText('Request')).not.toBeInTheDocument();
+      expect(screen.getByText('Insert')).toBeDisabled();
+
+      const file = new File(['abc'], 'photo.png', { type: 'image/png' });
+      fireEvent.change(screen.getByLabelText('File to upload'), { target: { files: [file] } });
+      expect(screen.getByText('Insert')).not.toBeDisabled();
+      expect(screen.getByText('File: photo.png')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Insert'));
+      expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ type: 'uploaded_file', fileName: 'photo.png' }), file);
+    });
+
+    it('editing an existing file tag: Save is already enabled (keeps the current file) without picking a new one', () => {
+      const onConfirm = vi.fn();
+      render(
+        <TagConfigModal
+          ancestorNodes={[]}
+          nodeLabels={labelsFor([])}
+          initialType="uploaded_file"
+          initialTag={{ id: 'tag1', type: 'uploaded_file', fileName: 'old.png' }}
+          allowFileUpload
+          onConfirm={onConfirm}
+          onCancel={() => {}}
+        />
+      );
+
+      expect(screen.getByText(/Currently "old\.png"/)).toBeInTheDocument();
+      expect(screen.getByText('Save')).not.toBeDisabled();
+
+      fireEvent.click(screen.getByText('Save'));
+      // No new File picked — the caller keeps whatever's already stored (see
+      // RawBodyEditor.tsx's handleEditConfirm).
+      expect(onConfirm).toHaveBeenCalledWith({ id: 'tag1', type: 'uploaded_file', fileName: 'old.png' }, undefined);
+    });
+
+    it('editing an existing file tag and picking a replacement confirms with the new file', () => {
+      const onConfirm = vi.fn();
+      render(
+        <TagConfigModal
+          ancestorNodes={[]}
+          nodeLabels={labelsFor([])}
+          initialType="uploaded_file"
+          initialTag={{ id: 'tag1', type: 'uploaded_file', fileName: 'old.png' }}
+          allowFileUpload
+          onConfirm={onConfirm}
+          onCancel={() => {}}
+        />
+      );
+
+      // The file input stays reachable even with an existing filename known
+      // — no separate "clear" step needed to replace it.
+      const file = new File(['abc'], 'new.png', { type: 'image/png' });
+      fireEvent.change(screen.getByLabelText('File to upload'), { target: { files: [file] } });
+      expect(screen.getByText('new.png')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Save'));
+
+      expect(onConfirm).toHaveBeenCalledWith({ id: 'tag1', type: 'uploaded_file', fileName: 'new.png' }, file);
+    });
+  });
 });

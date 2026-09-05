@@ -162,4 +162,9 @@ describe('resolveTagsInValue', () => {
   it('throws when the tag id is not registered', () => {
     expect(() => resolveTagsInValue('{{enlace:missing}}', tags, stepsByNodeId)).toThrow(/unknown tag/);
   });
+
+  it('rejects an uploaded_file tag embedded in an ordinary field — a File can\'t be resolved outside a raw body\'s own multipart handling (see rawBodyResolver.ts)', () => {
+    const fileTags: Record<string, BodyTag> = { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'photo.png' } };
+    expect(() => resolveTagsInValue('{{enlace:tag1}}', fileTags, stepsByNodeId)).toThrow(/uploaded-file tag/);
+  });
 });

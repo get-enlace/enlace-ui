@@ -1278,6 +1278,103 @@ describe('executeChain — breakpoints, pause/continue/step/stop', () => {
     expect(result.steps[0].response?.status).toBe(201);
   });
 
+  it('builds FormData for a multipart op in Raw mode too, including an uploaded_file tag', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(201, { id: 'p1', name: 'Gadget', imageLocation: '/tmp/x' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File(['png'], 'gadget.png', { type: 'image/png' });
+    const productOp: Operation = {
+      id: 'POST /products',
+      method: 'post',
+      path: '/products',
+      parameters: [],
+      requestBodySchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          price: { type: 'number' },
+          image: { type: 'string', format: 'binary' },
+        },
+      },
+      requestBodyContentType: 'multipart/form-data',
+      responseSchema: null,
+    };
+    const n: WorkflowNode = {
+      id: 'n1',
+      kind: 'operation',
+      requestMode: 'raw', // no longer forced to 'form' just because the op is multipart
+      operationId: 'POST /products',
+      credentialId: null,
+      fieldValues: {},
+      rawBody: {
+        template: '{"name":"Gadget","price":19.5,"image":"{{enlace:tag1}}"}',
+        tags: { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'gadget.png' } },
+      },
+    };
+
+    // Keyed via rawFileTagFieldPath, not a real field path — see
+    // bodyTags.ts and operationNodeHandler.ts's own comment on why.
+    const request = await buildRequest(n, productOp, new Map(), new Map(), 'http://example.test', undefined, {
+      'n1::body:tag:tag1': file,
+    });
+    expect(request.headers['Content-Type']).toBeUndefined();
+    expect(request.body).toBeInstanceOf(FormData);
+    const form = request.body as FormData;
+    expect(form.get('image')).toBeInstanceOf(File);
+    expect((form.get('image') as File).name).toBe('gadget.png');
+    expect(form.get('name')).toBe('Gadget');
+    expect(form.get('price')).toBe('19.5');
+
+    const result = await executeChain(
+      { nodes: [n], connections: [] },
+      new Map([[productOp.id, productOp]]),
+      new Map(),
+      { baseUrl: 'http://example.test', uploadedFiles: { 'n1::body:tag:tag1': file } }
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(result.steps[0].response?.status).toBe(201);
+  });
+
+  it('fails clearly when a raw uploaded_file tag has no in-memory File blob', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const productOp: Operation = {
+      id: 'POST /products',
+      method: 'post',
+      path: '/products',
+      parameters: [],
+      requestBodySchema: { type: 'object', properties: { image: { type: 'string', format: 'binary' } } },
+      requestBodyContentType: 'multipart/form-data',
+      responseSchema: null,
+    };
+    const n: WorkflowNode = {
+      id: 'n1',
+      kind: 'operation',
+      requestMode: 'raw',
+      operationId: 'POST /products',
+      credentialId: null,
+      fieldValues: {},
+      rawBody: {
+        template: '{"image":"{{enlace:tag1}}"}',
+        tags: { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'gone.png' } },
+      },
+    };
+
+    const result = await executeChain(
+      { nodes: [n], connections: [] },
+      new Map([[productOp.id, productOp]]),
+      new Map(),
+      { baseUrl: 'http://example.test' }
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.steps[0].error).toMatch(/Re-select the file for "gone\.png"/);
+  });
+
   it('fails clearly when a file marker has no in-memory File blob', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

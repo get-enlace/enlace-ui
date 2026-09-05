@@ -282,6 +282,92 @@ describe('serializeCollection', () => {
     expect(sourceResult.error).toMatch(/invalid source/);
   });
 
+  it('rejects an assert check whose source claims type "uploaded_file" — a check compares against a captured response, never a locally-attached file', () => {
+    const badSource = {
+      ...serializeAll(),
+      workflows: [
+        {
+          ...serializeAll().workflows[0],
+          nodes: [
+            {
+              id: 'w1',
+              kind: 'presets',
+              credentialId: null,
+              fieldValues: {},
+              presets: [
+                {
+                  id: 's1',
+                  kind: 'assert',
+                  // Well-formed as far as isBodyTagType alone would check —
+                  // only isResponseTagType (see workflowDocument.ts) excludes it.
+                  checks: [{ id: 'c1', source: { type: 'uploaded_file', fileName: 'x.png' }, operator: 'exists' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const result = parseCollection(badSource);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/invalid source/);
+  });
+
+  it('round-trips a rawBody uploaded_file tag — the filename marker survives, no sourceNodeId required', () => {
+    const fileNode: WorkflowNode = {
+      id: 'n2',
+      kind: 'operation',
+      operationId: 'POST /orders',
+      credentialId: null,
+      fieldValues: {},
+      requestMode: 'raw',
+      rawBody: {
+        template: '{"image":"{{enlace:tag-file}}"}',
+        tags: { 'tag-file': { id: 'tag-file', type: 'uploaded_file', fileName: 'photo.png' } },
+      },
+    };
+    const doc = serializeCollection({
+      name: 'Upload',
+      nodes: [fileNode],
+      connections: [],
+      nodePositions: { n2: { x: 0, y: 0 } },
+      credentials: [],
+      now: () => '2026-09-05T00:00:00.000Z',
+    });
+
+    const parsed = parseCollection(doc, { operations: [operation] });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.collection.workflows[0].nodes).toEqual([fileNode]);
+  });
+
+  it('rejects a rawBody uploaded_file tag missing its fileName', () => {
+    const doc = {
+      ...serializeAll(),
+      workflows: [
+        {
+          ...serializeAll().workflows[0],
+          nodes: [
+            {
+              id: 'n1',
+              kind: 'operation',
+              operationId: 'POST /orders',
+              credentialId: null,
+              fieldValues: {},
+              requestMode: 'raw',
+              rawBody: { template: '{"image":"{{enlace:tag-file}}"}', tags: { 'tag-file': { id: 'tag-file', type: 'uploaded_file' } } },
+            },
+          ],
+        },
+      ],
+    };
+    const result = parseCollection(doc);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/missing fileName/);
+  });
+
   it('round-trips a presets node with ordered presets, and its presetsCollapsed chrome', () => {
     const presetsNode: WorkflowNode = {
       id: 'g1',

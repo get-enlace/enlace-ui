@@ -70,6 +70,13 @@ productsRouter.post('/products', requireOAuth2Token, upload.single('image'), (re
   res.status(201).json(product);
 });
 
+// Bare-array response (not wrapped in `{ items: [...] }`) — deliberately, so
+// the canvas has something to exercise the "Map from..." picker's top-level
+// array-response handling against (see flattenSchema.ts's flattenResponseFields).
+productsRouter.get('/products', (_req, res) => {
+  res.json(Array.from(products.values()));
+});
+
 productsRouter.get('/products/:id', (req, res) => {
   const product = products.get(req.params.id);
   if (!product) {

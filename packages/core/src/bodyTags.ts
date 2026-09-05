@@ -1,5 +1,5 @@
 import { getByPath } from './engine/path.js';
-import type { BodyTag, RunStep } from './types.js';
+import type { BodyTag, ResponseBodyTag, ResponseBodyTagRef, RunStep } from './types.js';
 
 /**
  * Matches a tag placeholder anywhere in a Raw JSON body's template text,
@@ -22,6 +22,20 @@ export function tagPattern(): RegExp {
 
 export function makeTagPlaceholder(tagId: string): string {
   return `{{enlace:${tagId}}}`;
+}
+
+/**
+ * The synthetic `fieldPath`-like key an `uploaded_file` tag's actual `File`
+ * is stored under in the same `uploadedFiles` map a Form-mode `source:
+ * 'file'` field uses (joined with a node id the same way there —
+ * `${nodeId}::${fieldPath}` — see operationNodeHandler.ts's
+ * `resolveFieldValue` and the UI store's `uploadedFileKey`). A raw tag has
+ * no real field path of its own, so this stands in for one; namespaced
+ * under `body:tag:` so it can never collide with an actual body field path
+ * (which never contains a `:`).
+ */
+export function rawFileTagFieldPath(tagId: string): string {
+  return `body:tag:${tagId}`;
 }
 
 /**
@@ -78,15 +92,19 @@ export function getHeaderCaseInsensitive(headers: Record<string, string>, name: 
  * people, so a UUID must never appear in it.
  */
 /**
- * `tag` is `Omit<BodyTag, 'id'>`, not `BodyTag` — this never reads `.id`
- * (only meaningful as a dictionary key in `RawBody.tags`), so widening the
- * parameter lets a directly-embedded reference that isn't stored in such a
- * dictionary (an `AssertCheck.source`, see types.ts) reuse this function
- * with no vestigial `id` field of its own. Every real `BodyTag` still
- * satisfies this widened type, so no call site changes.
+ * `tag` is `ResponseBodyTagRef` (`ResponseBodyTag` minus `id`), not
+ * `BodyTag` itself — this never reads `.id` (only meaningful as a
+ * dictionary key in `RawBody.tags`), so widening the parameter lets a
+ * directly-embedded reference that isn't stored in such a dictionary (an
+ * `AssertCheck.source`, see types.ts) reuse this function with no
+ * vestigial `id` field of its own. `ResponseBodyTag`, not `BodyTag`,
+ * deliberately: an `uploaded_file` tag has no `sourceNodeId` to resolve
+ * against a prior step at all — engine/rawBodyResolver.ts intercepts that
+ * variant itself before ever reaching here (see its own comment), so this
+ * function only ever needs to handle the four that do.
  */
 export function resolveTagValue(
-  tag: Omit<BodyTag, 'id'>,
+  tag: ResponseBodyTagRef,
   stepsByNodeId: Map<string, RunStep>,
   nodeLabels?: Map<string, string>
 ): unknown {
@@ -130,9 +148,19 @@ function resolveTagsInString(
   if (!mightContainTag(text)) return text;
 
   const matches = [...text.matchAll(tagPattern())];
-  const tagFor = (id: string): BodyTag => {
+  // `uploaded_file` never reaches this far in practice — utils/bodyTemplate.ts
+  // only ever converts one into a `source: 'file'` field, never a plain
+  // static string — but a hand-edited/stale document could still smuggle
+  // one in here, and a `File` has no sensible resolution as embedded text
+  // (unlike engine/rawBodyResolver.ts's own body-template resolution, this
+  // path has no multipart FormData to hand the real File to), so this is
+  // rejected outright rather than silently stringified.
+  const tagFor = (id: string): ResponseBodyTag => {
     const tag = tags[id];
     if (!tag) throw new Error(`Body references unknown tag "${id}".`);
+    if (tag.type === 'uploaded_file') {
+      throw new Error(`Body references an uploaded-file tag "${id}" outside of a file field — that mapping can't be resolved here.`);
+    }
     return tag;
   };
 

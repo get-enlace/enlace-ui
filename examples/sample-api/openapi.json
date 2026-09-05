@@ -139,6 +139,43 @@
       }
     },
     "/products": {
+      "get": {
+        "tags": ["Products"],
+        "summary": "List products",
+        "description": "Bare-array response (not wrapped in an object) — exercises the canvas's top-level array-response mapping.",
+        "operationId": "listProducts",
+        "responses": {
+          "200": {
+            "description": "Products",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "name": { "type": "string" },
+                      "price": { "type": "number" },
+                      "inStock": { "type": "boolean" },
+                      "images": {
+                        "type": "array",
+                        "items": { 
+                          "type": "object",
+                          "properties": {
+                            "url": { "type": "string" },
+                            "altText": { "type": "string", "nullable": true }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": ["Products"],
         "summary": "Create a product",

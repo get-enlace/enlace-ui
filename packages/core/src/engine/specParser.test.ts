@@ -16,7 +16,7 @@ function loadFixtureSpec(): Record<string, any> {
 }
 
 describe('parseOperations', () => {
-  it('parses the sample store spec (3 resources x full CRUD) into operations', () => {
+  it('parses the sample store spec (3 resources x full CRUD, plus a bare-array GET /products list endpoint) into operations', () => {
     const spec = loadFixtureSpec();
     const operations = parseOperations(spec);
 
@@ -25,6 +25,7 @@ describe('parseOperations', () => {
       'GET /customers/{id}',
       'PATCH /customers/{id}',
       'DELETE /customers/{id}',
+      'GET /products',
       'POST /products',
       'GET /products/{id}',
       'PATCH /products/{id}',

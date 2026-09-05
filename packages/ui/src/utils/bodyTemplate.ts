@@ -39,7 +39,9 @@ function applyFieldValueToTarget(
   target: Record<string, unknown>,
   tags: Record<string, BodyTag>,
   key: string,
-  fieldValue: FieldValue
+  fieldValue: FieldValue,
+  /** Body-relative field path -> the tag id minted for it, for every `source: 'file'` field seen — this function only knows the `FieldValue` marker (`{ source: 'file', fileName }`), never the actual `File` blob (that lives in the store's `uploadedFiles` map), so it's the caller's job (NodeConfig.tsx's switchToRaw) to also copy that blob across to the new tag's own key (see bodyTags.ts's `rawFileTagFieldPath`) using this map. */
+  fileFieldTagIds: Record<string, string>
 ): void {
   if (fieldValue.source === 'static') {
     setByPath(target, key, fieldValue.value);
@@ -52,9 +54,15 @@ function applyFieldValueToTarget(
       jsonPath: fieldValue.fromResponseFieldPath || undefined,
     };
     setByPath(target, key, sentinelFor(tagId));
+  } else if (fieldValue.source === 'file') {
+    // Same sentinel-then-placeholder trick a mapped value uses, just with
+    // an `uploaded_file` tag instead of a `response_body` one — the actual
+    // File blob isn't this function's concern (see this param's own doc).
+    const tagId = randomId();
+    tags[tagId] = { id: tagId, type: 'uploaded_file', fileName: fieldValue.fileName };
+    fileFieldTagIds[key] = tagId;
+    setByPath(target, key, sentinelFor(tagId));
   }
-  // `file` fields can't round-trip through Raw JSON — skipped (multipart ops
-  // hide the Form/Raw toggle entirely).
 }
 
 /**
@@ -69,11 +77,17 @@ export function buildRawParamsFromForm(
   const target: Record<string, unknown> = {};
   const tags: Record<string, BodyTag> = {};
   const prefix = `${section}.`;
+  // A path/query param is never a file field in practice (no operation
+  // declares `format: binary` outside a body), so this is always empty —
+  // still threaded through applyFieldValueToTarget for one shared
+  // implementation, just discarded here rather than surfaced to a caller
+  // that has no matching File to copy anywhere.
+  const fileFieldTagIds: Record<string, string> = {};
 
   for (const key of paramNames(operation, section)) {
     const fieldValue = fieldValues[`${prefix}${key}`];
     if (fieldValue) {
-      applyFieldValueToTarget(target, tags, key, fieldValue);
+      applyFieldValueToTarget(target, tags, key, fieldValue, fileFieldTagIds);
     } else {
       // Always include every declared param key so Raw mode starts with a
       // filled-in skeleton rather than `{}` the user has to reconstruct.
@@ -84,24 +98,33 @@ export function buildRawParamsFromForm(
   return finalizeTemplate(target, tags);
 }
 
+export interface FormToRawBodyResult {
+  rawBody: RawBody;
+  /** Body-relative field path -> tag id, for every `source: 'file'` field converted — see applyFieldValueToTarget's own doc on this param. */
+  fileFieldTagIds: Record<string, string>;
+}
+
 /**
  * Form -> Raw. Starts from a full schema-derived example (unlike the
  * form's own per-field defaults, this doesn't stop at arrays/oneOf) and
  * overlays whatever the user has already set in `fieldValues`: a static
- * value is written in place, a mapped value becomes a new tag chip.
+ * value is written in place, a mapped value or an attached file each
+ * become a new tag chip (`response_body` / `uploaded_file` respectively —
+ * see types.ts's `BodyTag`).
  */
-export function buildRawBodyFromForm(operation: Operation, fieldValues: Record<string, FieldValue>): RawBody {
+export function buildRawBodyFromForm(operation: Operation, fieldValues: Record<string, FieldValue>): FormToRawBodyResult {
   const skeleton = buildSchemaExample(operation.requestBodySchema);
   const target = (typeof skeleton === 'object' && skeleton !== null ? skeleton : {}) as Record<string, unknown>;
   const tags: Record<string, BodyTag> = {};
+  const fileFieldTagIds: Record<string, string> = {};
 
   for (const key of bodyFieldPaths(operation)) {
     const fieldValue = fieldValues[`body.${key}`];
     if (!fieldValue) continue;
-    applyFieldValueToTarget(target, tags, key, fieldValue);
+    applyFieldValueToTarget(target, tags, key, fieldValue, fileFieldTagIds);
   }
 
-  return finalizeTemplate(target, tags);
+  return { rawBody: finalizeTemplate(target, tags), fileFieldTagIds };
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -126,6 +149,8 @@ export interface RawToFormResult {
   lossy: boolean;
   /** Set (and `fieldValues`/`lossy` left empty/false) when the template isn't valid JSON at all — this blocks switching outright rather than just warning. */
   parseError?: string;
+  /** Field path (with `fieldPrefix` already applied, e.g. "body.image") -> the `uploaded_file` tag id it came from, for every file field converted — the actual `File` blob lives in the store's `uploadedFiles` map under that tag's key (see bodyTags.ts's `rawFileTagFieldPath`), so the caller (NodeConfig.tsx's switchToForm) uses this to copy it back to the field's own key. */
+  fileFieldTagIds: Record<string, string>;
 }
 
 function convertRawObjectToFieldValues(
@@ -139,12 +164,13 @@ function convertRawObjectToFieldValues(
   try {
     parsed = JSON.parse(raw.template);
   } catch (err) {
-    return { fieldValues: {}, lossy: false, parseError: err instanceof Error ? err.message : String(err) };
+    return { fieldValues: {}, lossy: false, fileFieldTagIds: {}, parseError: err instanceof Error ? err.message : String(err) };
   }
 
   const fieldValues: Record<string, FieldValue> = {};
   const reconstructed: Record<string, unknown> = {};
   const consumedTagIds = new Set<string>();
+  const fileFieldTagIds: Record<string, string> = {};
 
   for (const key of keys) {
     const value = getByPath(parsed, key);
@@ -161,6 +187,11 @@ function convertRawObjectToFieldValues(
       };
       consumedTagIds.add(tag.id);
       setByPath(reconstructed, key, value);
+    } else if (tag && tag.type === 'uploaded_file') {
+      fieldValues[`${fieldPrefix}${key}`] = { source: 'file', fileName: tag.fileName };
+      fileFieldTagIds[`${fieldPrefix}${key}`] = tag.id;
+      consumedTagIds.add(tag.id);
+      setByPath(reconstructed, key, value);
     } else {
       fieldValues[`${fieldPrefix}${key}`] = { source: 'static', value };
       setByPath(reconstructed, key, value);
@@ -171,7 +202,7 @@ function convertRawObjectToFieldValues(
   const hasUnconsumedTag = [...allTagIdsInTemplate].some((id) => !consumedTagIds.has(id));
   const lossy = hasUnconsumedTag || !deepEqual(reconstructed, parsed);
 
-  return { fieldValues, lossy };
+  return { fieldValues, lossy, fileFieldTagIds };
 }
 
 /**

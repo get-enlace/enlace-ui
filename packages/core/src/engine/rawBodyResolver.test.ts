@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveRawBody } from './rawBodyResolver.js';
-import type { BodyTag, RawBody, RunStep } from '../types.js';
+import type { BodyTag, BodyTagType, RawBody, RunStep } from '../types.js';
 
 function step(nodeId: string, response?: RunStep['response']): RunStep {
   return {
@@ -12,8 +12,17 @@ function step(nodeId: string, response?: RunStep['response']): RunStep {
   };
 }
 
-function bodyTag(overrides: Partial<BodyTag> & Pick<BodyTag, 'type' | 'sourceNodeId'>): BodyTag {
-  return { id: 'tag1', ...overrides };
+// BodyTag is a real discriminated union now (see types.ts) — a loose
+// `Partial<BodyTag>` doesn't distribute over it (same reasoning as
+// `DistributiveOmit`'s own comment), so every *response* fixture built here
+// goes through this one cast rather than fighting the union per call site.
+// `fileTag` below is the `uploaded_file` counterpart.
+function bodyTag(overrides: { type: Exclude<BodyTagType, 'uploaded_file'>; sourceNodeId: string; jsonPath?: string; headerName?: string; id?: string }): BodyTag {
+  return { id: 'tag1', ...overrides } as BodyTag;
+}
+
+function fileTag(overrides: { fileName: string; id?: string }): BodyTag {
+  return { id: 'tag1', type: 'uploaded_file', ...overrides };
 }
 
 describe('resolveRawBody', () => {
@@ -126,5 +135,59 @@ describe('resolveRawBody', () => {
   it('returns the template unchanged (parsed) when there are no tags at all', () => {
     const rawBody: RawBody = { template: '{"a":1,"b":"text"}', tags: {} };
     expect(resolveRawBody(rawBody, new Map())).toEqual({ a: 1, b: 'text' });
+  });
+
+  describe('uploaded_file tags', () => {
+    it('swaps the sentinel for the real File when a fileLookup finds one', () => {
+      const file = new File(['abc'], 'photo.png');
+      const rawBody: RawBody = {
+        template: '{"name":"Widget","image":"{{enlace:tag1}}"}',
+        tags: { tag1: fileTag({ fileName: 'photo.png' }) },
+      };
+      const result = resolveRawBody(rawBody, new Map(), undefined, (tagId) => (tagId === 'tag1' ? file : undefined)) as Record<
+        string,
+        unknown
+      >;
+      expect(result.name).toBe('Widget');
+      expect(result.image).toBe(file);
+    });
+
+    it('reaches a nested file field the same way a response tag would', () => {
+      const file = new File(['abc'], 'a.png');
+      const rawBody: RawBody = {
+        template: '{"meta":{"image":"{{enlace:tag1}}"}}',
+        tags: { tag1: fileTag({ fileName: 'a.png' }) },
+      };
+      const result = resolveRawBody(rawBody, new Map(), undefined, () => file) as { meta: { image: unknown } };
+      expect(result.meta.image).toBe(file);
+    });
+
+    it('throws "re-select the file" when no fileLookup entry exists for the tag (e.g. after import)', () => {
+      const rawBody: RawBody = {
+        template: '{"image":"{{enlace:tag1}}"}',
+        tags: { tag1: fileTag({ fileName: 'photo.png' }) },
+      };
+      expect(() => resolveRawBody(rawBody, new Map(), undefined, () => undefined)).toThrow(
+        /Re-select the file for "photo.png"/
+      );
+    });
+
+    it('throws when no fileLookup was passed at all (e.g. a path/query raw section, or a non-multipart body)', () => {
+      const rawBody: RawBody = {
+        template: '{"image":"{{enlace:tag1}}"}',
+        tags: { tag1: fileTag({ fileName: 'photo.png' }) },
+      };
+      expect(() => resolveRawBody(rawBody, new Map())).toThrow(/only valid in the body of a multipart/);
+    });
+
+    it('rejects a file tag embedded in a larger string rather than being its field\'s whole value', () => {
+      const rawBody: RawBody = {
+        template: '{"image":"prefix-{{enlace:tag1}}"}',
+        tags: { tag1: fileTag({ fileName: 'photo.png' }) },
+      };
+      expect(() => resolveRawBody(rawBody, new Map(), undefined, () => new File([], 'photo.png'))).toThrow(
+        /must be its field's entire value/
+      );
+    });
   });
 });

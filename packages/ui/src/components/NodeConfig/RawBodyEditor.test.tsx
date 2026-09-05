@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { EditorState, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { acceptCompletion, completionStatus } from '@codemirror/autocomplete';
+import { acceptCompletion, completionStatus, currentCompletions } from '@codemirror/autocomplete';
 import { json } from '@codemirror/lang-json';
 import { RawBodyEditor, buildJsonAutocompleteExtensions, buildTagAutoCloneExtension, cloneTagsEffect } from './RawBodyEditor.js';
 import { buildNodeLabels } from '@get-enlace/core';
@@ -356,6 +356,57 @@ describe('RawBodyEditor', () => {
 
     view.destroy();
     wrapper.remove();
+  });
+
+  it('only offers "Upload file" in the "{{" popup when allowFileUpload is set (body-only, multipart-only — see NodeConfig.tsx)', async () => {
+    async function completionLabels(allowFileUpload: boolean): Promise<string[]> {
+      const wrapper = document.createElement('div');
+      document.body.appendChild(wrapper);
+      const view = new EditorView({
+        state: EditorState.create({
+          doc: '{"image": ""}',
+          selection: { anchor: '{"image": "'.length },
+          extensions: buildJsonAutocompleteExtensions(() => {}, allowFileUpload),
+        }),
+        parent: wrapper,
+      });
+
+      function typeChar(ch: string) {
+        const head = view.state.selection.main.head;
+        view.dispatch({
+          changes: { from: head, insert: ch },
+          selection: { anchor: head + ch.length },
+          annotations: Transaction.userEvent.of('input.type'),
+        });
+      }
+      typeChar('{');
+      typeChar('{');
+      await waitFor(() => expect(completionStatus(view.state)).toBe('active'));
+      const labels = currentCompletions(view.state).map((c) => c.label);
+
+      view.destroy();
+      wrapper.remove();
+      return labels;
+    }
+
+    expect(await completionLabels(false)).toEqual(['Response → Map from...']);
+    expect(await completionLabels(true)).toEqual(['Response → Map from...', 'Upload file']);
+  });
+
+  it('renders a distinct chip for an uploaded_file tag, labeled with its filename rather than a source node', async () => {
+    const rawBody: RawBody = {
+      template: '{"image":"{{enlace:tag1}}"}',
+      tags: { tag1: { id: 'tag1', type: 'uploaded_file', fileName: 'photo.png' } },
+    };
+    const { container } = render(<RawBodyEditor rawBody={rawBody} onChange={() => {}} ancestorNodes={[]} nodeLabels={labelsFor([])} />);
+    await waitFor(() => {
+      expect(container.querySelector('.tag-chip')).toBeTruthy();
+    });
+    // Not "(missing)" — an uploaded_file tag has no sourceNodeId to go
+    // stale, so it's never rendered as broken just because ancestorNodes
+    // doesn't contain a matching id.
+    expect(container.querySelector('.tag-chip')?.textContent).toContain('photo.png');
+    expect(container.querySelector('.tag-chip--broken')).toBeFalsy();
   });
 
   it('gives a pasted duplicate of an existing tag id its own independent, cloned tag instead of aliasing the original', () => {

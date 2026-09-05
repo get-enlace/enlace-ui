@@ -1,7 +1,7 @@
 import { resolveCredentialInjection } from '../credentials.js';
 import { resolveRawBody } from '../rawBodyResolver.js';
 import { getByPath, setByPath } from '../path.js';
-import { resolveTagsInValue } from '../../bodyTags.js';
+import { rawFileTagFieldPath, resolveTagsInValue } from '../../bodyTags.js';
 import type { Credential, FieldValue, Operation, RunStep, RunStepRequest, WorkflowNode } from '../../types.js';
 import { asOperationNode } from './guards.js';
 import type { NodeHandler, NodeHandlerContext } from './index.js';
@@ -54,7 +54,10 @@ export async function buildRequest(
   const isMultipart = operation.requestBodyContentType === 'multipart/form-data';
   const headers: Record<string, string> = isMultipart ? {} : { 'Content-Type': 'application/json' };
   const bodyFields: Record<string, unknown> = {};
-  const requestMode = isMultipart ? 'form' : (node.requestMode ?? 'form');
+  // No longer forced to 'form' for multipart — Raw mode can hold a
+  // multipart body's fields too, including a file (see the `isMultipart`
+  // branch below and rawBodyResolver.ts's `uploaded_file` handling).
+  const requestMode = node.requestMode ?? 'form';
 
   // A field's static value can itself contain a `{{enlace:<id>}}` reference
   // even in Form mode — not something the form UI lets you type
@@ -174,12 +177,30 @@ export async function buildRequest(
   // entirely — the whole body comes from resolving the node's own
   // `rawBody` template (tag chips substituted against `stepsByNodeId`;
   // see engine/rawBodyResolver.ts). A throw here (unknown tag, missing
-  // source response, missing header) is caught by runNode's existing
-  // try/catch around buildRequest, same as any other request-building
-  // failure — no separate error path needed.
+  // source response, missing header, un-reselected file) is caught by
+  // runNode's existing try/catch around buildRequest, same as any other
+  // request-building failure — no separate error path needed.
   let body: unknown;
   if (isMultipart) {
-    body = Object.keys(bodyFields).length > 0 ? appendFormData(bodyFields) : undefined;
+    // Raw mode's fields come from resolveRawBody the same as a JSON body
+    // does, just with a `fileLookup` passed — that's what lets its template
+    // hold an `uploaded_file` tag at all (see rawBodyResolver.ts), resolved
+    // against the same `uploadedFiles` map a Form-mode file field already
+    // uses, keyed the same way (`${nodeId}::${fieldPath}`) with
+    // `rawFileTagFieldPath` standing in for the field path a raw tag
+    // doesn't have. Either way, the result still goes through the same
+    // appendFormData — it already special-cases a real `File` value
+    // regardless of which mode produced it.
+    const fields =
+      requestMode === 'raw' && node.rawBody
+        ? (resolveRawBody(
+            node.rawBody,
+            stepsByNodeId,
+            nodeLabels,
+            (tagId) => uploadedFiles[`${node.id}::${rawFileTagFieldPath(tagId)}`]
+          ) as Record<string, unknown>)
+        : bodyFields;
+    body = Object.keys(fields).length > 0 ? appendFormData(fields) : undefined;
   } else if (requestMode === 'raw' && node.rawBody) {
     body = resolveRawBody(node.rawBody, stepsByNodeId, nodeLabels);
   } else {

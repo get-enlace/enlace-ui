@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkflowStore } from '../../store/workflowStore.js';
 import { coerceStaticValue } from '../../utils/coerceValue.js';
 import { areFieldTypesCompatible, flattenRequestFields, flattenResponseFields } from '../../utils/flattenSchema.js';
-import { buildNodeLabels, computeAncestors, formatPresetLabel } from '@get-enlace/core';
+import { buildNodeLabels, computeAncestors, formatPresetLabel, rawFileTagFieldPath } from '@get-enlace/core';
 import { hasUnrepresentableShape } from '../../utils/schemaExample.js';
 import { buildRawBodyFromForm, buildRawParamsFromForm, convertRawBodyToFieldValues, convertRawParamsToFieldValues } from '../../utils/bodyTemplate.js';
 import { RawBodyEditor } from './RawBodyEditor.js';
@@ -16,7 +16,12 @@ function operationIdOf(node: WorkflowNode | undefined): string | undefined {
   return node && node.kind !== 'presets' ? node.operationId : undefined;
 }
 
-const SOURCE_TYPE_LABELS: Record<BodyTagType, string> = {
+// Excludes 'uploaded_file' deliberately — an assert check compares against
+// a captured response (AssertCheck.source is ResponseBodyTagRef, not
+// BodyTag; see types.ts), never a locally-attached file.
+type AssertSourceType = Exclude<BodyTagType, 'uploaded_file'>;
+
+const SOURCE_TYPE_LABELS: Record<AssertSourceType, string> = {
   response_status: 'Status',
   response_body: 'Body field',
   response_header: 'Header',
@@ -84,9 +89,28 @@ function AssertCheckRow({
         disabled={disabled}
         aria-label={`Check ${index + 1} source type`}
         value={check.source.type}
-        onChange={(e) => onUpdate({ source: { ...check.source, type: e.target.value as BodyTagType } })}
+        onChange={(e) => {
+          // Rebuilt fresh per variant, not spread from check.source — a
+          // discriminated union's other-variant-only fields (jsonPath,
+          // headerName) shouldn't survive a type switch, and a spread
+          // inside this closure can't be narrowed to "the variant matching
+          // the dropdown's old value" anyway (TS can't carry a property's
+          // narrowing across a closure boundary — see AssertCheck.source's
+          // own comment in types.ts for why the type is what it is).
+          // `sourceNodeId` alone is safe to read unnarrowed since every
+          // variant here has it.
+          const type = e.target.value as AssertSourceType;
+          const sourceNodeId = check.source.sourceNodeId;
+          const source: AssertCheck['source'] =
+            type === 'response_body'
+              ? { type, sourceNodeId, jsonPath: '' }
+              : type === 'response_header'
+                ? { type, sourceNodeId, headerName: '' }
+                : { type, sourceNodeId };
+          onUpdate({ source });
+        }}
       >
-        {(Object.keys(SOURCE_TYPE_LABELS) as BodyTagType[]).map((type) => (
+        {(Object.keys(SOURCE_TYPE_LABELS) as AssertSourceType[]).map((type) => (
           <option key={type} value={type}>
             {SOURCE_TYPE_LABELS[type]}
           </option>
@@ -98,7 +122,9 @@ function AssertCheckRow({
             disabled={disabled}
             aria-label={`Check ${index + 1} response field`}
             value={check.source.jsonPath ?? ''}
-            onChange={(e) => onUpdate({ source: { ...check.source, jsonPath: e.target.value } })}
+            onChange={(e) =>
+              onUpdate({ source: { type: 'response_body', sourceNodeId: check.source.sourceNodeId, jsonPath: e.target.value } })
+            }
           >
             <option value="">Select field...</option>
             {responseFields.map((rf) => (
@@ -115,7 +141,9 @@ function AssertCheckRow({
             placeholder="e.g. items[0].id"
             aria-label={`Check ${index + 1} response field path`}
             value={check.source.jsonPath ?? ''}
-            onChange={(e) => onUpdate({ source: { ...check.source, jsonPath: e.target.value } })}
+            onChange={(e) =>
+              onUpdate({ source: { type: 'response_body', sourceNodeId: check.source.sourceNodeId, jsonPath: e.target.value } })
+            }
           />
         ))}
       {check.source.type === 'response_header' && (
@@ -125,7 +153,9 @@ function AssertCheckRow({
           placeholder="e.g. x-trace-id"
           aria-label={`Check ${index + 1} header name`}
           value={check.source.headerName ?? ''}
-          onChange={(e) => onUpdate({ source: { ...check.source, headerName: e.target.value } })}
+          onChange={(e) =>
+            onUpdate({ source: { type: 'response_header', sourceNodeId: check.source.sourceNodeId, headerName: e.target.value } })
+          }
         />
       )}
       <select
@@ -179,6 +209,7 @@ export function NodeConfig() {
     setCredentialExtraParamOverride,
     setCredentialExtraParamOverridesEnabled,
     setUploadedFile,
+    uploadedFiles,
     setRequestMode,
     setRawPath,
     setRawQuery,
@@ -199,7 +230,10 @@ export function NodeConfig() {
   const bodyFields = useMemo(() => fields.filter((f) => f.path.startsWith('body.')), [fields]);
 
   const [switchError, setSwitchError] = useState<string | null>(null);
-  const [pendingFormSwitch, setPendingFormSwitch] = useState<Record<string, FieldValue> | null>(null);
+  const [pendingFormSwitch, setPendingFormSwitch] = useState<{
+    fieldValues: Record<string, FieldValue>;
+    fileFieldTagIds: Record<string, string>;
+  } | null>(null);
   const [credPickerOpen, setCredPickerOpen] = useState(false);
   const credPickerRef = useRef<HTMLDivElement>(null);
 
@@ -336,11 +370,11 @@ export function NodeConfig() {
   const opNode = node;
 
   const isMultipart = operation.requestBodyContentType === 'multipart/form-data';
-  // Multipart bodies can't be represented as Raw JSON (a File isn't text), so
-  // force Form mode and hide the toggle for these operations.
-  const bodyMode = isMultipart ? 'form' : (node.requestMode ?? 'form');
-  const hasRequestToggle =
-    !isMultipart && (pathFields.length > 0 || queryFields.length > 0 || Boolean(operation.requestBodySchema));
+  // A multipart body's Raw mode carries its file field(s) as `uploaded_file`
+  // tag chips (see RawBodyEditor.tsx's `allowFileUpload` and
+  // rawBodyResolver.ts) — no longer forced to Form-only.
+  const bodyMode = node.requestMode ?? 'form';
+  const hasRequestToggle = pathFields.length > 0 || queryFields.length > 0 || Boolean(operation.requestBodySchema);
   const selectedCredential = credentials.find((c) => c.id === node.credentialId) ?? null;
   // Only these two grant types have extraTokenParams at all — see
   // WorkflowNode.credentialExtraParamOverrides's own comment on why this
@@ -364,7 +398,16 @@ export function NodeConfig() {
       setRawQuery(node.id, buildRawParamsFromForm('query', operation, node.fieldValues));
     }
     if (operation.requestBodySchema) {
-      setRawBody(node.id, buildRawBodyFromForm(operation, node.fieldValues));
+      const { rawBody, fileFieldTagIds } = buildRawBodyFromForm(operation, node.fieldValues);
+      setRawBody(node.id, rawBody);
+      // The template/tag now references each file field by its new tag id
+      // — the actual File blob has to follow it there, since
+      // buildRawBodyFromForm only ever sees the `{ source: 'file',
+      // fileName }` marker, never the blob itself (see its own doc).
+      for (const [fieldPath, tagId] of Object.entries(fileFieldTagIds)) {
+        const file = uploadedFiles[`${node.id}::body.${fieldPath}`];
+        if (file) setUploadedFile(node.id, rawFileTagFieldPath(tagId), file);
+      }
     }
     setRequestMode(node.id, 'raw');
   }
@@ -374,6 +417,7 @@ export function NodeConfig() {
     setSwitchError(null);
 
     const merged: Record<string, FieldValue> = {};
+    const fileFieldTagIds: Record<string, string> = {};
     let lossy = false;
 
     if (opNode.rawPath && pathFields.length > 0) {
@@ -383,6 +427,7 @@ export function NodeConfig() {
         return;
       }
       Object.assign(merged, result.fieldValues);
+      Object.assign(fileFieldTagIds, result.fileFieldTagIds);
       lossy = lossy || result.lossy;
     }
     if (opNode.rawQuery && queryFields.length > 0) {
@@ -392,6 +437,7 @@ export function NodeConfig() {
         return;
       }
       Object.assign(merged, result.fieldValues);
+      Object.assign(fileFieldTagIds, result.fileFieldTagIds);
       lossy = lossy || result.lossy;
     }
     if (opNode.rawBody && operation.requestBodySchema) {
@@ -401,20 +447,37 @@ export function NodeConfig() {
         return;
       }
       Object.assign(merged, result.fieldValues);
+      Object.assign(fileFieldTagIds, result.fileFieldTagIds);
       lossy = lossy || result.lossy;
     }
 
     if (lossy) {
-      setPendingFormSwitch(merged);
+      setPendingFormSwitch({ fieldValues: merged, fileFieldTagIds });
       return;
     }
     mergeFieldValues(node.id, merged);
+    applyFileFieldTagIds(node.id, fileFieldTagIds);
     setRequestMode(node.id, 'form');
+  }
+
+  // Copies each converted file field's actual File blob from its raw tag's
+  // key back to the field's own key (see bodyTemplate.ts's
+  // RawToFormResult.fileFieldTagIds) — deferred until the switch is
+  // actually applied (here, or from confirmLossyFormSwitch below), not
+  // done eagerly in switchToForm itself, so canceling a lossy-switch
+  // confirmation doesn't leave a copy sitting under a field path that
+  // never actually got its FieldValue set.
+  function applyFileFieldTagIds(nodeId: string, fileFieldTagIds: Record<string, string>) {
+    for (const [fieldPath, tagId] of Object.entries(fileFieldTagIds)) {
+      const file = uploadedFiles[`${nodeId}::${rawFileTagFieldPath(tagId)}`];
+      if (file) setUploadedFile(nodeId, fieldPath, file);
+    }
   }
 
   function confirmLossyFormSwitch() {
     if (!node || !pendingFormSwitch) return;
-    mergeFieldValues(node.id, pendingFormSwitch);
+    mergeFieldValues(node.id, pendingFormSwitch.fieldValues);
+    applyFileFieldTagIds(node.id, pendingFormSwitch.fileFieldTagIds);
     setRequestMode(node.id, 'form');
     setPendingFormSwitch(null);
   }
@@ -606,15 +669,22 @@ export function NodeConfig() {
                 {responseFields.map((rf) => {
                   const typeMismatch = rf.supported && !areFieldTypesCompatible(field.type, rf.type);
                   const optionDisabled = !rf.supported || typeMismatch;
+                  // An array source is only ever safe to wire into an array-typed
+                  // target (a straight whole-array copy) — anything else needs
+                  // Raw mode, same reasoning as the bare-array-response case
+                  // below, so the message says so explicitly instead of just
+                  // "type mismatch".
                   const reason = !rf.supported
                     ? rf.reason
                     : typeMismatch
-                      ? `Type mismatch: "${field.path}" expects ${field.type}, this field is ${rf.type}.`
+                      ? rf.type === 'array'
+                        ? `"${rf.path}" is an array — switch to Raw mode to map an item into "${field.path}" (${field.type}).`
+                        : `Type mismatch: "${field.path}" expects ${field.type}, this field is ${rf.type}.`
                       : undefined;
                   return (
                     <option key={rf.path} value={rf.path} disabled={optionDisabled} title={reason}>
                       {rf.path}
-                      {!rf.supported ? ' (unsupported)' : typeMismatch ? ' (type mismatch)' : ''}
+                      {!rf.supported ? ' (unsupported)' : typeMismatch ? (rf.type === 'array' ? ' (array — use Raw mode)' : ' (type mismatch)') : ''}
                     </option>
                   );
                 })}
@@ -848,6 +918,7 @@ export function NodeConfig() {
             pathFields.map(renderField)
           ) : node.rawPath ? (
             <RawBodyEditor
+              key={node.id}
               rawBody={node.rawPath}
               onChange={(rawPath) => setRawPath(node.id, rawPath)}
               ancestorNodes={ancestorNodes}
@@ -866,6 +937,7 @@ export function NodeConfig() {
             queryFields.map(renderField)
           ) : node.rawQuery ? (
             <RawBodyEditor
+              key={node.id}
               rawBody={node.rawQuery}
               onChange={(rawQuery) => setRawQuery(node.id, rawQuery)}
               ancestorNodes={ancestorNodes}
@@ -901,12 +973,15 @@ export function NodeConfig() {
             bodyFields.map(renderField)
           ) : node.rawBody ? (
             <RawBodyEditor
+              key={node.id}
               rawBody={node.rawBody}
               onChange={(rawBody) => setRawBody(node.id, rawBody)}
               ancestorNodes={ancestorNodes}
               nodeLabels={nodeLabels}
               readOnly={isRunning}
               showHint={false}
+              allowFileUpload={isMultipart}
+              onUploadFile={(tagId, file) => setUploadedFile(node!.id, rawFileTagFieldPath(tagId), file)}
             />
           ) : null}
         </section>
